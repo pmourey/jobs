@@ -1,5 +1,4 @@
 Pour faire joujou en ligne...
-- http://philrg.pythonanywhere.com/
 - http://pmourey.pythonanywhere.com/
 
 Pour bien démarrer:
