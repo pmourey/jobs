@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang = "en">
+   <head></head>
+   <body>
+
+      <h3>
+         <a href = "{{ url_for('show_all') }}">Suivi candidatures</a>
+      </h3>
+
+      <hr/>
+      {%- for message in get_flashed_messages() %}
+         {{ message }}
+      {%- endfor %}
+
+      <h3>Candidatures (<a href = "{{ url_for('new') }}">Ajout</a>)
+         <!--(<a href = "{{ url_for('new') }}">Suppression</a>)-->
+      </h3>
+
+      <table>
+         <style>
+            table,
+            th,
+            td {
+              padding: 10px;
+              border: 1px solid black;
+              border-collapse: collapse;
+            }
+         </style>
+         <thead>
+            <tr>
+               <th>Offre</th>
+               <th>URL</th>
+               <th>Zip Code</th>
+               <th>Company</th>
+               <th>Contact</th>
+            </tr>
+         </thead>
+
+         <tbody>
+            {% for job in jobs %}
+               <tr>
+                  <td>{{ job.name }}</td>
+                  <td><a href="{{ job.url }}" target="_blank">{{ job.url }}</a></td>
+                  <td>{{ job.zipCode }}</td>
+                  <td>{{ job.company }}</td>
+                  <td>{{ job.contact }}</td>
+               </tr>
+            {% endfor %}
+         </tbody>
+      </table>
+
+   </body>
+</html>
