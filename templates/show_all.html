@@ -33,17 +33,19 @@
                <th>Zip Code</th>
                <th>Company</th>
                <th>Contact</th>
+               <th>Date</th>
             </tr>
          </thead>
 
          <tbody>
-            {% for job in jobs %}
+            {% for job in jobs|sort(attribute='date', reverse = True) %}
                <tr>
-                  <td>{{ job.name }}</td>
-                  <td><a href="{{ job.url }}" target="_blank">{{ job.url }}</a></td>
+                  <td width = 25%>{{ job.name }}</td>
+                  <td width = 33%><a href="{{ job.url }}" target="_blank">{{ job.url }}</a></td>
                   <td>{{ job.zipCode }}</td>
                   <td>{{ job.company }}</td>
                   <td>{{ job.contact }}</td>
+                  <td>{{job.date.strftime('%A %d %B %Y à %Hh%M')}}</td>
                </tr>
             {% endfor %}
          </tbody>
