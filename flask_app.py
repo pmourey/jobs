@@ -1,14 +1,17 @@
-import locale
-from datetime import datetime#, timezone
-from pytz import timezone
+import requests
+from logging import basicConfig, DEBUG
 
-from enum import Enum
+import locale
+import os
+from datetime import datetime
+from pytz import timezone
 
 from flask import Flask, request, flash, url_for, redirect, render_template
 
-# https://pypi.org/project/flask/FLAS-sqlalchemy/
 from flask_sqlalchemy import SQLAlchemy
+from requests.exceptions import MissingSchema
 from sqlalchemy import DateTime
+from validators import url
 
 # SQLite
 # sqlite3_db = '/Users/display/Library/DBeaverData/workspace6/.metadata/sample-database-sqlite-1/Chinook.db'
@@ -18,14 +21,14 @@ from sqlalchemy import DateTime
 # uri = f'mysql://pmourey:fifa2022@{hostname}/sample'
 # mysql://username:password@server/db
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='captures')
 # app.config['SQLALCHEMY_DATABASE_URI'] = uri
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///jobs.sqlite3'
 app.config['SECRET_KEY'] = "fifa 2022"
 
 db = SQLAlchemy(app)
 locale.setlocale(locale.LC_TIME, 'fr_FR')
-
+basicConfig(level=DEBUG)
 
 class Job(db.Model):
     id = db.Column('job_id', db.Integer, primary_key=True)
@@ -35,6 +38,7 @@ class Job(db.Model):
     company = db.Column(db.String(20))
     contact = db.Column(db.String(20))
     date = db.Column(db.DateTime)
+    active = db.Column(db.Integer)
 
     def __init__(self, name: str, url: str, zipCode: str, company: str, contact: str, date: DateTime):
         self.name = name
@@ -43,6 +47,24 @@ class Job(db.Model):
         self.company = company
         self.contact = contact
         self.date = date
+        self.active = True
+
+    @property
+    def valid_url(self) -> bool:
+        try:
+            result = url(self.url)
+            # request_response = requests.head(self.url)
+        except Exception:
+            return False
+        return result
+
+    @property
+    def capture(self) -> str:
+        path = os.path.dirname(__file__)
+        file_name: str = f'capture_id#{self.id}.png'
+        if not os.path.isfile(f'{path}/captures/{file_name}'):
+            return None
+        return file_name
 
 
 @app.route('/')
@@ -57,8 +79,8 @@ def new():
         if not request.form['name'] or not request.form['url'] or not request.form['company']:
             flash('Please enter all the fields', 'error')
         else:
-            job = Job(request.form['name'], request.form['url'],
-                      request.form['zipCode'], request.form['company'], request.form['contact'], datetime.now(paris))
+            job = Job(name=request.form['name'], url=request.form['url'],
+                      zipCode=request.form['zipCode'], company=request.form['company'], contact=request.form['contact'], date=datetime.now(paris))
 
             db.session.add(job)
             db.session.commit()

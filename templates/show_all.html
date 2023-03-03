@@ -30,7 +30,8 @@
             <tr>
                <th>Offre</th>
                <th>URL</th>
-               <th>Zip Code</th>
+               <th>Capture</th>
+               <th>Location</th>
                <th>Company</th>
                <th>Contact</th>
                <th>Date</th>
@@ -40,12 +41,23 @@
          <tbody>
             {% for job in jobs|sort(attribute='date', reverse = True) %}
                <tr>
-                  <td width = 25%>{{ job.name }}</td>
-                  <td width = 33%><a href="{{ job.url }}" target="_blank">{{ job.url }}</a></td>
-                  <td>{{ job.zipCode }}</td>
-                  <td>{{ job.company }}</td>
-                  <td>{{ job.contact }}</td>
-                  <td>{{job.date.strftime('%A %d %B %Y à %Hh%M')}}</td>
+                  {% if job.active %}
+                     <td width = 25%>{{ job.name }}</td>
+                     {% if job.valid_url %}
+                        <td width = 25%><a href="{{ job.url }}" target="_blank">{{ job.url }}</a></td>
+                     {% else %}
+                        <td width = 25%>{{ job.url }}</td>
+                     {% endif %}
+                     {% if job.capture %}
+                        <td><a href="{{ url_for('static', filename=job.capture) }}" target="_blank">Image</a></td>
+                     {% else %}
+                        <td>:-( :-( :-(</a></td>
+                     {% endif %}
+                     <td>{{ job.zipCode }}</td>
+                     <td>{{ job.company }}</td>
+                     <td>{{ job.contact }}</td>
+                     <td>{{job.date.strftime('%A %d %B %Y à %Hh%M')}}</td>
+                  {% endif %}
                </tr>
             {% endfor %}
          </tbody>
