@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block main %}
+{% set applicationDate = job.applicationDate.strftime('%Y-%m-%d') if job.applicationDate else None %}
+{% set relaunchDate = job.relaunchDate.strftime('%Y-%m-%d') if job.relaunchDate else None %}
+{% set refusalDate = job.refusalDate.strftime('%Y-%m-%d') if job.refusalDate else None %}
+
+<main>
+    <form action="{{ url_for('update', id=job.id) }}" , method="POST"  , onsubmit="return confirmSubmit();">
+        <label for = "name">Offre</label><br>
+        <input type="text" name="name" id="job" value="{{ job.name }}">
+        <label for = "url">URL</label><br>
+        <input type="text" name="url" value="{{ job.url }}">
+        <label for = "zipCode">zipCode</label><br>
+        <input type="text" name="zipCode" value="{{ job.zipCode }}">
+        <label for = "company">Company</label><br>
+        <input type="text" name="company" value="{{ job.company }}">
+        <label for = "contact">Contact</label><br>
+        <input type="text" name="contact" value="{{ job.contact }}">
+        <label for = "email">E-Mail</label><br>
+        <input type="text" name="email" value="{{ job.email }}">
+        <label for = "applicationDate">Date candidature</label><br>
+        <input type="date" name="applicationDate" value="{{ applicationDate }}">
+        <label for = "relaunchDate">Date relance</label><br>
+        <input type="date" name="relaunchDate" value="{{ relaunchDate }}">
+        <label for = "refusalDate">Date refus</label><br>
+        <input type="date" name="refusalDate" value="{{ refusalDate }}">
+        <input type="submit" value="Update">
+    </form>
+    <script>
+        function confirmSubmit() {
+            var result = confirm("Are you sure you want to submit the form?");
+            return result;
+        }
+    </script>
+</main>
+{% endblock main %}

@@ -1,0 +1,87 @@
+<!-- jobs/templates/index.html -->
+
+{% extends 'base.html' %}
+{% block main %}
+    <script>
+        function confirmDelete(jobId) {
+            var result = confirm("Êtes-vous sûr de vouloir supprimer cet enregistrement: ?");
+            if (result) {
+                window.location.href = "delete/" + jobId;
+            }
+        }
+    </script>
+    <main>
+        {%- for category, message in get_flashed_messages(with_categories = true) %}
+             <div class = "alert alert-danger">{{ message }}</div>
+        {%- endfor %}
+        {% include './partials/_form.html' %}
+        {% if jobs %}
+            <div id="jobs">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Update</th>
+                            <th>Delete</th>
+                            <th>Offre</th>
+                            <th>URL</th>
+                            <th>Capture</th>
+                            <th>Location</th>
+                            <th>Company</th>
+                            <th>Contact</th>
+                            <th>E-Mail</th>
+                            <th>Date candidature</th>
+                            <th>Date relance</th>
+                            <th>Date refus</th>
+                        </tr>
+                    </thead>
+                    {% for job in jobs %}
+                        <div id="job">
+                            <tr>
+                                <td align="center">
+                                    <a href="{{ url_for('update', id=job.id) }}">{{job.id}}</a>
+                                </td>
+                                <td align="center">
+                                    <button onclick="confirmDelete({{ job.id }})">{{job.id}}</button>
+                                </td>
+                                <td>{{ job.name }}</td>
+                                <td>
+                                    {% if job.valid_url %}
+                                        <a href="{{ job.url }}" target="_blank">{{ job.url }}</a>
+                                    {% else %}
+                                        {{ job.url }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if job.is_capture %}
+                                        {% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}
+                                        <a href="{{ url_for('static', filename=capture) }}" target="_blank">PDF</a>
+                                    {% else %}
+                                        :-( :-( :-(
+                                    {% endif %}
+                                </td>
+                                <td>{{ job.zipCode }}</td>
+                                <td>{{ job.company }}</td>
+                                <td>{{ job.contact }}</td>
+                                <td>{{ job.email }}</td>
+                                {% if job.expired %}<td bgcolor="red">{% else %}<td>{% endif %}
+                                    {{job.applicationDate.strftime('%A %d %B %Y')}}</td>
+                                <td>
+                                    {% if job.relaunchDate %}
+                                        {{job.relaunchDate.strftime('%A %d %B %Y')}}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if job.refusalDate %}
+                                        {{job.refusalDate.strftime('%A %d %B %Y')}}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </div>
+                    {%endfor %}
+                </table>
+                </div>
+        {% else %}
+            <p style="font-size: 16px; text-align: center;">Pas de candidature en cours ✌️</p>
+        {% endif %}
+    </main>
+{% endblock main %}
