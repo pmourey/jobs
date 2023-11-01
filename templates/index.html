@@ -62,7 +62,7 @@
                                 <td>{{ job.zipCode }}</td>
                                 <td>{{ job.company }}</td>
                                 <td>{{ job.contact }}</td>
-                                <td>{{ job.email }}</td>
+                                {% if not job.email %}<td bgcolor="yellow">{% else %}<td>{% endif %}{{ job.email }}</td>
                                 {% if job.expired %}<td bgcolor="red">{% else %}<td>{% endif %}
                                     {{job.applicationDate.strftime('%A %d %B %Y')}}</td>
                                 <td>
