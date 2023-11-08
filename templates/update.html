@@ -5,26 +5,49 @@
 {% set refusalDate = job.refusalDate.strftime('%Y-%m-%d') if job.refusalDate else None %}
 
 <main>
-    <form action="{{ url_for('update', id=job.id) }}" , method="POST"  , onsubmit="return confirmSubmit();">
-        <label for = "name">Offre</label><br>
-        <input type="text" name="name" id="job" value="{{ job.name }}">
-        <label for = "url">URL</label><br>
-        <input type="text" name="url" value="{{ job.url }}">
-        <label for = "zipCode">zipCode</label><br>
-        <input type="text" name="zipCode" value="{{ job.zipCode }}">
-        <label for = "company">Company</label><br>
-        <input type="text" name="company" value="{{ job.company }}">
-        <label for = "contact">Contact</label><br>
-        <input type="text" name="contact" value="{{ job.contact }}">
-        <label for = "email">E-Mail</label><br>
-        <input type="text" name="email" value="{{ job.email }}">
-        <label for = "applicationDate">Date candidature</label><br>
-        <input type="date" name="applicationDate" value="{{ applicationDate }}">
-        <label for = "relaunchDate">Date relance</label><br>
-        <input type="date" name="relaunchDate" value="{{ relaunchDate }}">
-        <label for = "refusalDate">Date refus</label><br>
-        <input type="date" name="refusalDate" value="{{ refusalDate }}">
-        <input type="submit" value="Update">
+    <form action="{{ url_for('update', id=job.id) }}" , method="POST" , onsubmit="return confirmSubmit();">
+        <table class="update-form">
+            <tr>
+                <td><label for="name">Offre</label></td>
+                <td><input type="text" name="name" id="job" value="{{ job.name }}"></td>
+            </tr>
+            <tr>
+                <td><label for="url">URL</label></td>
+                <td><input type="text" name="url" value="{{ job.url }}"></td>
+            </tr>
+            <tr>
+                <td><label for="zipCode">zipCode</label></td>
+                <td><input type="text" name="zipCode" value="{{ job.zipCode }}"></td>
+            </tr>
+            <tr>
+                <td><label for="company">Company</label></td>
+                <td><input type="text" name="company" value="{{ job.company }}"></td>
+            </tr>
+            <tr>
+                <td><label for="contact">Contact</label></td>
+                <td><input type="text" name="contact" value="{{ job.contact }}"></td>
+            </tr>
+            <tr>
+                <td><label for="email">E-Mail</label></td>
+                <td><input type="text" name="email" value="{{ job.email }}"></td>
+            </tr>
+            <tr>
+                <td><label for="applicationDate">Date candidature</label></td>
+                <td><input type="date" name="applicationDate" value="{{ applicationDate }}"></td>
+            </tr>
+            <tr>
+                <td><label for="relaunchDate">Date relance</label></td>
+                <td><input type="date" name="relaunchDate" value="{{ relaunchDate }}"></td>
+            </tr>
+            <tr>
+                <td><label for="refusalDate">Date refus</label></td>
+                <td><input type="date" name="refusalDate" value="{{ refusalDate }}"></td>
+            </tr>
+            <tr>
+                <td>&nbsp;</td>
+                <td><input type="submit" value="Update"></td>
+            </tr>
+        </table>
     </form>
     <script>
         function confirmSubmit() {

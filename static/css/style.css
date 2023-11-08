@@ -18,7 +18,7 @@ form {
     width: 100%;
 }
 
-input[type=text] {
+input {
     padding: 16px 32px;
     margin: 1px;
     box-sizing: border-box;
@@ -71,8 +71,20 @@ p {
     font-size: 16px;
 }
 
-table, th, td {
+table.jobs tr td {
   padding: 7px;
   border: 1px solid black;
+  border-collapse: collapse;
+}
+
+table.jobs tr th {
+  padding: 7px;
+  border: 1px solid black;
+  border-collapse: collapse;
+}
+
+table.add-form tr td {
+  padding: 7px;
+  border: none;
   border-collapse: collapse;
 }
