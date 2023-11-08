@@ -35,7 +35,7 @@ input:focus {
 }
 
 input[type="submit"] {
-    background-color: #1E1E2D;
+    background-color: darkblue;
     border: none;
     color: white;
     padding: 16px 32px;
@@ -78,12 +78,24 @@ table.jobs tr td {
 }
 
 table.jobs tr th {
+  color: darkblue;
+  background-color: lightgray;
   padding: 7px;
   border: 1px solid black;
   border-collapse: collapse;
 }
 
 table.add-form tr td {
+  background-color: lightgray;
+  padding: 7px;
+  border: none;
+  border-collapse: collapse;
+}
+
+
+table.update-form tr td {
+  color: darkblue;
+  background-color: lightgray;
   padding: 7px;
   border: none;
   border-collapse: collapse;
