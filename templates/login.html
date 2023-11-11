@@ -1,0 +1,15 @@
+<!-- jobs/templates/login.html -->
+
+{% extends 'base.html' %}
+{% block main %}
+<main>
+    <h2>Login</h2>
+    <form method="POST" action="{{ url_for('login') }}">
+        <input type="text" placeholder="Username" name="username" value="{{request.form.username }}">
+        <input type="password" placeholder="Password" name="password" value="{{request.form.password }}">
+        <input type="submit" value="Login">
+    </form>
+    {% if error %}<p class="error"><strong>Error:</strong> {{ error }} {% endif %}
+    <p>Don't have an account? <a href="{{ url_for('register') }}">Register here</a>.</p>
+</main>
+{% endblock main %}

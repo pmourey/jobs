@@ -6,6 +6,7 @@ Pour bien démarrer:
 - https://www.docstring.fr/blog/creer-une-todo-app-avec-flask/
 - https://pypi.org/project/Flask-APScheduler/ 
 - https://www.pythonanywhere.com/forums/topic/3627/#:~:text=You%20can%20enable%20it%20with,How%20do%20I%20enable%20threads%3F
+- https://flask-fr.readthedocs.io/quickstart/
 
 ### Setup instructions
 - Prérequis: Python (v3.10 conseillée) https://www.python.org/downloads/

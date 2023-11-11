@@ -1,0 +1,17 @@
+<!-- jobs/templates/register.html -->
+
+{% extends 'base.html' %}
+{% block main %}
+<main>
+    <h2>Register</h2>
+    <form method="POST" action="{{ url_for('register') }}">
+        <input type="text" placeholder="Username" name="username" value="{{request.form.username }}">
+        <input type="password" placeholder="Password" name="password" value="{{request.form.password }}">
+        <input type="password" placeholder="Password" name="confirm_password" value="{{request.form.confirm_password }}">
+        <input type="submit" value="Register">
+    </form>
+    {% if error %}<p class="error"><strong>Error:</strong> {{ error }} {% endif %}
+    <p>Already have an account? <a href="{{ url_for('login') }}">Login here</a>.</p>
+</main>
+{% endblock main %}
+

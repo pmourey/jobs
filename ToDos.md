@@ -1,0 +1,4 @@
+- [x] Re-factorisation du code pour séparer les couches (Model/Vue/Contrôleur)
+- [x] Création de l'enregistrement utilisateur et authentification (rôle par défaut: utilisateur)
+- [x] Définition des rôles (administrateur et utilisateur) pour les accès CRUD (utilisateur à seulement Read)
+- [x] Création d'une table d'historisation des connections utilisateur
