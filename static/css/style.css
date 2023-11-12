@@ -14,7 +14,7 @@ main {
 }
 
 form {
-    display: flex;
+    display: flexbox;
     width: 100%;
 }
 
@@ -71,15 +71,75 @@ p {
     font-size: 16px;
 }
 
-table.jobs tr td {
+button {
+  color: darkblue;
+  background-color: lightgray;
+  padding: 7px;
+  border: 1px solid pink;
+  border-radius: 5px;
+  border-collapse: collapse;
+}
+
+table.menu tr td {
+  display: inline;
+  color: darkblue;
+  background-color: lightgray;
+  padding: 7px;
+  margin-bottom: 20px;
+  border: 3px solid pink;
+  border-radius: 5px;
+  border-collapse: collapse;
+}
+
+table.sessions tr th {
+  color: darkblue;
+  background-color: lightgray;
   padding: 7px;
   border: 1px solid black;
+  border-collapse: collapse;
+}
+
+table.accounts tr td {
+  color: darkblue;
+  padding: 7px;
+  margin-bottom: 20px;
+  border: 1px solid black;
+  border-collapse: collapse;
+}
+
+table.sessions tr td {
+  color: darkblue;
+  padding: 7px;
+  margin-bottom: 20px;
+  border: 1px solid black;
+  border-collapse: collapse;
+}
+table.sessions tr:nth-child(odd) {
+  background-color: lightblue;
+}
+table.sessions tr:nth-child(even) {
+  background-color: orange;
+}
+
+table.welcome tr td {
+  color: darkblue;
+  background-color: lightgray;
+  padding: 7px;
+  margin-bottom: 20px;
+  border: 3px solid pink;
+  border-radius: 5px;
   border-collapse: collapse;
 }
 
 table.jobs tr th {
   color: darkblue;
   background-color: lightgray;
+  padding: 7px;
+  border: 1px solid black;
+  border-collapse: collapse;
+}
+
+table.jobs tr td {
   padding: 7px;
   border: 1px solid black;
   border-collapse: collapse;

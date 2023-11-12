@@ -5,6 +5,8 @@ source /Users/display/PycharmProjects/jobs/venv/bin/activate
 # Définir la variable d'environnement FLASK_APP avec le nom de votre application Flask
 export FLASK_APP=flask_app.py
 
+export FLASK_DEBUG=False
+
 export FLASK_ENV=development
 # export FLASK_ENV=production
 

@@ -3,24 +3,18 @@
 {% extends 'base.html' %}
 {% block main %}
 <script>
-        function confirmDelete(jobId) {
-            var result = confirm("Êtes-vous sûr de vouloir supprimer cet enregistrement: ?");
-            if (result) {
-                window.location.href = "delete/" + jobId;
-            }
+    function confirmDelete(jobId) {
+        var result = confirm("Êtes-vous sûr de vouloir supprimer cet enregistrement: ?");
+        if (result) {
+            window.location.href = "delete/" + jobId;
         }
-
-
-
-
+    }
 </script>
 <main>
     {% if user.admin %}
     {% include './partials/_form.html' %}
     {% endif %}
-    <a href="{{ url_for('logout') }}">
-        <button>Déconnexion</button>
-    </a>
+    {% include './partials/_menu.html' %}
     {% if jobs %}
     <table class="jobs">
         <thead>
@@ -44,7 +38,7 @@
         {% for job in jobs %}
         <div id="job">
             <tr>
-                {% if session.id == 1 %}
+                {% if user.admin %}
                 <td align="center">
                     <a href="{{ url_for('update', id=job.id) }}">{{job.id}}</a>
                 </td>

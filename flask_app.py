@@ -59,7 +59,8 @@ def load_user(user_id):
 
 @app.route('/')
 def welcome():
-    return render_template('index.html')
+    user = get_user_by_id(session['id']) if 'id' in session else None
+    return render_template('index.html', session=session, user=user)
 
 @app.route("/register", methods=['GET', 'POST'])
 def register():
@@ -70,7 +71,7 @@ def register():
             # flash('Incorrect login credentials.', 'error')
             error = 'Password does not match! Please try again.'
         else:
-            user = User(request.form['username'], request.form['password'])
+            user = User(username=request.form['username'], password=request.form['password'], creation_date=datetime.now(app.config['PARIS']))
             # logging.warning("See this message in Flask Debug Toolbar!")
             db.session.add(user)
             db.session.commit()
@@ -90,7 +91,7 @@ def login():
             sess = Session(login=user.username, start=datetime.now(app.config['PARIS']))
             db.session.add(sess)
             db.session.commit()
-            return redirect(url_for('show_all'))
+            return redirect(url_for('welcome'))
         else:
             error = 'Incorrect login credentials. Please try again.'
             return render_template('login.html', error=error)
@@ -109,6 +110,31 @@ def logout():
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
 
+@app.route('/accounts')
+def show_accounts():
+    # app.logger.debug("PROUT")
+    if 'id' in session:
+        user = get_user_by_id(session['id'])
+        if user.admin:
+            # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
+            # Reverse order query
+            accounts = User.query.order_by(desc(User.id)).all()
+            return render_template('accounts.html', accounts=accounts)
+    else:
+        return redirect(url_for('login'))
+
+@app.route('/sessions')
+def show_sessions():
+    # app.logger.debug("PROUT")
+    if 'id' in session:
+        user = get_user_by_id(session['id'])
+        if user.admin:
+            # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
+            # Reverse order query
+            sessions = Session.query.filter(Session.end.is_(None)).order_by(desc(Session.id)).all()
+            return render_template('sessions.html', sessions=sessions)
+    else:
+        return redirect(url_for('login'))
 
 @app.route('/suivi')
 def show_all():

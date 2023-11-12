@@ -4,13 +4,20 @@
 {% block main %}
 <main>
     <!-- Votre contenu de page ici -->
-
     {% if 'id' in session %}
-        <p>Bienvenue, utilisateur!</p>
-        <table>
+        <p>Bienvenue, {{user.username}}!</p>
+        <table class="welcome">
             <tr>
                 <td> <a href="{{ url_for('show_all') }}">Suivi candidatures</a></td>
             </tr>
+            {% if user.admin %}
+            <tr>
+                <td><a href="{{ url_for('show_sessions') }}">Sessions ouvertes</a></td>
+            </tr>
+            <tr>
+                <td><a href="{{ url_for('show_accounts') }}">Gestion comptes utilisateurs</a></td>
+            </tr>
+            {% endif %}
             <tr>
                 <td><a href="{{ url_for('logout') }}">Déconnexion</a></td>
             </tr>

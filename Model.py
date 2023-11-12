@@ -21,14 +21,16 @@ class User(db.Model):
     username = db.Column(db.String(20), unique=True, nullable=False)
     password = db.Column(db.String(60), nullable=False)
     admin = db.Column(db.Integer)
+    creationDate = db.Column(db.DateTime, nullable=False)
 
     def __repr__(self):
         admin_msg = 'admin' if self.admin else 'user'
         return f'{self.username}:{self.password} ({admin_msg})'
 
-    def __init__(self, username: str, password: str):
+    def __init__(self, username: str, password: str, creation_date: DateTime):
         self.username = username
         self.password = password
+        self.creationDate = creation_date
 
 class Session(db.Model):
     __tablename__ = 'sessions'

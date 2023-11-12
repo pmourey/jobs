@@ -5,10 +5,11 @@ from datetime import datetime
 from typing import Match
 
 from dateutil.relativedelta import relativedelta
-from sqlalchemy import func
 
 from Model import Job, User, db, Session
 from tools.send_emails import send_email
+
+""" SQL Alchemy requests """
 
 
 def get_user_by_username_and_password(username, password) -> User:
@@ -23,12 +24,20 @@ def get_user_by_id(user_id: int) -> User:
     # Effectue la requête pour récupérer un utilisateur par nom d'utilisateur et mot de passe
     return User.query.filter_by(id=user_id).first()
 
+
 def get_session_by_login(username: str) -> Session:
     # Récupère la session la plus récente
     return Session.query.filter_by(login=username).order_by(Session.start.desc()).first()
 
+
+""" Utilities """
+
+
 def check(regex: str, email: str) -> Match[str] | None:
     return re.fullmatch(regex, email)
+
+
+""" Back-end features """
 
 
 def send_fake_email(app, job: Job, author: str, cv_resume: str) -> bool:
