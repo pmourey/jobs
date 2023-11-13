@@ -1,0 +1,28 @@
+<!-- jobs/templates/sessions.html -->
+
+{% extends 'base.html' %}
+{% block main %}
+<main>
+    {% include './partials/_menu.html' %}
+    {% if sessions %}
+    <table class="sessions">
+        <thead>
+        <tr>
+            <th>Login</th>
+            <th>Début</th>
+        </tr>
+        </thead>
+        {% for session in sessions %}
+        <div id="session">
+            <tr>
+                <td>{{ session.login }}</td>
+                <td>{{ session.start.strftime('%A %d %B %Y à %Hh%M') }}</td>
+            </tr>
+        </div>
+        {%endfor %}
+    </table>
+    {% else %}
+    <p style="font-size: 16px; text-align: center;">Pas de session en cours ✌️</p>
+    {% endif %}
+</main>
+{% endblock main %}

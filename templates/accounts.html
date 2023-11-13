@@ -1,0 +1,30 @@
+<!-- jobs/templates/accounts.html -->
+
+{% extends 'base.html' %}
+{% block main %}
+<main>
+    {% include './partials/_menu.html' %}
+    {% if accounts %}
+    <table class="accounts">
+        <thead>
+        <tr>
+            <th>Login</th>
+            <th>Date création</th>
+            <th>Type</th>
+        </tr>
+        </thead>
+        {% for account in accounts %}
+        <div id="account">
+            <tr>
+                <td>{{ account.username }}</td>
+                <td>{{ account.creationDate.strftime('%A %d %B %Y à %Hh%M') }}</td>
+                <td>
+                    {% if account.admin %}Administrateur{% else %}Utilisateur{% endif %}
+                </td>
+            </tr>
+        </div>
+        {%endfor %}
+    </table>
+    {% endif %}
+</main>
+{% endblock main %}
