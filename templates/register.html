@@ -5,9 +5,10 @@
 <main>
     <h2>Register</h2>
     <form method="POST" action="{{ url_for('register') }}">
-        <input type="text" placeholder="Username" name="username" value="{{request.form.username }}">
-        <input type="password" placeholder="Password" name="password" value="{{request.form.password }}">
-        <input type="password" placeholder="Password" name="confirm_password" value="{{request.form.confirm_password }}">
+        <input type="text" placeholder="Username" name="username" value="{{ request.form.username }}">
+        <input type="password" placeholder="Password" name="password" value="{{ request.form.password }}">
+        <input type="password" placeholder="Password" name="confirm_password" value="{{ request.form.confirm_password }}">
+        <input type="email" placeholder="E-Mail" name="email" value="{{ request.form.email }}">
         <input type="submit" value="Register">
     </form>
     {% if error %}<p class="error"><strong>Error:</strong> {{ error }} {% endif %}

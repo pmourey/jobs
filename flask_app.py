@@ -11,8 +11,9 @@ from typing import Match, Optional
 from logging import basicConfig, DEBUG
 import locale
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
+from itsdangerous import Serializer
 from pytz import timezone
 from flask import Flask, request, flash, url_for, redirect, render_template, session
 from flask_sqlalchemy import SQLAlchemy
@@ -24,7 +25,7 @@ import logging
 
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from Controller import check, get_user_by_id, get_session_by_login
+from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email
 from Model import Job, User, db, Session
 from tools.send_emails import send_email
 
@@ -61,8 +62,18 @@ def load_user(user_id):
 
 @app.route('/')
 def welcome():
-    user = get_user_by_id(session['id']) if 'id' in session else None
-    return render_template('index.html', session=session, user=user)
+    user = None
+    token = None
+    if 'id' in session:
+        user = get_user_by_id(session['id'])
+        # Générer un jeton de récupération de mot de passe
+        s = Serializer(app.config['SECRET_KEY'])
+        token = s.dumps({'user_id': user.id})
+        # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
+        user.recovery_token = generate_password_hash(token, method='sha256')
+        user.token_expiration = datetime.utcnow() + timedelta(minutes=10)
+        db.session.commit()
+    return render_template('index.html', session=session, user=user, token=token)
 
 @app.route("/register", methods=['GET', 'POST'])
 def register():
@@ -74,11 +85,14 @@ def register():
             error = 'Password does not match! Please try again.'
         else:
             username: str = request.form['username']
+            email: str = request.form['email']
             existing_user: User = User.query.filter_by(username=username).first()
             if existing_user:
                 error = f'user {existing_user.username} already exists! Please choose another name.'
+            elif not check(app.config['REGEX'], email):
+                error = f'email {email} is invalid! Please check syntax.'
             else:
-                user = User(username=username, password=request.form['password'], creation_date=datetime.now(app.config['PARIS']))
+                user = User(username=username, password=request.form['password'], creation_date=datetime.now(app.config['PARIS']), email=email)
                 # logging.warning("See this message in Flask Debug Toolbar!")
                 db.session.add(user)
                 db.session.commit()
@@ -123,9 +137,73 @@ def change_password():
                 return redirect(url_for('welcome'))
             else:
                 error = 'Passwords does not match! Please try again.'
-        return render_template('change_password.html', error=error)
+        return render_template('reset_password.html', error=error)
     else:
         return redirect(url_for('login.html'))
+
+@app.route('/request_reset_password', methods=['GET', 'POST'])
+def request_reset_password():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        user = User.query.filter_by(email=email).first()
+        if user:
+            # Générer un jeton de récupération de mot de passe
+            s = Serializer(app.config['SECRET_KEY'])
+            token = s.dumps({'user_id': user.id})
+
+            # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
+            user.recovery_token = generate_password_hash(token, method='sha256')
+            user.token_expiration = datetime.utcnow() + timedelta(minutes=10)
+
+            db.session.commit()
+
+            # Envoyer le lien de récupération par e-mail (vous devez implémenter cette partie)
+            # Vous pouvez utiliser un package comme Flask-Mail pour envoyer des e-mails.
+
+            flash('Un e-mail de récupération de mot de passe a été envoyé.', 'success')
+            reset_link = url_for('reset_password', token=token, _external=True)
+            send_password_recovery_email(app=app, reset_link=reset_link, user=user, author=app.config['GMAIL_FULLNAME'], cv_resume=app.config['CV_RESUME'])
+            return redirect(url_for('login'))
+
+        flash('Aucun utilisateur trouvé avec cet e-mail.', 'error')
+
+    return render_template('request_reset_password.html')
+
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    error: str = None
+    # Vérifier si le jeton est valide
+    s = Serializer(app.config['SECRET_KEY'])
+    try:
+        data = s.loads(token)
+    except:
+        flash('Le lien de réinitialisation de mot de passe est invalide ou a expiré.')
+        return redirect(url_for('login'))
+
+    user = User.query.get(data['user_id'])
+    app.logger.debug(f'reset password user {user.username} - data = {data} \n - token = {token}')
+
+    if request.method == 'POST':
+
+        new_password = request.form.get('new_password')
+        confirm_new_password = request.form.get('confirm_new_password')
+
+        if new_password == confirm_new_password:
+            # Mettre à jour le mot de passe de l'utilisateur
+            user.password = generate_password_hash(new_password, method='sha256')
+
+            # Réinitialiser le champ de récupération de mot de passe
+            user.recovery_token = None
+            user.token_expiration = None
+
+            db.session.commit()
+
+            flash('Le mot de passe a été réinitialisé avec succès.', 'success')
+            return redirect(url_for('login'))
+        else:
+            error = 'Les mots de passe ne correspondent pas.'
+
+    return render_template('reset_password.html', error=error, token=token)
 
 @app.route("/logout")
 def logout():

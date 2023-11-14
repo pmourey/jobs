@@ -32,6 +32,30 @@ def check(regex: str, email: str) -> Match[str] | None:
 
 """ Back-end features """
 
+def send_password_recovery_email(app, reset_link: str, user: User, author: str, cv_resume: str) -> bool:
+    subject: str = f'Demande de réinitialisation de mot de passe (Suivi des candidatures)'
+    body = f'''Bonjour {user.username},<br>
+    <br>Vous êtes utilisateur de l'application Flask "Suivi de candidatures", et une demande de réinitialisation de mot de passe a été effectuée</br>
+    <br>Veuillez clicker sur le lien ci-dessous pour lancer le formulaire de réinitialisation.<br>
+    <br>{reset_link}<br>
+    <br>Si vous avez aimé l'application, n'hésitez pas à me le faire savoir ou à la partager à vos amis ou collègues.<br>
+    <br>En vous souhaitant une bonne journée.<br>
+    <br>
+    Cordialement,<br>
+    {author}.<br>
+    {cv_resume}.<br>'''
+    return send_email(subject=subject,
+                  body=body,
+                  sender_email=app.config['GMAIL_USER'],
+                  recipient_email=f'"{user.username}"<{user.email}>',
+                  bcc_recipients=[app.config['GMAIL_USER']],
+                  smtp_server=app.config['SMTP_SERVER'],
+                  smtp_port=app.config['SMTP_PORT'],
+                  username=app.config['GMAIL_USER'],
+                  password=app.config['GMAIL_APP_PWD'],
+                  author=app.config['GMAIL_FULLNAME'],
+                  )
+
 
 def send_fake_email(app, job: Job, author: str, cv_resume: str) -> bool:
     if job.name == 'Prise de contact':

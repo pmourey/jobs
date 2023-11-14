@@ -11,5 +11,6 @@
     </form>
     {% if error %}<p class="error"><strong>Error:</strong> {{ error }} {% endif %}
     <p>Don't have an account? <a href="{{ url_for('register') }}">Register here</a>.</p>
+    <p>Lost password?<a href="{{ url_for('request_reset_password') }}">Click here</a>.</p>
 </main>
 {% endblock main %}

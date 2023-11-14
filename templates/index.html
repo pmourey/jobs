@@ -10,7 +10,7 @@
             <tr>
                 <td> <a href="{{ url_for('show_all') }}">Suivi candidatures</a></td>
             </tr>
-            {% if user.admin %}
+            {% if user.is_admin %}
             <tr>
                 <td><a href="{{ url_for('show_sessions') }}">Sessions ouvertes</a></td>
             </tr>
@@ -19,7 +19,7 @@
             </tr>
             {% endif %}
             <tr>
-                <td><a href="{{ url_for('change_password') }}">Changement mot de passe</a></td>
+                <td><a href="{{ url_for('reset_password', token=token) }}">Changement mot de passe</a></td>
             </tr>
             <tr>
                 <td><a href="{{ url_for('logout') }}">Déconnexion</a></td>

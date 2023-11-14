@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime
+from enum import Enum
 from typing import Optional, Match
 
 from dateutil.relativedelta import relativedelta
@@ -14,24 +15,43 @@ from werkzeug.security import generate_password_hash
 
 db = SQLAlchemy()
 
-
+class Role(Enum):
+    ADMIN = 0
+    EDITOR = 1
+    READER = 2
 
 class User(db.Model):
-    __tablename__ = 'user'
+    __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(20), unique=True, nullable=False)
     password = db.Column(db.String(60), nullable=False)
-    admin = db.Column(db.Integer)
+    role = db.Column(db.Integer)
     creationDate = db.Column(db.DateTime, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    recovery_token = db.Column(db.String(128))
+    token_expiration = db.Column(db.DateTime)
 
     def __repr__(self):
-        admin_msg = 'admin' if self.admin else 'user'
-        return f'{self.username}:{self.password} ({admin_msg})'
+        return f'{self.username}:{self.password} ({Role(self.role)})'
 
-    def __init__(self, username: str, password: str, creation_date: DateTime):
+    def __init__(self, username: str, password: str, creation_date: DateTime, email: str):
         self.username = username
         self.password = generate_password_hash(password, method='sha256')
         self.creationDate = creation_date
+        self.email = email
+        self.role = Role.READER.value
+
+    @property
+    def is_admin(self):
+        return Role(self.role) == Role.ADMIN
+
+    @property
+    def is_editor(self):
+        return Role(self.role) == Role.EDITOR
+
+    @property
+    def is_reader(self):
+        return Role(self.role) == Role.READER
 
 class Session(db.Model):
     __tablename__ = 'sessions'
@@ -51,6 +71,7 @@ class Session(db.Model):
         self.start = start
         self.end = None
 
+
 class Job(db.Model):
     __tablename__ = 'job'
     id = db.Column('job_id', db.Integer, primary_key=True)
@@ -66,6 +87,7 @@ class Job(db.Model):
     relaunchDate = db.Column(db.DateTime)
     refusalDate = db.Column(db.DateTime)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
     # Relation avec la table Utilisateur
     # utilisateur = relationship('user', backref='job')
     # utilisateur = relationship('User')
@@ -73,7 +95,8 @@ class Job(db.Model):
     def __repr__(self):
         return f'{self.name}'
 
-    def __init__(self, name: str, url: str, zipCode: str, company: str, contact: str, date: DateTime, email: str, user_id: int):
+    def __init__(self, name: str, url: str, zipCode: str, company: str, contact: str, date: DateTime, email: str,
+                 user_id: int):
         self.name = name
         self.url = url
         self.zipCode = zipCode

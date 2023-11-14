@@ -11,8 +11,8 @@ class Config:
     SMTP_PORT = 465
     GMAIL_FULLNAME = 'Philippe Mourey'
     GMAIL_USER = 'philippe@mourey.com'
-    GMAIL_APP_PWD = 'xxxxxxxxxxx'
-    CV_RESUME = 'https://www.linkedin.com/in/pmourey/'
+    GMAIL_APP_PWD = 'vjkpggrtalpqohry'
+    CV_RESUME = 'https://www.linkedin.com/in/pmourey/<br>https://github.com/pmourey/jobs<br>https://pmourey.github.io/portfolio/'
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24
     # SCHEDULER_INTERVAL = 10

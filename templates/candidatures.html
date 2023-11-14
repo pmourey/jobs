@@ -19,7 +19,7 @@
     <table class="jobs">
         <thead>
         <tr>
-            {% if user.admin %}
+            {% if user.is_admin %}
             <th>Update</th>
             <th>Delete</th>
             {% endif %}
@@ -38,7 +38,7 @@
         {% for job in jobs %}
         <div id="job">
             <tr>
-                {% if user.admin %}
+                {% if user.is_admin %}
                 <td align="center">
                     <a href="{{ url_for('update', id=job.id) }}">{{job.id}}</a>
                 </td>
