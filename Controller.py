@@ -5,19 +5,12 @@ from datetime import datetime
 from typing import Match
 
 from dateutil.relativedelta import relativedelta
+from werkzeug.security import generate_password_hash
 
 from Model import Job, User, db, Session
 from tools.send_emails import send_email
 
 """ SQL Alchemy requests """
-
-
-def get_user_by_username_and_password(username, password) -> User:
-    # Hash le mot de passe avant de le comparer dans la requête
-    # hashed_password = # Utilisez une fonction de hachage (par exemple, hash_password(password))
-
-    # Effectue la requête pour récupérer un utilisateur par nom d'utilisateur et mot de passe
-    return User.query.filter_by(username=username, password=password).first()
 
 
 def get_user_by_id(user_id: int) -> User:

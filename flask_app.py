@@ -22,7 +22,9 @@ from validators import url
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 
-from Controller import check, get_user_by_username_and_password, get_user_by_id, get_session_by_login
+from werkzeug.security import generate_password_hash, check_password_hash
+
+from Controller import check, get_user_by_id, get_session_by_login
 from Model import Job, User, db, Session
 from tools.send_emails import send_email
 
@@ -71,7 +73,9 @@ def register():
             # flash('Incorrect login credentials.', 'error')
             error = 'Password does not match! Please try again.'
         else:
-            user = User(username=request.form['username'], password=request.form['password'], creation_date=datetime.now(app.config['PARIS']))
+            # Hash the password
+            hashed_password = generate_password_hash(request.form['password'], method='sha256')
+            user = User(username=request.form['username'], password=hashed_password, creation_date=datetime.now(app.config['PARIS']))
             # logging.warning("See this message in Flask Debug Toolbar!")
             db.session.add(user)
             db.session.commit()
@@ -85,8 +89,8 @@ def login():
     # Logique de connexion ici
     error = None
     if request.method == 'POST':
-        user = get_user_by_username_and_password(username=request.form['username'], password=request.form['password'])
-        if user is not None:
+        user = User.query.filter_by(username=request.form['username']).first()
+        if user and check_password_hash(user.password, password=request.form['password']):
             session['id'] = user.id
             sess = Session(login=user.username, start=datetime.now(app.config['PARIS']))
             db.session.add(sess)
