@@ -1,4 +1,8 @@
 - [x] Re-factorisation du code pour séparer les couches (Model/Vue/Contrôleur)
 - [x] Création de l'enregistrement utilisateur et authentification (rôle par défaut: utilisateur)
+  - [x] Gestion du hash du mot de passe (mdp hashé en bdd)
+  - [x] Modification du mot de passe
+  - [ ] Récupération de mot de passe oublié
+  - [ ] Re-factoriser un système d'accès aux routes pour un user donné
 - [x] Définition des rôles (administrateur et utilisateur) pour les accès CRUD (utilisateur à seulement Read)
 - [x] Création d'une table d'historisation des connections utilisateur
