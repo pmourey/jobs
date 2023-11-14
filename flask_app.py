@@ -73,14 +73,17 @@ def register():
             # flash('Incorrect login credentials.', 'error')
             error = 'Password does not match! Please try again.'
         else:
-            # Hash the password
-            hashed_password = generate_password_hash(request.form['password'], method='sha256')
-            user = User(username=request.form['username'], password=hashed_password, creation_date=datetime.now(app.config['PARIS']))
-            # logging.warning("See this message in Flask Debug Toolbar!")
-            db.session.add(user)
-            db.session.commit()
-            flash('Login was successfully created')
-            return redirect(url_for('show_all'))
+            username: str = request.form['username']
+            existing_user: User = User.query.filter_by(username=username).first()
+            if existing_user:
+                error = f'user {existing_user.username} already exists! Please choose another name.'
+            else:
+                user = User(username=username, password=request.form['password'], creation_date=datetime.now(app.config['PARIS']))
+                # logging.warning("See this message in Flask Debug Toolbar!")
+                db.session.add(user)
+                db.session.commit()
+                flash('Login was successfully created')
+                return redirect(url_for('show_all'))
     return render_template('register.html', error=error)
 
 
@@ -90,6 +93,7 @@ def login():
     error = None
     if request.method == 'POST':
         user = User.query.filter_by(username=request.form['username']).first()
+        # app.logger.debug(f'user = {user} - clear pwd = {request.form["password"]}')
         if user and check_password_hash(user.password, password=request.form['password']):
             session['id'] = user.id
             sess = Session(login=user.username, start=datetime.now(app.config['PARIS']))
@@ -100,6 +104,28 @@ def login():
             error = 'Incorrect login credentials. Please try again.'
             return render_template('login.html', error=error)
     return render_template('login.html', error=error)
+
+@app.route("/change_password", methods=['GET', 'POST'])
+def change_password():
+    # Logique de connexion ici
+    if 'id' in session:
+        error = None
+        if request.method == 'POST':
+            user = get_user_by_id(session['id'])
+            new_password: str = request.form["new_password"]
+            confirm_new_password: str = request.form["confirm_new_password"]
+            app.logger.debug(f'user (change pwd) = {user.username} - new pwd = {new_password} - confirm_new_pwd = {confirm_new_password}')
+            if new_password == confirm_new_password:
+                user.password = generate_password_hash(new_password, method='sha256')
+                db.session.add(user)
+                db.session.commit()
+                flash('Password was successfully changed!')
+                return redirect(url_for('welcome'))
+            else:
+                error = 'Passwords does not match! Please try again.'
+        return render_template('change_password.html', error=error)
+    else:
+        return redirect(url_for('login.html'))
 
 @app.route("/logout")
 def logout():

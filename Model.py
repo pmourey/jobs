@@ -10,6 +10,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from validators import url
+from werkzeug.security import generate_password_hash
 
 db = SQLAlchemy()
 
@@ -29,7 +30,7 @@ class User(db.Model):
 
     def __init__(self, username: str, password: str, creation_date: DateTime):
         self.username = username
-        self.password = password
+        self.password = generate_password_hash(password, method='sha256')
         self.creationDate = creation_date
 
 class Session(db.Model):
