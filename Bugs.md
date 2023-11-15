@@ -1,0 +1,3 @@
+- [ ] Envoi impossible à partir d'un domaine différent
+La réponse était :
+550 5.7.26 This mail has been blocked because the sender is unauthenticated. Gmail requires all senders to authenticate with either SPF or DKIM. Authentication results: DKIM = did not pass SPF [mourey.com] with ip: [209.85.220.41] = did not pass To mitigate this issue, please visit Gmail's authentication guide for instructions on setting up authentication: https://support.google.com/mail/answer/81126#authentication j10-20020a54480a000000b003b3537730e8sor3988021oij.7 - gsmtp
