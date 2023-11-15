@@ -2,7 +2,8 @@
 - [x] Création de l'enregistrement utilisateur et authentification (rôle par défaut: lecteur)
   - [x] Gestion du hash du mot de passe (mdp hashé en bdd)
   - [x] Modification du mot de passe
-  - [x] Réinitialisation de mot de passe oublié (envoi par mail)
+  - [ ] Réinitialisation de mot de passe oublié (envoi par mail):
+    - Bug en cours d'analyse: `This mail has been blocked because the sender is unauthenticated. Gmail requires all senders to authenticate with either SPF or DKIM.`
   - [ ] Re-factoriser un système d'accès aux routes pour un user donné
 - [ ] Gestion des rôles (administrateur/éditeur/lecteur) pour les accès CRUD
   - [x] Implémentation du rôle Admin et filtrage des vues
