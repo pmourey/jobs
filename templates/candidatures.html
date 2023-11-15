@@ -11,7 +11,7 @@
     }
 </script>
 <main>
-    {% if user.admin %}
+    {% if user.is_admin %}
     {% include './partials/_form.html' %}
     {% endif %}
     {% include './partials/_menu.html' %}

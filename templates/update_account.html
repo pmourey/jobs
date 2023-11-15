@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block main %}
+
+<main>
+    <form action="{{ url_for('update_account', id=user.id) }}" , method="POST" , onsubmit="return confirmSubmit();">
+        <table class="update-form">
+            <tr>
+                <td><label for="role">Sélectionnez un nouveau rôle pour l'utilisateur {{ user.username }}:</label></td>
+                <td>
+                    <select id="role" name="role">
+                        <option value="Administrateur" {% if user.is_admin %} selected {% endif %} >Administrateur</option>
+                        <option value="Editeur"  {% if user.is_editor %} selected {% endif %}>Editeur</option>
+                        <option value="Lecteur" {% if user.is_reader %} selected {% endif %}>Lecteur</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td>&nbsp;</td>
+                <td><input type="submit" value="Update"></td>
+            </tr>
+        </table>
+    </form>
+    <script>
+        function confirmSubmit() {
+            var result = confirm("Are you sure you want to submit the form?");
+            return result;
+        }
+    </script>
+</main>
+{% endblock main %}

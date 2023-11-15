@@ -71,7 +71,7 @@ def welcome():
         token = s.dumps({'user_id': user.id})
         # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
         user.recovery_token = generate_password_hash(token, method='sha256')
-        user.token_expiration = datetime.utcnow() + timedelta(minutes=10)
+        user.token_expiration = datetime.now(app.config['PARIS']) + timedelta(hours=24)
         db.session.commit()
     return render_template('index.html', session=session, user=user, token=token)
 
@@ -153,7 +153,7 @@ def request_reset_password():
 
             # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
             user.recovery_token = generate_password_hash(token, method='sha256')
-            user.token_expiration = datetime.utcnow() + timedelta(minutes=10)
+            user.token_expiration = datetime.now(app.config['PARIS']) + timedelta(minutes=10)
 
             db.session.commit()
 
@@ -223,11 +223,11 @@ def show_accounts():
     # app.logger.debug("PROUT")
     if 'id' in session:
         user = get_user_by_id(session['id'])
-        if user.admin:
+        if user.is_admin:
             # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
             # Reverse order query
             accounts = User.query.order_by(desc(User.id)).all()
-            return render_template('accounts.html', accounts=accounts)
+            return render_template('accounts.html', accounts=accounts, user=user)
     else:
         return redirect(url_for('login'))
 
@@ -236,7 +236,7 @@ def show_sessions():
     # app.logger.debug("PROUT")
     if 'id' in session:
         user = get_user_by_id(session['id'])
-        if user.admin:
+        if user.is_admin:
             # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
             # Reverse order query
             sessions = Session.query.filter(Session.end.is_(None)).order_by(desc(Session.id)).all()
@@ -290,6 +290,29 @@ def delete(id):
         flash(f'Job offer \"{job.name}\" from  \"{job.contact}\" was disabled!')
         return redirect(url_for('show_all'))
 
+@app.route('/delete_account/<int:id>', methods=['GET', 'POST'])
+def delete_account(id):
+    app.logger.debug(f'Delete user #{id}')
+    if request.method == 'GET':
+        user = User.query.get_or_404(id)
+        app.logger.debug(f'User debug: {user}')
+        db.session.delete(user)
+        db.session.commit()
+        flash(f'User \"{user.username}\" has been deleted!')
+        return redirect(url_for('show_accounts'))
+
+@app.route('/update_account/<int:id>', methods=['GET', 'POST'])
+def update_account(id):
+    user: User = User.query.get_or_404(id)
+    # app.logger.debug(f'User debug: {user}')
+    if request.method == 'POST':
+        roles = ['Administrateur', 'Editeur', 'Lecteur']
+        user.role = roles.index(request.form.get('role'))
+        db.session.commit()
+        flash('Record was successfully updated')
+        return redirect(url_for('show_accounts'))
+    else:
+        return render_template('update_account.html', user=user)
 
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
 def update(id):
