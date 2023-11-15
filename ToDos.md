@@ -6,5 +6,6 @@
   - [ ] Re-factoriser un système d'accès aux routes pour un user donné
 - [ ] Gestion des rôles (administrateur/éditeur/lecteur) pour les accès CRUD
   - [x] Implémentation du rôle Admin et filtrage des vues
-  - [ ] Attribution des rôles pour l'administrateur du site (rajout des droits)
+  - [x] Attribution des rôles pour l'administrateur du site (rajout des droits)
+  - [ ] Gestion du mode éditeur (et owner de l'offre)
 - [x] Création d'une table d'historisation des connections utilisateur
