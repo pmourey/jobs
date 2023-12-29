@@ -27,3 +27,7 @@ Pour bien démarrer:
 - Modification de la périodicité d'envoi des mails:
   - *app.config['SCHEDULER_INTERVAL'] = 3600 * 24* (tous les jours)
 - Lancement de l'application Flask (lire le manuel correspondant)
+
+### Active bugs/Todos
+- [ ] Création de compte possible même si e-mail inexistante
+  - [ ] Ajouter une système de validation de création de compte par mail (comme déjà effectué sur celui de la récupération de mdp)
