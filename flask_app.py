@@ -87,8 +87,11 @@ def register():
             username: str = request.form['username']
             email: str = request.form['email']
             existing_user: User = User.query.filter_by(username=username).first()
+            existing_email: User = User.query.filter_by(email=email).first()
             if existing_user:
                 error = f'user {existing_user.username} already exists! Please choose another name.'
+            elif existing_email:
+                error = f'email {existing_email.email} already exists! Please choose another email.'
             elif not check(app.config['REGEX'], email):
                 error = f'email {email} is invalid! Please check syntax.'
             else:
