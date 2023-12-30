@@ -7,25 +7,31 @@ This script provides CRUD features inside a Flask application for job's research
 from __future__ import annotations
 import atexit
 import re
+from _socket import gethostbyname
+from socket import socket
 from typing import Match, Optional
 from logging import basicConfig, DEBUG
 import locale
 import os
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-from itsdangerous import Serializer
+from itsdangerous import Serializer, URLSafeSerializer
 from pytz import timezone
 from flask import Flask, request, flash, url_for, redirect, render_template, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy import DateTime, desc
+from user_agents import parse
+from user_agents.parsers import UserAgent
 from validators import url
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 
+
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email
+from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email, \
+    send_confirmation_email
 from Model import Job, User, db, Session
 from tools.send_emails import send_email
 
@@ -54,7 +60,18 @@ app.secret_key = b'_5#y2L"F4Q8z\n\xec]/'
 # app.config['SECRET_KEY'] = 'fifa2022'
 # app.config['SESSION_TYPE'] = 'filesystem'
 
+@app.route('/get_ip')
+def get_ip():
+    # Obtenir l'adresse IP du client
+    client_ip = request.remote_addr
 
+    # Obtenir le nom d'hôte du serveur
+    server_hostname = request.host.split(':')[0]
+
+    # Résoudre le nom d'hôte en adresse IP
+    server_ip = gethostbyname(server_hostname)
+
+    return f"Adresse IP du client : {client_ip}\nAdresse IP du serveur : {server_ip}"
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -73,6 +90,12 @@ def welcome():
         user.recovery_token = generate_password_hash(token, method='sha256')
         user.token_expiration = datetime.now(app.config['PARIS']) + timedelta(hours=24)
         db.session.commit()
+    else:
+        client_ip = request.remote_addr
+        user_agent_string = request.headers.get('User-Agent')
+        user_agent: UserAgent = parse(user_agent_string)
+        browser_info = f"Family = {user_agent.browser.family}, Version = {user_agent.browser.version_string}"
+        app.logger.debug(f"Client IP: {client_ip}, Browser: ({browser_info})")
     return render_template('index.html', session=session, user=user, token=token)
 
 @app.route("/register", methods=['GET', 'POST'])
@@ -99,8 +122,24 @@ def register():
                 # logging.warning("See this message in Flask Debug Toolbar!")
                 db.session.add(user)
                 db.session.commit()
-                flash('Login was successfully created')
-                return redirect(url_for('show_all'))
+                s = Serializer(app.config['SECRET_KEY'])
+                # s = URLSafeSerializer('SECRET_KEY')
+                token = s.dumps({'user_id': user.id})
+
+                # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
+                user.recovery_token = generate_password_hash(token, method='sha256')
+                user.token_expiration = datetime.now(app.config['PARIS']) + timedelta(minutes=10)
+
+                db.session.commit()
+
+                # Envoyer un e-mail de confirmation d'inscription
+
+                flash('Un e-mail de demande de confirmation d\'inscription a été envoyé!', 'success')
+                confirm_link = url_for('validate_email', token=token, _external=True)
+                send_confirmation_email(app=app, confirm_link=confirm_link, user=user,
+                                             author=app.config['GMAIL_FULLNAME'], cv_resume=app.config['CV_RESUME'])
+                return redirect(url_for('register'))
+
     return render_template('register.html', error=error)
 
 
@@ -112,11 +151,19 @@ def login():
         user = User.query.filter_by(username=request.form['username']).first()
         # app.logger.debug(f'user = {user} - clear pwd = {request.form["password"]}')
         if user and check_password_hash(user.password, password=request.form['password']):
-            session['id'] = user.id
-            sess = Session(login=user.username, start=datetime.now(app.config['PARIS']))
-            db.session.add(sess)
-            db.session.commit()
-            return redirect(url_for('welcome'))
+            if user.validated:
+                session['id'] = user.id
+                client_ip = request.remote_addr
+                user_agent_string = request.headers.get('User-Agent')
+                user_agent: UserAgent = parse(user_agent_string)
+                sess = Session(login=user.username, start=datetime.now(app.config['PARIS']), client_ip=client_ip,
+                               browser_family=user_agent.browser.family, browser_version=user_agent.browser.version_string)
+                db.session.add(sess)
+                db.session.commit()
+                return redirect(url_for('welcome'))
+            else:
+                error = 'Your account is not yet validated! Please check your email for the confirmation link.'
+                return render_template('login.html', error=error)
         else:
             error = 'Incorrect login credentials. Please try again.'
             return render_template('login.html', error=error)
@@ -172,6 +219,44 @@ def request_reset_password():
 
     return render_template('request_reset_password.html')
 
+@app.route('/validate_email/<token>', methods=['GET', 'POST'])
+def validate_email(token):
+    error: str = None
+    # Vérifier si le jeton est valide
+    s = Serializer(app.config['SECRET_KEY'])
+    try:
+        data = s.loads(token)
+        # user = User.query.get_or_404(data['user_id'])
+        # d = datetime.now(app.config['PARIS'])
+        # difference = relativedelta(d, user.token_expiration)
+        # app.logger.debug(f'confirm registration user {user.username} - data = {data} \n - token = {token} - timestamp: {d} - ' +
+        #                  f'user.token_expiration < d: {user.token_expiration < d}',
+        #                  f'elapsed minutes: {difference.minutes}')
+        # if difference.minutes >= 10:
+        #     raise Exception
+    except:
+        flash('Le lien de confirmation d\'inscription est invalide ou a expiré.')
+        user = User.query.get_or_404(data.get('user_id'))
+        if user:
+            db.session.delete(user)
+            db.session.commit()
+        return redirect(url_for('login'))
+
+    user = User.query.get(data['user_id'])
+
+    # Mettre à jour le champ de confirmation d'inscription de l'utilisateur
+    user.validated = True
+
+    # Réinitialiser le champ de récupération de mot de passe
+    user.recovery_token = None
+    user.token_expiration = None
+
+    db.session.commit()
+
+    flash('Votre compte a été confirmé avec succès.', 'success')
+    return redirect(url_for('login'))
+
+
 @app.route('/reset_password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
     error: str = None
@@ -179,12 +264,27 @@ def reset_password(token):
     s = Serializer(app.config['SECRET_KEY'])
     try:
         data = s.loads(token)
+        # user = User.query.get(data['user_id'])
+        # d = datetime.now(app.config['PARIS'])
+        # # Define the format of the input string
+        # date_format = "%Y-%m-%d %H:%M:%S.%f"
+        # # Use strptime to parse the string into a datetime object
+        # datetime_object = datetime.strptime(user.token_expiration, date_format)
+        # app.logger.debug(f'user.token_expiration: {user.token_expiration} -> {datetime_object}')
+        # # difference = relativedelta(d, datetime_object)
+        # # app.logger.debug(f'reset password user {user.username} - data = {data} \n - token = {token} - user.token_expiration: {user.token_expiration} -',
+        # #                  f'datetime: {d}',
+        # #                  f'user.recovery_token: {user.recovery_token}',
+        # #                  f'elapsed minutes: {difference.minutes}')
+        # # if difference.minutes >= 10:
+        # #     raise Exception
     except:
         flash('Le lien de réinitialisation de mot de passe est invalide ou a expiré.')
         return redirect(url_for('login'))
 
     user = User.query.get(data['user_id'])
     app.logger.debug(f'reset password user {user.username} - data = {data} \n - token = {token}')
+
 
     if request.method == 'POST':
 

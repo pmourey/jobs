@@ -2,8 +2,9 @@
 - [x] Création de l'enregistrement utilisateur et authentification (rôle par défaut: lecteur)
   - [x] Gestion du hash du mot de passe (mdp hashé en bdd)
   - [x] Modification du mot de passe
-  - [ ] Réinitialisation de mot de passe oublié (envoi par mail):
-    - Bug en cours d'analyse: `This mail has been blocked because the sender is unauthenticated. Gmail requires all senders to authenticate with either SPF or DKIM.`
+  - [x] Réinitialisation de mot de passe oublié (envoi par mail)
+  - [x] Confirmation de création de compte (envoi par mail)
+  - [x] Activation protection SPF (contre SPAM) sur champ TXT DNS Gandi (pour autorisation envoi mail vers domaines externes)
   - [ ] Re-factoriser un système d'accès aux routes pour un user donné
 - [ ] Gestion des rôles (administrateur/éditeur/lecteur) pour les accès CRUD
   - [x] Implémentation du rôle Admin et filtrage des vues

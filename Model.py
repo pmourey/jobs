@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Optional, Match
@@ -30,6 +31,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     recovery_token = db.Column(db.String(128))
     token_expiration = db.Column(db.DateTime)
+    validated = db.Column(db.Boolean, default=False)
 
     def __repr__(self):
         return f'{self.username}:{self.password} ({Role(self.role)})'
@@ -53,12 +55,20 @@ class User(db.Model):
     def is_reader(self):
         return Role(self.role) == Role.READER
 
+@dataclass
+class BrowserInfo:
+    family: str
+    version: str
+
 class Session(db.Model):
     __tablename__ = 'sessions'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     login = db.Column(db.String(20), unique=False, nullable=False)
     start = db.Column(db.DateTime, nullable=False)
     end = db.Column(db.DateTime, nullable=True)
+    client_ip = db.Column(db.String(15), nullable=False)
+    browser_family = db.Column(db.String(20), nullable=False)
+    browser_version = db.Column(db.String(10), nullable=False)
 
     def __repr__(self):
         if not self.end:
@@ -66,10 +76,13 @@ class Session(db.Model):
         else:
             return f'{self.login} déconnecté à: {self.end}'
 
-    def __init__(self, login: str, start: DateTime):
+    def __init__(self, login: str, start: DateTime, client_ip: str, browser_family: str, browser_version: str):
         self.login = login
         self.start = start
         self.end = None
+        self.client_ip = client_ip
+        self.browser_family = browser_family
+        self.browser_version = browser_version
 
 
 class Job(db.Model):
