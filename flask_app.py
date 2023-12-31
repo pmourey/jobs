@@ -8,6 +8,7 @@ from __future__ import annotations
 import atexit
 import re
 from _socket import gethostbyname
+from functools import wraps
 from socket import socket
 from typing import Match, Optional
 from logging import basicConfig, DEBUG
@@ -26,7 +27,6 @@ from user_agents.parsers import UserAgent
 from validators import url
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
-
 
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -48,7 +48,6 @@ db.init_app(app)
 
 toolbar = DebugToolbarExtension(app)
 
-
 locale.setlocale(locale.LC_TIME, 'fr_FR')
 basicConfig(level=DEBUG)
 
@@ -59,6 +58,30 @@ login_manager.login_view = 'login'
 app.secret_key = b'_5#y2L"F4Q8z\n\xec]/'
 # app.config['SECRET_KEY'] = 'fifa2022'
 # app.config['SESSION_TYPE'] = 'filesystem'
+
+""" decorators """
+
+
+def is_connected(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if 'id' not in session:
+            error = 'Restricted access! Please authenticate.'
+            return render_template('login.html', error=error)
+            # return redirect(url_for('login.html'))  # Remplacez 'login.html' par l'URL de votre page de connexion
+        return func(*args, **kwargs)
+
+    return wrapper
+
+def is_admin(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        user = get_user_by_id(session['id'])
+        if not user.is_admin:
+            error = 'Insufficient privileges for this operation! Please contact administrator...'
+            return render_template('login.html', error=error)
+        return func(*args, **kwargs)
+    return wrapper
 
 @app.route('/get_ip')
 def get_ip():
@@ -73,9 +96,11 @@ def get_ip():
 
     return f"Adresse IP du client : {client_ip}\nAdresse IP du serveur : {server_ip}"
 
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
 
 @app.route('/')
 def welcome():
@@ -98,6 +123,7 @@ def welcome():
         app.logger.debug(f"Client IP: {client_ip}, Browser: ({browser_info})")
     return render_template('index.html', session=session, user=user, token=token)
 
+
 @app.route("/register", methods=['GET', 'POST'])
 def register():
     # Logique d'enregistrement ici
@@ -118,7 +144,8 @@ def register():
             elif not check(app.config['REGEX'], email):
                 error = f'email {email} is invalid! Please check syntax.'
             else:
-                user = User(username=username, password=request.form['password'], creation_date=datetime.now(app.config['PARIS']), email=email)
+                user = User(username=username, password=request.form['password'],
+                            creation_date=datetime.now(app.config['PARIS']), email=email)
                 # logging.warning("See this message in Flask Debug Toolbar!")
                 db.session.add(user)
                 db.session.commit()
@@ -137,7 +164,7 @@ def register():
                 flash('Un e-mail de demande de confirmation d\'inscription a été envoyé!', 'success')
                 confirm_link = url_for('validate_email', token=token, _external=True)
                 send_confirmation_email(app=app, confirm_link=confirm_link, user=user,
-                                             author=app.config['GMAIL_FULLNAME'], cv_resume=app.config['CV_RESUME'])
+                                        author=app.config['GMAIL_FULLNAME'], cv_resume=app.config['CV_RESUME'])
                 return redirect(url_for('register'))
 
     return render_template('register.html', error=error)
@@ -157,7 +184,8 @@ def login():
                 user_agent_string = request.headers.get('User-Agent')
                 user_agent: UserAgent = parse(user_agent_string)
                 sess = Session(login=user.username, start=datetime.now(app.config['PARIS']), client_ip=client_ip,
-                               browser_family=user_agent.browser.family, browser_version=user_agent.browser.version_string)
+                               browser_family=user_agent.browser.family,
+                               browser_version=user_agent.browser.version_string)
                 db.session.add(sess)
                 db.session.commit()
                 return redirect(url_for('welcome'))
@@ -169,27 +197,27 @@ def login():
             return render_template('login.html', error=error)
     return render_template('login.html', error=error)
 
+
 @app.route("/change_password", methods=['GET', 'POST'])
+@is_connected
 def change_password():
-    # Logique de connexion ici
-    if 'id' in session:
-        error = None
-        if request.method == 'POST':
-            user = get_user_by_id(session['id'])
-            new_password: str = request.form["new_password"]
-            confirm_new_password: str = request.form["confirm_new_password"]
-            app.logger.debug(f'user (change pwd) = {user.username} - new pwd = {new_password} - confirm_new_pwd = {confirm_new_password}')
-            if new_password == confirm_new_password:
-                user.password = generate_password_hash(new_password, method='sha256')
-                db.session.add(user)
-                db.session.commit()
-                flash('Password was successfully changed!')
-                return redirect(url_for('welcome'))
-            else:
-                error = 'Passwords does not match! Please try again.'
-        return render_template('reset_password.html', error=error)
-    else:
-        return redirect(url_for('login.html'))
+    error = None
+    if request.method == 'POST':
+        user = get_user_by_id(session['id'])
+        new_password: str = request.form["new_password"]
+        confirm_new_password: str = request.form["confirm_new_password"]
+        app.logger.debug(
+            f'user (change pwd) = {user.username} - new pwd = {new_password} - confirm_new_pwd = {confirm_new_password}')
+        if new_password == confirm_new_password:
+            user.password = generate_password_hash(new_password, method='sha256')
+            db.session.add(user)
+            db.session.commit()
+            flash('Password was successfully changed!')
+            return redirect(url_for('welcome'))
+        else:
+            error = 'Passwords does not match! Please try again.'
+    return render_template('reset_password.html', error=error)
+
 
 @app.route('/request_reset_password', methods=['GET', 'POST'])
 def request_reset_password():
@@ -212,12 +240,14 @@ def request_reset_password():
 
             flash('Un e-mail de récupération de mot de passe a été envoyé.', 'success')
             reset_link = url_for('reset_password', token=token, _external=True)
-            send_password_recovery_email(app=app, reset_link=reset_link, user=user, author=app.config['GMAIL_FULLNAME'], cv_resume=app.config['CV_RESUME'])
+            send_password_recovery_email(app=app, reset_link=reset_link, user=user, author=app.config['GMAIL_FULLNAME'],
+                                         cv_resume=app.config['CV_RESUME'])
             return redirect(url_for('login'))
 
         flash('Aucun utilisateur trouvé avec cet e-mail.', 'error')
 
     return render_template('request_reset_password.html')
+
 
 @app.route('/validate_email/<token>', methods=['GET', 'POST'])
 def validate_email(token):
@@ -285,7 +315,6 @@ def reset_password(token):
     user = User.query.get(data['user_id'])
     app.logger.debug(f'reset password user {user.username} - data = {data} \n - token = {token}')
 
-
     if request.method == 'POST':
 
         new_password = request.form.get('new_password')
@@ -308,7 +337,9 @@ def reset_password(token):
 
     return render_template('reset_password.html', error=error, token=token)
 
+
 @app.route("/logout")
+@is_connected
 def logout():
     user = get_user_by_id(session['id'])
     sess = get_session_by_login(username=user.username)
@@ -321,46 +352,41 @@ def logout():
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
 
+
 @app.route('/accounts')
+@is_connected
+@is_admin
 def show_accounts():
-    # app.logger.debug("PROUT")
-    if 'id' in session:
-        user = get_user_by_id(session['id'])
-        if user.is_admin:
-            # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
-            # Reverse order query
-            accounts = User.query.order_by(desc(User.id)).all()
-            return render_template('accounts.html', accounts=accounts, user=user)
-    else:
-        return redirect(url_for('login'))
+    user = get_user_by_id(session['id'])
+    # Reverse order query
+    accounts = User.query.order_by(desc(User.id)).all()
+    return render_template('accounts.html', accounts=accounts, user=user)
+
 
 @app.route('/sessions')
+@is_connected
+@is_admin
 def show_sessions():
-    # app.logger.debug("PROUT")
-    if 'id' in session:
-        user = get_user_by_id(session['id'])
-        if user.is_admin:
-            # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
-            # Reverse order query
-            sessions = Session.query.filter(Session.end.is_(None)).order_by(desc(Session.id)).all()
-            return render_template('sessions.html', sessions=sessions)
-    else:
-        return redirect(url_for('login'))
+    # Reverse order query
+    sessions = Session.query.filter(Session.end.is_(None)).order_by(desc(Session.id)).all()
+    return render_template('sessions.html', sessions=sessions)
+
 
 @app.route('/suivi')
+@is_connected
 def show_all():
-    if 'id' in session:
-        user_id = session['id']
-        # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
-        app.logger.debug('This is a debug message.')
-        # Reverse order query
-        jobs = Job.query.filter(Job.active).order_by(desc(Job.applicationDate)).all()
-        user = get_user_by_id(user_id)
-        return render_template('candidatures.html', jobs=jobs, user=user)
-    else:
-        return redirect(url_for('login'))
+    user_id = session['id']
+    # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
+    app.logger.debug('This is a debug message.')
+    # Reverse order query
+    jobs = Job.query.filter(Job.active).order_by(desc(Job.applicationDate)).all()
+    user = get_user_by_id(user_id)
+    return render_template('candidatures.html', jobs=jobs, user=user)
+
 
 @app.route('/new/', methods=['GET', 'POST'])
+@is_connected
+@is_admin
 def new():
     if request.method == 'POST':
         email: str = request.form['email']
@@ -371,7 +397,8 @@ def new():
         else:
             job = Job(name=request.form['name'], url=request.form['url'],
                       zipCode=request.form['zipCode'], company=request.form['company'],
-                      contact=request.form['contact'], date=datetime.now(app.config['PARIS']), email=email, user_id=session['id'])
+                      contact=request.form['contact'], date=datetime.now(app.config['PARIS']), email=email,
+                      user_id=session['id'])
             # logging.warning("See this message in Flask Debug Toolbar!")
             job.is_capture = job.capture_exists()
             db.session.add(job)
@@ -382,6 +409,8 @@ def new():
 
 
 @app.route('/delete/<int:id>', methods=['GET', 'POST'])
+@is_connected
+@is_admin
 def delete(id):
     app.logger.debug(f'Delete job #{id}')
     if request.method == 'GET':
@@ -393,7 +422,10 @@ def delete(id):
         flash(f'Job offer \"{job.name}\" from  \"{job.contact}\" was disabled!')
         return redirect(url_for('show_all'))
 
+
 @app.route('/delete_account/<int:id>', methods=['GET', 'POST'])
+@is_connected
+@is_admin
 def delete_account(id):
     app.logger.debug(f'Delete user #{id}')
     if request.method == 'GET':
@@ -404,7 +436,10 @@ def delete_account(id):
         flash(f'User \"{user.username}\" has been deleted!')
         return redirect(url_for('show_accounts'))
 
+
 @app.route('/update_account/<int:id>', methods=['GET', 'POST'])
+@is_connected
+@is_admin
 def update_account(id):
     user: User = User.query.get_or_404(id)
     # app.logger.debug(f'User debug: {user}')
@@ -417,7 +452,10 @@ def update_account(id):
     else:
         return render_template('update_account.html', user=user)
 
+
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
+@is_connected
+@is_admin
 def update(id):
     job: Job = Job.query.get_or_404(id)
     if request.method == 'POST':
@@ -455,8 +493,6 @@ def create_captures_dir():
             print(f"Directory {directory_path} created successfully.")
         except Exception as e:
             print(f"Error creating directory: {e}")
-
-
 
 # if app.config['SCHEDULER']:
 #     app.logger.debug(app.config['SCHEDULER'])
