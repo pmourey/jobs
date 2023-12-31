@@ -1,6 +1,8 @@
 <!-- jobs/templates/candidatures.html -->
 
 {% extends 'base.html' %}
+{% include './partials/_menu.html' %}
+
 {% block main %}
 <script>
     function confirmDelete(jobId) {
@@ -14,7 +16,6 @@
     {% if user.is_admin %}
     {% include './partials/_form.html' %}
     {% endif %}
-    {% include './partials/_menu.html' %}
     {% if jobs %}
     <table class="jobs">
         <thead>

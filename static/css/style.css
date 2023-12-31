@@ -1,16 +1,8 @@
 body {
     background-color: #F7FAFC;
-    display: flex;
     justify-content: center;
     margin-top: 10%;
     font-family: Arial, Helvetica, sans-serif;
-}
-
-main {
-    display: flex;
-    flex-direction: column;
-    background-color: white;
-    height: 100%;
 }
 
 form {
@@ -44,20 +36,18 @@ input[type="submit"] {
     font-size: 16px;
 }
 
+/* not used
 #jobs {
     display: flex;
     flex-direction: column;
     width: 100%;
 }
+*/
 
-#job {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: baseline;
-    padding-left: 20px;
-    padding-right: 20px;
-
+.jobs {
+    width: 100%;
+    border-collapse: collapse;
+    grid-template-columns: repeat(10, 1fr); /* Trois colonnes égales */
 }
 
 a {
@@ -80,8 +70,17 @@ button {
   border-collapse: collapse;
 }
 
+ /* This is important for block-level elements */
+/*
+table.menu {
+    margin-left: auto;
+    margin-right: auto;
+    display: block;
+ } */
+
 table.menu tr td {
   display: inline;
+  text-align: center;
   color: darkblue;
   background-color: lightgray;
   padding: 7px;
@@ -91,7 +90,7 @@ table.menu tr td {
   border-collapse: collapse;
 }
 
-table.sessions tr th {
+table.sessions tr th td {
   color: darkblue;
   background-color: lightgray;
   padding: 7px;
@@ -99,7 +98,7 @@ table.sessions tr th {
   border-collapse: collapse;
 }
 
-table.accounts tr td {
+table.accounts tr th td {
   color: darkblue;
   padding: 7px;
   margin-bottom: 20px;
@@ -107,19 +106,21 @@ table.accounts tr td {
   border-collapse: collapse;
 }
 
-table.sessions tr td {
-  color: darkblue;
-  padding: 7px;
-  margin-bottom: 20px;
-  border: 1px solid black;
-  border-collapse: collapse;
-}
+
 table.sessions tr:nth-child(odd) {
   background-color: lightblue;
 }
 table.sessions tr:nth-child(even) {
   background-color: orange;
 }
+
+table.accounts tr:nth-child(odd) {
+  background-color: lightgreen;
+}
+table.accounts tr:nth-child(even) {
+  background-color: yellow;
+}
+
 
 table.welcome tr td {
   color: darkblue;
@@ -131,19 +132,6 @@ table.welcome tr td {
   border-collapse: collapse;
 }
 
-table.jobs tr th {
-  color: darkblue;
-  background-color: lightgray;
-  padding: 7px;
-  border: 1px solid black;
-  border-collapse: collapse;
-}
-
-table.jobs tr td {
-  padding: 7px;
-  border: 1px solid black;
-  border-collapse: collapse;
-}
 
 table.add-form tr td {
   background-color: lightgray;
@@ -153,10 +141,29 @@ table.add-form tr td {
 }
 
 
-table.update-form tr td {
+table.update-form tr td select {
   color: darkblue;
   background-color: lightgray;
   padding: 7px;
   border: none;
   border-collapse: collapse;
 }
+
+
+ /* Centre le contenu horizontalement dans le conteneur de grille */
+main {
+    display: grid;
+    justify-items: center;
+}
+
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+}
+

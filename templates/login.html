@@ -4,11 +4,13 @@
 {% block main %}
 <main>
     <h2>Login</h2>
-    <form method="POST" action="{{ url_for('login') }}">
-        <input type="text" placeholder="Username" name="username" value="{{request.form.username }}">
-        <input type="password" placeholder="Password" name="password" value="{{request.form.password }}">
-        <input type="submit" value="Login">
-    </form>
+    <div>
+        <form method="POST" action="{{ url_for('login') }}">
+            <input type="text" placeholder="Username" name="username" value="{{request.form.username }}">
+            <input type="password" placeholder="Password" name="password" value="{{request.form.password }}">
+            <input type="submit" value="Login">
+        </form>
+    </div>
     {% if error %}<p class="error"><strong>Error:</strong> {{ error }} {% endif %}
     <p>Don't have an account? <a href="{{ url_for('register') }}">Register here</a>.</p>
     <p>Lost password?<a href="{{ url_for('request_reset_password') }}">Click here</a>.</p>
