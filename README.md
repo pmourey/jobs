@@ -1,4 +1,4 @@
-#### Site en ligne: http://pmourey.pythonanywhere.con
+#### Site en ligne: http://pmourey.pythonanywhere.com/jobs
 
 Pour bien démarrer:
 - https://www.kaherecode.com/tutorial/demarrer-avec-flask-un-micro-framework-python
