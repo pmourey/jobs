@@ -1,4 +1,4 @@
-#### Site en ligne: [http://pmourey.pythonanywhere.com/jobs](https://pmourey.pythonanywhere.com/)
+#### Site en ligne: [http://pmourey.pythonanywhere.com](https://pmourey.pythonanywhere.com/)
 
 Pour bien démarrer:
 - https://pythonbasics.org/flask-sqlalchemy/
