@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from sqlalchemy import DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from validators import url
 from werkzeug.security import generate_password_hash
+
 
 db = SQLAlchemy()
 
@@ -137,7 +139,7 @@ class Job(db.Model):
 
     @property
     def expired(self) -> bool:
-        if not self.refusalDate and self.email:
+        if not self.refusalDate:# and self.email:
             # app.logger.debug(self.first_name)
             # Calculate the difference between the two dates
             if self.relaunchDate:
@@ -145,8 +147,8 @@ class Job(db.Model):
                 return difference.months >= 1
             else:
                 difference = relativedelta(datetime.now(), self.applicationDate)
-                # app.logger.debug(self.applicationDate)
-                # app.logger.debug(f'{difference.days} days - {difference.months} months')
+                # logging.info(self.applicationDate)
+                # logging.info(f'{difference.days} days - {difference.months} months')
                 return difference.days >= 10
         return False
 

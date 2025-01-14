@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from functools import wraps
 from typing import Match
 
 from dateutil.relativedelta import relativedelta
@@ -72,7 +73,7 @@ def send_password_recovery_email(app, reset_link: str, user: User, author: str, 
                   body=body,
                   sender_email=app.config['GMAIL_USER'],
                   recipient_email=f'"{user.username}"<{user.email}>',
-                  bcc_recipients=[app.config['GMAIL_USER']],
+                  bcc_recipients=[],
                   smtp_server=app.config['SMTP_SERVER'],
                   smtp_port=app.config['SMTP_PORT'],
                   username=app.config['GMAIL_USER'],

@@ -10,6 +10,7 @@ import re
 from _socket import gethostbyname
 from functools import wraps
 from socket import socket
+from time import sleep
 from typing import Match, Optional
 from logging import basicConfig, DEBUG
 import locale
@@ -18,7 +19,7 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from itsdangerous import Serializer, URLSafeSerializer
 from pytz import timezone
-from flask import Flask, request, flash, url_for, redirect, render_template, session
+from flask import Flask, request, flash, url_for, redirect, render_template, session, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy import DateTime, desc
@@ -58,6 +59,10 @@ login_manager.login_view = 'login'
 app.secret_key = b'_5#y2L"F4Q8z\n\xec]/'
 # app.config['SECRET_KEY'] = 'fifa2022'
 # app.config['SESSION_TYPE'] = 'filesystem'
+
+UPLOAD_FOLDER = os.path.join('static', 'uploads')
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 """ decorators """
 
@@ -493,6 +498,42 @@ def create_captures_dir():
             print(f"Directory {directory_path} created successfully.")
         except Exception as e:
             print(f"Error creating directory: {e}")
+
+@app.route('/lucky')
+def upload_form():
+    return render_template('upload.html', result=None)
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    result = None
+    result_file = None
+
+    if 'file' not in request.files:
+        result = 'Aucun fichier n\'a été téléchargé.'
+    else:
+        file = request.files['file']
+
+        if file.filename == '':
+            result = 'Aucun fichier sélectionné.'
+        else:
+            # Sauvegarder le fichier d'entrée
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+            file.save(file_path)
+
+            # Traitement du fichier
+            sleep(5)
+            result_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'result.csv')
+            # result_df.to_csv(result_file_path, index=False)
+
+            result = 'Le fichier "{}" a été traité avec succès (Test avec sleep de 5s).'.format(file.filename)
+            result_file = result_file_path
+
+    return render_template('upload.html', result=result, result_file=result_file)
+
+@app.route('/download/<filename>')
+def download_file(filename):
+    return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename), as_attachment=True)
+
 
 # if app.config['SCHEDULER']:
 #     app.logger.debug(app.config['SCHEDULER'])

@@ -3,7 +3,7 @@ from pytz import timezone
 
 
 class Config:
-    DEBUG = False
+    DEBUG = True
     # TESTING = True
     SECRET_KEY = 'fifa 2022'
     SQLALCHEMY_DATABASE_URI = 'sqlite:///jobs.sqlite3'
@@ -11,7 +11,7 @@ class Config:
     SMTP_PORT = 465
     GMAIL_FULLNAME = 'Philippe Mourey'
     GMAIL_USER = 'philippe@mourey.com'
-    GMAIL_APP_PWD = 'XXXXXXX'
+    GMAIL_APP_PWD = 'vjkpggrtalpqohry'
     CV_RESUME = 'https://www.linkedin.com/in/pmourey/<br>https://github.com/pmourey/jobs<br>https://pmourey.github.io/portfolio/'
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24
