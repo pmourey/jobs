@@ -25,7 +25,6 @@
             <th>Delete</th>
             {% endif %}
             <th>Offre</th>
-            <th>URL</th>
             <th>Capture</th>
             <th>Location</th>
             <th>Company</th>
@@ -40,48 +39,35 @@
         <div id="job">
             <tr>
                 {% if user.is_admin %}
-                <td align="center">
-                    <a href="{{ url_for('update', id=job.id) }}">{{job.id}}</a>
-                </td>
-                <td align="center">
-                    <button onclick="confirmDelete({{ job.id }})">{{job.id}}</button>
-                </td>
+                    <td align="center">
+                        <a href="{{ url_for('update', id=job.id) }}">{{job.id}}</a>
+                    </td>
+                    <td align="center">
+                        <button onclick="confirmDelete({{ job.id }})">{{job.id}}</button>
+                    </td>
                 {% endif %}
-                <td>{{ job.name }}</td>
-                <td>
-                    {% if job.valid_url %}
-                    <a href="{{ job.url }}" target="_blank">{{ job.url }}</a>
-                    {% else %}
-                    {{ job.url }}
-                    {% endif %}
-                </td>
+                <td><a href="{{ job.url }}">{{ job.name }}</a></td>
                 <td>
                     {% if job.is_capture %}
-                    {% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}
-                    <a href="{{ url_for('static', filename=capture) }}" target="_blank">PDF</a>
+                        {% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}
+                        <a href="{{ url_for('static', filename=capture) }}" target="_blank">PDF</a>
                     {% else %}
-                    :-( :-( :-(
+                        &#x2639;
                     {% endif %}
                 </td>
                 <td>{{ job.zipCode }}</td>
                 <td>{{ job.company }}</td>
                 <td>{{ job.contact }}</td>
-                {% if not job.email %}
-                <td bgcolor="yellow">{% else %}
-                <td>{% endif %}{{ job.email }}</td>
-                {% if job.expired %}
-                <td bgcolor="red">{% else %}
-                <td>{% endif %}
-                    {{job.applicationDate.strftime('%A %d %B %Y')}}
-                </td>
+                {% if not job.email %}<td bgcolor="yellow">{% else %}<td>{% endif %}{{ job.email }}</td>
+                {% if job.expired %}<td bgcolor="red">{% else %}<td>{% endif %}{{job.applicationDate.strftime('%A %d %B %Y')}}</td>
                 <td>
                     {% if job.relaunchDate %}
-                    {{job.relaunchDate.strftime('%A %d %B %Y')}}
+                        {{job.relaunchDate.strftime('%A %d %B %Y')}}
                     {% endif %}
                 </td>
                 <td>
                     {% if job.refusalDate %}
-                    {{job.refusalDate.strftime('%A %d %B %Y')}}
+                        {{job.refusalDate.strftime('%A %d %B %Y')}}
                     {% endif %}
                 </td>
             </tr>
