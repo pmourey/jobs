@@ -3,7 +3,7 @@ from pytz import timezone
 
 
 class Config:
-    DEBUG = True
+    DEBUG = False
     # TESTING = True
     SECRET_KEY = 'fifa 2022'
     SQLALCHEMY_DATABASE_URI = 'sqlite:///jobs.sqlite3'
