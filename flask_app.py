@@ -228,7 +228,7 @@ def change_password():
 def request_reset_password():
     if request.method == 'POST':
         email = request.form.get('email')
-        user = User.query.filter_by(email=email).first()
+        user = User.query.filter_by(email=email.lower()).first()
         if user:
             # Générer un jeton de récupération de mot de passe
             s = Serializer(app.config['SECRET_KEY'])

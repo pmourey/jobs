@@ -11,7 +11,7 @@ from typing import Optional, Match
 from dateutil.relativedelta import relativedelta
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import DateTime, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from validators import url
 from werkzeug.security import generate_password_hash
 
@@ -41,9 +41,14 @@ class User(db.Model):
     def __init__(self, username: str, password: str, creation_date: DateTime, email: str):
         self.username = username
         self.password = generate_password_hash(password, method='sha256')
+        # self.password = generate_password_hash(password, method='scrypt')
         self.creationDate = creation_date
         self.email = email
         self.role = Role.READER.value
+
+    @validates('email')
+    def validate_email(self, email):
+        return email.lower() if email else None
 
     @property
     def is_admin(self):
