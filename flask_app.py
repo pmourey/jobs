@@ -16,6 +16,8 @@ from logging import basicConfig, DEBUG
 import locale
 import os
 from datetime import datetime, timedelta
+
+import pytz
 from dateutil.relativedelta import relativedelta
 from itsdangerous import Serializer, URLSafeSerializer
 from pytz import timezone
@@ -70,7 +72,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 def is_connected(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        app.logger.debug(f'is_connected: session = {session}')
+        # app.logger.debug(f'is_connected: session = {session}')
         if 'login_id' not in session:
             error = 'Restricted access! Please authenticate.'
             return render_template('login.html', error=error)
@@ -134,7 +136,7 @@ def welcome():
         token = s.dumps({'user_id': user.id})
         # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
         user.recovery_token = generate_password_hash(token, method='sha256')
-        user.token_expiration = datetime.now(app.config['PARIS']) + timedelta(hours=24)
+        user.token_expiration = datetime.now() + timedelta(hours=24)
         db.session.commit()
     else:
         # client_ip = request.remote_addr
@@ -167,7 +169,7 @@ def register():
                 error = f'email {email} is invalid! Please check syntax.'
             else:
                 user = User(username=username, password=request.form['password'],
-                            creation_date=datetime.now(app.config['PARIS']), email=email)
+                            creation_date=datetime.now(), email=email)
                 # logging.warning("See this message in Flask Debug Toolbar!")
                 db.session.add(user)
                 db.session.commit()
@@ -177,7 +179,8 @@ def register():
 
                 # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
                 user.recovery_token = generate_password_hash(token, method='sha256')
-                user.token_expiration = datetime.now(app.config['PARIS']) + timedelta(minutes=10)
+                user.token_expiration = datetime.now() + timedelta(minutes=10)
+                # app.logger.debug(f'time zone info: {user.token_expiration.tzinfo}')
 
                 db.session.commit()
 
@@ -207,7 +210,7 @@ def login():
                 client_ip = get_client_ip()
                 user_agent_string = request.headers.get('User-Agent')
                 user_agent: UserAgent = parse(user_agent_string)
-                sess = Session(login_id=user.id, start=datetime.now(app.config['PARIS']), client_ip=client_ip,
+                sess = Session(login_id=user.id, start=datetime.now(), client_ip=client_ip,
                                browser_family=user_agent.browser.family,
                                browser_version=user_agent.browser.version_string)
                 db.session.add(sess)
@@ -255,7 +258,7 @@ def request_reset_password():
 
             # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
             user.recovery_token = generate_password_hash(token, method='sha256')
-            user.token_expiration = datetime.now(app.config['PARIS']) + timedelta(minutes=10)
+            user.token_expiration = datetime.now() + timedelta(minutes=10)
 
             db.session.commit()
 
@@ -280,15 +283,14 @@ def validate_email(token):
     s = Serializer(app.config['SECRET_KEY'])
     try:
         data = s.loads(token)
-        # user = User.query.get_or_404(data['user_id'])
-        # d = datetime.now(app.config['PARIS'])
-        # difference = relativedelta(d, user.token_expiration)
-        # app.logger.debug(f'confirm registration user {user.username} - data = {data} \n - token = {token} - timestamp: {d} - ' +
-        #                  f'user.token_expiration < d: {user.token_expiration < d}',
-        #                  f'elapsed minutes: {difference.minutes}')
-        # if difference.minutes >= 10:
-        #     raise Exception
-    except:
+        user = User.query.get_or_404(data['user_id'])
+        # Calculate the time difference
+        remaining_minutes = int((user.token_expiration - datetime.now()).total_seconds() / 60)
+        app.logger.debug(f'remaining minutes: {remaining_minutes}')
+        if remaining_minutes <= 0:
+            raise Exception
+    except Exception as e:
+        app.logger.debug(e)
         flash('Le lien de confirmation d\'inscription est invalide ou a expiré.')
         user = User.query.get_or_404(data.get('user_id'))
         if user:
@@ -318,20 +320,12 @@ def reset_password(token):
     s = Serializer(app.config['SECRET_KEY'])
     try:
         data = s.loads(token)
-        # user = User.query.get(data['user_id'])
-        # d = datetime.now(app.config['PARIS'])
-        # # Define the format of the input string
-        # date_format = "%Y-%m-%d %H:%M:%S.%f"
-        # # Use strptime to parse the string into a datetime object
-        # datetime_object = datetime.strptime(user.token_expiration, date_format)
-        # app.logger.debug(f'user.token_expiration: {user.token_expiration} -> {datetime_object}')
-        # # difference = relativedelta(d, datetime_object)
-        # # app.logger.debug(f'reset password user {user.username} - data = {data} \n - token = {token} - user.token_expiration: {user.token_expiration} -',
-        # #                  f'datetime: {d}',
-        # #                  f'user.recovery_token: {user.recovery_token}',
-        # #                  f'elapsed minutes: {difference.minutes}')
-        # # if difference.minutes >= 10:
-        # #     raise Exception
+        user = User.query.get_or_404(data['user_id'])
+        # Calculate the time difference
+        remaining_minutes = int((user.token_expiration - datetime.now()).total_seconds() / 60)
+        app.logger.debug(f'remaining minutes: {remaining_minutes}')
+        if remaining_minutes <= 0:
+            raise Exception
     except:
         flash('Le lien de réinitialisation de mot de passe est invalide ou a expiré.')
         return redirect(url_for('login'))
@@ -368,7 +362,7 @@ def logout():
     user = get_user_by_id(session['login_id'])
     sess = get_session_by_login(username=user.username)
     if sess is not None:
-        sess.end = datetime.now(app.config['PARIS'])
+        sess.end = datetime.now()
         db.session.commit()
     logout_user()
     # remove the username from the session if it's there
@@ -421,7 +415,7 @@ def new():
         else:
             job = Job(name=request.form['name'], url=request.form['url'],
                       zipCode=request.form['zipCode'], company=request.form['company'],
-                      contact=request.form['contact'], date=datetime.now(app.config['PARIS']), email=email,
+                      contact=request.form['contact'], date=datetime.now(), email=email,
                       user_id=session['login_id'])
             # logging.warning("See this message in Flask Debug Toolbar!")
             job.is_capture = job.capture_exists()
@@ -552,6 +546,12 @@ def upload_file():
 @app.route('/download/<filename>')
 def download_file(filename):
     return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename), as_attachment=True)
+
+@app.template_filter('format_paris_time')
+def format_paris_time(utc_dt):
+    paris_tz = timezone('Europe/Paris')
+    paris_time = utc_dt.astimezone(paris_tz)
+    return paris_time.strftime('%A %d %B %Y à %Hh%M')
 
 
 # if app.config['SCHEDULER']:
