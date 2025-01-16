@@ -47,9 +47,25 @@ class User(db.Model):
         self.email = email
         self.role = Role.READER.value
 
+    # @validates('email')
+    # def validate_email(self, email):
+    #     return email.lower() if email else None
+
     @validates('email')
-    def validate_email(self, email):
-        return email.lower() if email else None
+    def validates(self, key, email):
+        if email is None:
+            return None
+
+        # Remove leading/trailing whitespace
+        email = email.strip()
+
+        # Email pattern regex
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+        if not re.match(pattern, email):
+            raise ValueError('Invalid email format')
+
+        return email.lower()
 
     @property
     def is_admin(self):
