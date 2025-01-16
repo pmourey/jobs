@@ -15,13 +15,14 @@ from sqlalchemy.orm import relationship, validates
 from validators import url
 from werkzeug.security import generate_password_hash
 
-
 db = SQLAlchemy()
+
 
 class Role(Enum):
     ADMIN = 0
     EDITOR = 1
     READER = 2
+
 
 class User(db.Model):
     __tablename__ = 'user'
@@ -62,29 +63,36 @@ class User(db.Model):
     def is_reader(self):
         return Role(self.role) == Role.READER
 
+
 @dataclass
 class BrowserInfo:
     family: str
     version: str
 
+
 class Session(db.Model):
     __tablename__ = 'sessions'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    login = db.Column(db.String(20), unique=False, nullable=False)
     start = db.Column(db.DateTime, nullable=False)
     end = db.Column(db.DateTime, nullable=True)
     client_ip = db.Column(db.String(15), nullable=False)
     browser_family = db.Column(db.String(20), nullable=False)
     browser_version = db.Column(db.String(10), nullable=False)
+    login_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
     def __repr__(self):
+        user: User = User.query.get(self.login_id)
         if not self.end:
-            return f'{self.login} connecté depuis: {self.start}'
+            return f'{user.username} connecté depuis: {self.start}'
         else:
-            return f'{self.login} déconnecté à: {self.end}'
+            return f'{user.username} déconnecté à: {self.end}'
 
-    def __init__(self, login: str, start: DateTime, client_ip: str, browser_family: str, browser_version: str):
-        self.login = login
+    @property
+    def username(self) -> str:
+        return User.query.get(self.login_id).username
+
+    def __init__(self, login_id: int, start: DateTime, client_ip: str, browser_family: str, browser_version: str):
+        self.login_id = login_id
         self.start = start
         self.end = None
         self.client_ip = client_ip
@@ -144,7 +152,7 @@ class Job(db.Model):
 
     @property
     def expired(self) -> bool:
-        if not self.refusalDate:# and self.email:
+        if not self.refusalDate:  # and self.email:
             # app.logger.debug(self.first_name)
             # Calculate the difference between the two dates
             if self.relaunchDate:

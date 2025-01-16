@@ -70,7 +70,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 def is_connected(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if 'id' not in session:
+        app.logger.debug(f'is_connected: session = {session}')
+        if 'login_id' not in session:
             error = 'Restricted access! Please authenticate.'
             return render_template('login.html', error=error)
             # return redirect(url_for('login.html'))  # Remplacez 'login.html' par l'URL de votre page de connexion
@@ -81,7 +82,7 @@ def is_connected(func):
 def is_admin(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        user = get_user_by_id(session['id'])
+        user = get_user_by_id(session['login_id'])
         if not user.is_admin:
             error = 'Insufficient privileges for this operation! Please contact administrator...'
             return render_template('login.html', error=error)
@@ -111,8 +112,8 @@ def load_user(user_id):
 def welcome():
     user = None
     token = None
-    if 'id' in session:
-        user = get_user_by_id(session['id'])
+    if 'login_id' in session:
+        user = get_user_by_id(session['login_id'])
         # Générer un jeton de récupération de mot de passe
         s = Serializer(app.config['SECRET_KEY'])
         token = s.dumps({'user_id': user.id})
@@ -181,14 +182,15 @@ def login():
     error = None
     if request.method == 'POST':
         user = User.query.filter_by(username=request.form['username']).first()
-        # app.logger.debug(f'user = {user} - clear pwd = {request.form["password"]}')
+        app.logger.debug(f'user = {user} - clear pwd = {request.form["password"]}')
         if user and check_password_hash(user.password, password=request.form['password']):
             if user.validated:
-                session['id'] = user.id
+                session['login_id'] = user.id
+                app.logger.debug(f'user (login) = {user.username} - id = {user.id} - session: {session}')
                 client_ip = request.remote_addr
                 user_agent_string = request.headers.get('User-Agent')
                 user_agent: UserAgent = parse(user_agent_string)
-                sess = Session(login=user.username, start=datetime.now(app.config['PARIS']), client_ip=client_ip,
+                sess = Session(login_id=user.id, start=datetime.now(app.config['PARIS']), client_ip=client_ip,
                                browser_family=user_agent.browser.family,
                                browser_version=user_agent.browser.version_string)
                 db.session.add(sess)
@@ -208,7 +210,7 @@ def login():
 def change_password():
     error = None
     if request.method == 'POST':
-        user = get_user_by_id(session['id'])
+        user = get_user_by_id(session['login_id'])
         new_password: str = request.form["new_password"]
         confirm_new_password: str = request.form["confirm_new_password"]
         app.logger.debug(
@@ -346,7 +348,7 @@ def reset_password(token):
 @app.route("/logout")
 @is_connected
 def logout():
-    user = get_user_by_id(session['id'])
+    user = get_user_by_id(session['login_id'])
     sess = get_session_by_login(username=user.username)
     if sess is not None:
         sess.end = datetime.now(app.config['PARIS'])
@@ -362,7 +364,7 @@ def logout():
 @is_connected
 @is_admin
 def show_accounts():
-    user = get_user_by_id(session['id'])
+    user = get_user_by_id(session['login_id'])
     # Reverse order query
     accounts = User.query.order_by(desc(User.id)).all()
     return render_template('accounts.html', accounts=accounts, user=user)
@@ -380,7 +382,7 @@ def show_sessions():
 @app.route('/suivi')
 @is_connected
 def show_all():
-    user_id = session['id']
+    user_id = session['login_id']
     # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
     app.logger.debug('This is a debug message.')
     # Reverse order query
@@ -403,7 +405,7 @@ def new():
             job = Job(name=request.form['name'], url=request.form['url'],
                       zipCode=request.form['zipCode'], company=request.form['company'],
                       contact=request.form['contact'], date=datetime.now(app.config['PARIS']), email=email,
-                      user_id=session['id'])
+                      user_id=session['login_id'])
             # logging.warning("See this message in Flask Debug Toolbar!")
             job.is_capture = job.capture_exists()
             db.session.add(job)

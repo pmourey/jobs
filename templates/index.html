@@ -4,7 +4,7 @@
 {% block main %}
 <main>
     <!-- Votre contenu de page ici -->
-    {% if 'id' in session %}
+    {% if 'login_id' in session %}
         <p>Bienvenue, {{user.username}}!</p>
         <table class="welcome">
             <tr>

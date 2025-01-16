@@ -21,7 +21,8 @@ def get_user_by_id(user_id: int) -> User:
 
 def get_session_by_login(username: str) -> Session:
     # Récupère la session la plus récente
-    return Session.query.filter_by(login=username).order_by(Session.start.desc()).first()
+    user: User = User.query.filter_by(username=username).first()
+    return Session.query.filter_by(login_id=user.id).order_by(Session.start.desc()).first()
 
 
 """ Utilities """
