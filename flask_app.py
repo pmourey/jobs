@@ -89,10 +89,25 @@ def is_admin(func):
         return func(*args, **kwargs)
     return wrapper
 
+def get_client_ip():
+    # Check headers in order of reliability
+    if request.headers.getlist("X-Forwarded-For"):
+        client_ip = request.headers.getlist("X-Forwarded-For")[0]
+    elif request.headers.get("X-Real-IP"):
+        client_ip = request.headers.get("X-Real-IP")
+    elif request.headers.get("CF-Connecting-IP"):    # Cloudflare
+        client_ip = request.headers.get("CF-Connecting-IP")
+    else:
+        client_ip = request.remote_addr
+    return client_ip
+
 @app.route('/get_ip')
 def get_ip():
     # Obtenir l'adresse IP du client
     client_ip = request.remote_addr
+    app.logger.debug(f'old client_ip = {client_ip}')
+    client_ip = get_client_ip()
+    app.logger.debug(f'new client_ip = {client_ip}')
 
     # Obtenir le nom d'hôte du serveur
     server_hostname = request.host.split(':')[0]
