@@ -10,6 +10,8 @@
         <tr>
             <th>Login</th>
             <th>Début</th>
+            <th>Navigateur</th>
+            <th>Adresse IP</th>
         </tr>
         </thead>
         {% for session in sessions %}
@@ -17,6 +19,8 @@
             <tr>
                 <td>{{ session.username }}</td>
                 <td>{{ session.start.strftime('%A %d %B %Y à %Hh%M') }}</td>
+                <td>{{ session.browser_family }} (version {{ session.browser_version }})</td>
+                <td>{{ session.client_ip }}</td>
             </tr>
         </div>
         {%endfor %}
