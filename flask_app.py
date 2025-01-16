@@ -104,8 +104,8 @@ def get_client_ip():
 @app.route('/get_ip')
 def get_ip():
     # Obtenir l'adresse IP du client
-    client_ip = request.remote_addr
-    app.logger.debug(f'old client_ip = {client_ip}')
+    # client_ip = request.remote_addr
+    # app.logger.debug(f'old client_ip = {client_ip}')
     client_ip = get_client_ip()
     app.logger.debug(f'new client_ip = {client_ip}')
 
@@ -137,7 +137,8 @@ def welcome():
         user.token_expiration = datetime.now(app.config['PARIS']) + timedelta(hours=24)
         db.session.commit()
     else:
-        client_ip = request.remote_addr
+        # client_ip = request.remote_addr
+        client_ip = get_client_ip()
         user_agent_string = request.headers.get('User-Agent')
         user_agent: UserAgent = parse(user_agent_string)
         browser_info = f"Family = {user_agent.browser.family}, Version = {user_agent.browser.version_string}"
@@ -202,7 +203,8 @@ def login():
             if user.validated:
                 session['login_id'] = user.id
                 app.logger.debug(f'user (login) = {user.username} - id = {user.id} - session: {session}')
-                client_ip = request.remote_addr
+                # client_ip = request.remote_addr
+                client_ip = get_client_ip()
                 user_agent_string = request.headers.get('User-Agent')
                 user_agent: UserAgent = parse(user_agent_string)
                 sess = Session(login_id=user.id, start=datetime.now(app.config['PARIS']), client_ip=client_ip,
