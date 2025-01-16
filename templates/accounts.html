@@ -41,7 +41,7 @@
                 </td>
                 {% endif %}
                 <td>{{ account.username }}</td>
-                <td>{{ account.creationDate.strftime('%A %d %B %Y à %Hh%M') }}</td>
+                <td>{{ account.creationDate|format_paris_time }}</td>
                 <td>
                     {% if account.is_admin %}
                         Administrateur
