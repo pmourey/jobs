@@ -38,13 +38,14 @@ def send_confirmation_email(app, confirm_link: str, user: User, author: str, cv_
     subject: str = f'Confirmation de l\'inscription (Suivi des candidatures)'
     body = f'''Bonjour {user.username},<br>
     <br>Une demande de création de compte a été effectuée sur l'application Flask <a href=http://pmourey.pythonanywhere.com">"Suivi de candidatures"</a></br>
-    <br>Veuillez clicker sur le lien ci-dessous pour confirmer votre inscription.<br>
-    <br>{confirm_link}<br>
+    <br>
+    <br>Veuillez clicker <a href={confirm_link}>ICI</a> pour confirmer votre inscription, svp.<br>
+    <br>
     <br>Si vous avez aimé l'application, n'hésitez pas à me le faire savoir ou à la partager à vos amis ou collègues.<br>
     <br>En vous souhaitant une bonne journée.<br>
     <br>
     Cordialement,<br>
-    {author}.<br>
+    {author}.<br><br>
     {cv_resume}.<br>'''
     return send_email(subject=subject,
                   body=body,
