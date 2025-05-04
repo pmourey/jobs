@@ -14,8 +14,8 @@ export FLASK_ENV=development
 export FLASK_RUN_PORT=8080
 
 # Comment line to run on localhost only
-# export FLASK_RUN_HOST=0.0.0.0
-export FLASK_RUN_HOST=192.168.1.20
+export FLASK_RUN_HOST=0.0.0.0
+# export FLASK_RUN_HOST=192.168.1.20
 
 # Lancer l'application Flask en standalone
 flask run
