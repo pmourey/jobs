@@ -413,14 +413,49 @@ def new():
         elif email and not check(app.config['REGEX'], email):
             flash(f'Invalid E-Mail {email}!', 'error')
         else:
+            # Validate file before creating job
+            file_valid = True
+            if 'capture_file' in request.files:
+                file = request.files['capture_file']
+                if file and file.filename:
+                    # Check file size (2MB max)
+                    file.seek(0, 2)
+                    file_size = file.tell()
+                    file.seek(0)
+                    if file_size > 2 * 1024 * 1024:
+                        flash('Erreur: Le fichier ne doit pas dépasser 2Mo!', 'error')
+                        file_valid = False
+                    else:
+                        # Check PDF header
+                        header = file.read(4)
+                        file.seek(0)
+                        if header != b'%PDF':
+                            flash('Erreur: Le fichier n\'est pas un PDF valide!', 'error')
+                            file_valid = False
+            
+            if not file_valid:
+                user = get_user_by_id(session['login_id'])
+                jobs = Job.query.filter(Job.active).order_by(desc(Job.applicationDate)).all()
+                return render_template('candidatures.html', jobs=jobs, user=user, form_data=request.form)
+            
+            # Create job only if file is valid
             job = Job(name=request.form['name'], url=request.form['url'],
                       zipCode=request.form['zipCode'], company=request.form['company'],
                       contact=request.form['contact'], date=datetime.now(), email=email,
                       user_id=session['login_id'])
-            # logging.warning("See this message in Flask Debug Toolbar!")
-            job.is_capture = job.capture_exists()
             db.session.add(job)
             db.session.commit()
+            
+            # Save file if provided
+            if 'capture_file' in request.files:
+                file = request.files['capture_file']
+                if file and file.filename:
+                    filename = f'capture_{job.id}.pdf'
+                    file_path = os.path.join('static/images', filename)
+                    file.save(file_path)
+                    job.is_capture = 1
+                    db.session.commit()
+            
             flash('Record was successfully added')
     return redirect(url_for('show_all'))
     # return render_template('candidatures.html')

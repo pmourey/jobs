@@ -1,14 +1,15 @@
 <!-- jobs/templates/partials/_form.html -->
 
-<form action="{{ url_for('new') }}" , method="POST">
+<form action="{{ url_for('new') }}" method="POST" enctype="multipart/form-data">
     <table class="add-form">
         <tr>
-            <td><input type="text" name="name" placeholder="Job"></td>
-            <td><input type="text" name="url" placeholder="Url"></td>
-            <td><input type="text" name="zipCode" placeholder="zipCode"></td>
-            <td><input type="text" name="company" placeholder="Company"></td>
-            <td><input type="text" name="contact" placeholder="Contact"></td>
-            <td><input type="email" name="email" placeholder="E-Mail"/></td>
+            <td><input type="text" name="name" placeholder="Job" value="{{ form_data.name if form_data else '' }}"></td>
+            <td><input type="text" name="url" placeholder="Url" value="{{ form_data.url if form_data else '' }}"></td>
+            <td><input type="text" name="zipCode" placeholder="zipCode" value="{{ form_data.zipCode if form_data else '' }}"></td>
+            <td><input type="text" name="company" placeholder="Company" value="{{ form_data.company if form_data else '' }}"></td>
+            <td><input type="text" name="contact" placeholder="Contact" value="{{ form_data.contact if form_data else '' }}"></td>
+            <td><input type="email" name="email" placeholder="E-Mail" value="{{ form_data.email if form_data else '' }}"/></td>
+            <td><input type="file" name="capture_file" accept=".pdf"></td>
             <td><input type="submit" value="Ajout candidature"></td>
         </tr>
     </table>
