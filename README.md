@@ -37,9 +37,21 @@ Application Flask de suivi des candidatures d'emploi avec envoi automatique de r
    python -m pip install --upgrade pip
    ```
 
-3. **Configuration email**
-   - Créer un mot de passe d'application Gmail
-   - Configurer les variables dans `config.py`
+3. **Configuration**
+   ```bash
+   # Copier le template de configuration
+   cp config_template.py config.py
+   ```
+   
+   **Configuration Gmail :**
+   - Activer l'authentification à 2 facteurs sur votre compte Google
+   - Aller dans Paramètres Google > Sécurité > Mots de passe d'application
+   - Générer un mot de passe d'application pour "Mail"
+   - Modifier `config.py` avec vos identifiants :
+   ```python
+   GMAIL_USER = 'votre.email@gmail.com'
+   GMAIL_APP_PWD = 'votre_mot_de_passe_application'
+   ```
 
 ## 🚀 Utilisation
 
