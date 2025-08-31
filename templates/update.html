@@ -5,7 +5,7 @@
 {% set refusalDate = job.refusalDate.strftime('%Y-%m-%d') if job.refusalDate else None %}
 
 <main>
-    <form action="{{ url_for('update', id=job.id) }}" , method="POST" , onsubmit="return confirmSubmit();">
+    <form action="{{ url_for('update', id=job.id) }}" method="POST" enctype="multipart/form-data" onsubmit="return confirmSubmit();">
         <table class="update-form">
             <tr>
                 <td><label for="name">Offre</label></td>
@@ -42,6 +42,10 @@
             <tr>
                 <td><label for="refusalDate">Date refus</label></td>
                 <td><input type="date" name="refusalDate" value="{{ refusalDate }}"></td>
+            </tr>
+            <tr>
+                <td><label for="capture_file">Capture PDF</label></td>
+                <td><input type="file" name="capture_file" accept=".pdf"></td>
             </tr>
             <tr>
                 <td>&nbsp;</td>

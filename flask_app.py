@@ -34,7 +34,7 @@ import logging
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email, \
-    send_confirmation_email
+    send_confirmation_email, handle_file_upload
 from Model import Job, User, db, Session
 from tools.send_emails import send_email
 
@@ -413,32 +413,7 @@ def new():
         elif email and not check(app.config['REGEX'], email):
             flash(f'Invalid E-Mail {email}!', 'error')
         else:
-            # Validate file before creating job
-            file_valid = True
-            if 'capture_file' in request.files:
-                file = request.files['capture_file']
-                if file and file.filename:
-                    # Check file size (2MB max)
-                    file.seek(0, 2)
-                    file_size = file.tell()
-                    file.seek(0)
-                    if file_size > 2 * 1024 * 1024:
-                        flash('Erreur: Le fichier ne doit pas dépasser 2Mo!', 'error')
-                        file_valid = False
-                    else:
-                        # Check PDF header
-                        header = file.read(4)
-                        file.seek(0)
-                        if header != b'%PDF':
-                            flash('Erreur: Le fichier n\'est pas un PDF valide!', 'error')
-                            file_valid = False
-            
-            if not file_valid:
-                user = get_user_by_id(session['login_id'])
-                jobs = Job.query.filter(Job.active).order_by(desc(Job.applicationDate)).all()
-                return render_template('candidatures.html', jobs=jobs, user=user, form_data=request.form)
-            
-            # Create job only if file is valid
+            # Create job
             job = Job(name=request.form['name'], url=request.form['url'],
                       zipCode=request.form['zipCode'], company=request.form['company'],
                       contact=request.form['contact'], date=datetime.now(), email=email,
@@ -446,17 +421,17 @@ def new():
             db.session.add(job)
             db.session.commit()
             
-            # Save file if provided
-            if 'capture_file' in request.files:
-                file = request.files['capture_file']
-                if file and file.filename:
-                    filename = f'capture_{job.id}.pdf'
-                    images_dir = os.path.join(os.path.dirname(__file__), 'static', 'images')
-                    os.makedirs(images_dir, exist_ok=True)
-                    file_path = os.path.join(images_dir, filename)
-                    file.save(file_path)
-                    job.is_capture = 1
-                    db.session.commit()
+            # Handle file upload
+            success, error_msg = handle_file_upload(job.id)
+            if not success:
+                flash(error_msg, 'error')
+                user = get_user_by_id(session['login_id'])
+                jobs = Job.query.filter(Job.active).order_by(desc(Job.applicationDate)).all()
+                return render_template('candidatures.html', jobs=jobs, user=user, form_data=request.form)
+            
+            if success and 'capture_file' in request.files and request.files['capture_file'].filename:
+                job.is_capture = 1
+                db.session.commit()
             
             flash('Record was successfully added')
     return redirect(url_for('show_all'))
@@ -527,6 +502,16 @@ def update(id):
         job.relaunchDate = datetime.strptime(relaunch_date, '%Y-%m-%d') if relaunch_date else None
         refusal_date: str = request.form.get('refusalDate')
         job.refusalDate = datetime.strptime(refusal_date, '%Y-%m-%d') if refusal_date else None
+        
+        # Handle file upload
+        success, error_msg = handle_file_upload(job.id)
+        if not success:
+            flash(error_msg, 'error')
+            return render_template('update.html', job=job)
+        
+        if success and 'capture_file' in request.files and request.files['capture_file'].filename:
+            job.is_capture = 1
+        
         db.session.commit()
         flash('Record was successfully updated')
         return redirect(url_for('show_all'))
