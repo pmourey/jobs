@@ -31,7 +31,7 @@
                 <td>{{ session.start|format_paris_time }}</td>
                 <td>{{ session.browser_family }} <small class="text-muted">(v{{ session.browser_version }})</small></td>
                 <td><code>{{ session.client_ip }}</code></td>
-                <td><button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer session">🗑️</button></td>
+                <td>{% if not session.user.is_admin %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer session">🗑️</button>{% endif %}</td>
             </tr>
             {% endfor %}
             </tbody>
@@ -52,7 +52,7 @@
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
                     <div class="small">🌍 <code>{{ session.client_ip }}</code></div>
-                    <button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer">🗑️</button>
+                    {% if not session.user.is_admin %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer">🗑️</button>{% endif %}
                 </div>
             </div>
         </div>
