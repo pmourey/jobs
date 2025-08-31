@@ -104,6 +104,10 @@ class Session(db.Model):
             return f'{user.username} déconnecté à: {self.end}'
 
     @property
+    def user(self):
+        return User.query.get(self.login_id)
+
+    @property
     def username(self) -> str:
         return User.query.get(self.login_id).username
 
