@@ -41,7 +41,7 @@
                 <td class="{% if job.expired %}bg-danger text-white{% endif %}">{{job.applicationDate.strftime('%d/%m/%Y')}}</td>
                 <td>{% if job.relaunchDate %}{{job.relaunchDate.strftime('%d/%m/%Y')}}{% endif %}</td>
                 <td>{% if job.refusalDate %}{{job.refusalDate.strftime('%d/%m/%Y')}}{% endif %}</td>
-                <td><input type="checkbox" class="form-check-input" onchange="toggleExpired({{ job.id }})" {% if not job.active %}checked{% endif %}></td>
+                <td><input type="checkbox" class="form-check-input" {% if user.is_admin %}onchange="toggleExpired({{ job.id }})"{% else %}disabled{% endif %} {% if not job.active %}checked{% endif %}></td>
             </tr>
             {% endfor %}
             </tbody>
@@ -63,7 +63,7 @@
                     <span class="{% if job.expired %}bg-danger text-white px-1 rounded{% endif %}">{{job.applicationDate.strftime('%d/%m')}}</span>
                     <div>
                         {% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success py-0">PDF</a>{% endif %}
-                        <input type="checkbox" class="form-check-input ms-2" onchange="toggleExpired({{ job.id }})" {% if not job.active %}checked{% endif %} title="Expirée">
+                        <input type="checkbox" class="form-check-input ms-2" {% if user.is_admin %}onchange="toggleExpired({{ job.id }})"{% else %}disabled{% endif %} {% if not job.active %}checked{% endif %} title="Expirée">
                     </div>
                 </div>
             </div>
