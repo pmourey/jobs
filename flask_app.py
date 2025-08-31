@@ -91,6 +91,16 @@ def is_admin(func):
         return func(*args, **kwargs)
     return wrapper
 
+def is_editor_or_admin(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        user = get_user_by_id(session['login_id'])
+        if not (user.is_editor or user.is_admin):
+            error = 'Insufficient privileges for this operation! Please contact administrator...'
+            return render_template('login.html', error=error)
+        return func(*args, **kwargs)
+    return wrapper
+
 def get_client_ip():
     # Check headers in order of reliability
     if request.headers.getlist("X-Forwarded-For"):
@@ -414,7 +424,7 @@ def show_all():
 
 @app.route('/new/', methods=['GET', 'POST'])
 @is_connected
-@is_admin
+@is_editor_or_admin
 def new():
     if request.method == 'POST':
         email: str = request.form['email']
@@ -450,7 +460,7 @@ def new():
 
 @app.route('/toggle_expired/<int:id>', methods=['POST'])
 @is_connected
-@is_admin
+@is_editor_or_admin
 def toggle_expired(id):
     job = Job.query.get_or_404(id)
     job.active = not job.active
@@ -460,16 +470,15 @@ def toggle_expired(id):
 
 @app.route('/delete/<int:id>', methods=['GET', 'POST'])
 @is_connected
-@is_admin
+@is_editor_or_admin
 def delete(id):
     app.logger.debug(f'Delete job #{id}')
     if request.method == 'GET':
         job = Job.query.get_or_404(id)
         app.logger.debug(f'Job debug: {job}')
-        # db.session.delete(job)
-        job.active = False
+        db.session.delete(job)
         db.session.commit()
-        flash(f'Job offer \"{job.name}\" from  \"{job.contact}\" was disabled!')
+        flash(f'Job offer \"{job.name}\" from  \"{job.contact}\" was deleted!')
         return redirect(url_for('show_all'))
 
 
@@ -505,7 +514,7 @@ def update_account(id):
 
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
 @is_connected
-@is_admin
+@is_editor_or_admin
 def update(id):
     job: Job = Job.query.get_or_404(id)
     if request.method == 'POST':
