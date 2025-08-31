@@ -545,6 +545,15 @@ def create_tables():
 
 
 @app.before_request
+def validate_session():
+    if 'login_id' in session:
+        user_session = Session.query.filter_by(login_id=session['login_id'], end=None).first()
+        if not user_session:
+            session.clear()
+            flash('Votre session a été fermée par un administrateur.', 'warning')
+            return redirect(url_for('login'))
+
+@app.before_request
 def create_captures_dir():
     directory_path = f'{os.path.dirname(__file__)}/static/images'
     if not os.path.exists(directory_path):
