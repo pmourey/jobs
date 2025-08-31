@@ -15,8 +15,14 @@
             location.reload();
         });
     }
+    
+    function deleteJob(jobId) {
+        if (confirm('Êtes-vous sûr de vouloir supprimer cette candidature ?')) {
+            window.location.href = '/delete/' + jobId;
+        }
+    }
 </script>
-{% if user.is_admin %}
+{% if not user.is_reader %}
 {% include './partials/_form.html' %}
 {% endif %}
 <main class="container-fluid">
@@ -26,14 +32,14 @@
         <table class="table table-striped table-hover">
             <thead class="table-dark">
             <tr>
-                {% if user.is_admin %}<th>Update</th>{% endif %}
+                {% if not user.is_reader %}<th>Update</th><th>Delete</th>{% endif %}
                 <th>Offre</th><th>Capture</th><th>Location</th><th>Company</th><th>Contact</th><th>E-Mail</th><th>Date candidature</th><th>Date relance</th><th>Date refus</th><th>Expirée</th>
             </tr>
             </thead>
             <tbody>
             {% for job in jobs %}
             <tr class="{% if not job.active %}table-secondary{% endif %}">
-                {% if user.is_admin %}<td><a href="{{ url_for('update', id=job.id) }}" class="btn btn-sm btn-primary" title="Modifier #{{job.id}}">✏️</a></td>{% endif %}
+                {% if not user.is_reader %}<td><a href="{{ url_for('update', id=job.id) }}" class="btn btn-sm btn-primary" title="Modifier #{{job.id}}">✏️</a></td><td><button onclick="deleteJob({{ job.id }})" class="btn btn-sm btn-danger" title="Supprimer #{{job.id}}">🗑️</button></td>{% endif %}
                 <td><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></td>
                 <td>{% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success">PDF</a>{% else %}<span class="text-muted">⌐</span>{% endif %}</td>
                 <td>{{ job.zipCode }}</td><td>{{ job.company }}</td><td>{{ job.contact }}</td>
@@ -41,7 +47,7 @@
                 <td class="{% if job.expired %}bg-danger text-white{% endif %}">{{job.applicationDate.strftime('%d/%m/%Y')}}</td>
                 <td>{% if job.relaunchDate %}{{job.relaunchDate.strftime('%d/%m/%Y')}}{% endif %}</td>
                 <td>{% if job.refusalDate %}{{job.refusalDate.strftime('%d/%m/%Y')}}{% endif %}</td>
-                <td><input type="checkbox" class="form-check-input" {% if user.is_admin %}onchange="toggleExpired({{ job.id }})"{% else %}disabled{% endif %} {% if not job.active %}checked{% endif %}></td>
+                <td><input type="checkbox" class="form-check-input" {% if not user.is_reader %}onchange="toggleExpired({{ job.id }})"{% else %}disabled{% endif %} {% if not job.active %}checked{% endif %}></td>
             </tr>
             {% endfor %}
             </tbody>
@@ -55,7 +61,10 @@
             <div class="card-body p-2">
                 <div class="d-flex justify-content-between align-items-start mb-1">
                     <h6 class="card-title mb-0 small"><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></h6>
-                    {% if user.is_admin %}<a href="{{ url_for('update', id=job.id) }}" class="btn btn-sm btn-primary" title="Modifier #{{job.id}}">✏️</a>{% endif %}
+                    {% if not user.is_reader %}
+                        <a href="{{ url_for('update', id=job.id) }}" class="btn btn-sm btn-primary me-1" title="Modifier #{{job.id}}">✏️</a>
+                        <button onclick="deleteJob({{ job.id }})" class="btn btn-sm btn-danger" title="Supprimer #{{job.id}}">🗑️</button>
+                    {% endif %}
                 </div>
                 <div class="small text-muted mb-1"><strong>{{ job.company }}</strong> - {{ job.zipCode }}</div>
                 <div class="small mb-1">{{ job.contact }} {% if job.email %}- {{ job.email }}{% endif %}</div>
@@ -63,7 +72,7 @@
                     <span class="{% if job.expired %}bg-danger text-white px-1 rounded{% endif %}">{{job.applicationDate.strftime('%d/%m')}}</span>
                     <div>
                         {% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success py-0">PDF</a>{% endif %}
-                        <input type="checkbox" class="form-check-input ms-2" {% if user.is_admin %}onchange="toggleExpired({{ job.id }})"{% else %}disabled{% endif %} {% if not job.active %}checked{% endif %} title="Expirée">
+                        <input type="checkbox" class="form-check-input ms-2" {% if not user.is_reader  %}onchange="toggleExpired({{ job.id }})"{% else %}disabled{% endif %} {% if not job.active %}checked{% endif %} title="Expirée">
                     </div>
                 </div>
             </div>
