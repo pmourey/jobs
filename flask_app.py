@@ -396,8 +396,8 @@ def show_all():
     user_id = session['login_id']
     # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
     app.logger.debug('This is a debug message.')
-    # Reverse order query
-    jobs = Job.query.filter(Job.active).order_by(desc(Job.applicationDate)).all()
+    # Reverse order query - show all jobs including expired
+    jobs = Job.query.order_by(desc(Job.applicationDate)).all()
     user = get_user_by_id(user_id)
     return render_template('candidatures.html', jobs=jobs, user=user)
 
@@ -436,6 +436,16 @@ def new():
             flash('Record was successfully added')
     return redirect(url_for('show_all'))
     # return render_template('candidatures.html')
+
+
+@app.route('/toggle_expired/<int:id>', methods=['POST'])
+@is_connected
+@is_admin
+def toggle_expired(id):
+    job = Job.query.get_or_404(id)
+    job.active = not job.active
+    db.session.commit()
+    return '', 200
 
 
 @app.route('/delete/<int:id>', methods=['GET', 'POST'])
