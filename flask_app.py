@@ -381,6 +381,16 @@ def show_accounts():
     return render_template('accounts.html', accounts=accounts, user=user)
 
 
+@app.route('/delete_session/<int:id>', methods=['POST'])
+@is_connected
+@is_admin
+def delete_session(id):
+    session_obj = Session.query.get_or_404(id)
+    session_obj.end = datetime.now()
+    db.session.commit()
+    return '', 200
+
+
 @app.route('/sessions')
 @is_connected
 @is_admin

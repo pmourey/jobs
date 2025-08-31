@@ -21,6 +21,7 @@
                 <th>🕰 Début</th>
                 <th>🌐 Navigateur</th>
                 <th>🌍 Adresse IP</th>
+                <th>Action</th>
             </tr>
             </thead>
             <tbody>
@@ -30,6 +31,7 @@
                 <td>{{ session.start|format_paris_time }}</td>
                 <td>{{ session.browser_family }} <small class="text-muted">(v{{ session.browser_version }})</small></td>
                 <td><code>{{ session.client_ip }}</code></td>
+                <td><button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer session">🗑️</button></td>
             </tr>
             {% endfor %}
             </tbody>
@@ -48,8 +50,9 @@
                 <div class="small text-muted">
                     🌐 {{ session.browser_family }} (v{{ session.browser_version }})
                 </div>
-                <div class="small">
-                    🌍 <code>{{ session.client_ip }}</code>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="small">🌍 <code>{{ session.client_ip }}</code></div>
+                    <button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer">🗑️</button>
                 </div>
             </div>
         </div>
@@ -64,4 +67,16 @@
     </div>
     {% endif %}
 </main>
+
+<script>
+function deleteSession(sessionId) {
+    if (confirm('Êtes-vous sûr de vouloir supprimer cette session ?')) {
+        fetch('/delete_session/' + sessionId, {
+            method: 'POST'
+        }).then(() => {
+            location.reload();
+        });
+    }
+}
+</script>
 {% endblock main %}
