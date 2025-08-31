@@ -2,19 +2,50 @@
 
 {% extends 'base.html' %}
 {% block main %}
-<main>
-    <h2>Register</h2>
-    <div>
-        <form method="POST" action="{{ url_for('register') }}">
-            <input type="text" placeholder="Username" name="username" value="{{ request.form.username }}">
-            <input type="password" placeholder="Password" name="password" value="{{ request.form.password }}">
-            <input type="password" placeholder="Password" name="confirm_password" value="{{ request.form.confirm_password }}">
-            <input type="email" placeholder="E-Mail" name="email" value="{{ request.form.email }}">
-            <input type="submit" value="Register">
-        </form>
+<main class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-12">
+            <div class="card">
+                <div class="card-header text-center">
+                    <h5 class="card-title mb-0">👤 Création de compte</h5>
+                </div>
+                <div class="card-body">
+                    {% if error %}
+                    <div class="alert alert-danger" role="alert">
+                        <strong>Erreur:</strong> {{ error }}
+                    </div>
+                    {% endif %}
+                    
+                    <form method="POST" action="{{ url_for('register') }}">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Nom d'utilisateur</label>
+                            <input type="text" class="form-control" id="username" name="username" value="{{ request.form.username }}" placeholder="Votre nom d'utilisateur" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Adresse e-mail</label>
+                            <input type="email" class="form-control" id="email" name="email" value="{{ request.form.email }}" placeholder="votre@email.com" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Mot de passe</label>
+                            <input type="password" class="form-control" id="password" name="password" value="{{ request.form.password }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirm_password" class="form-label">Confirmer le mot de passe</label>
+                            <input type="password" class="form-control" id="confirm_password" name="confirm_password" value="{{ request.form.confirm_password }}" required>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">✅ Créer le compte</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer text-center">
+                    <small class="text-muted">
+                        Déjà un compte ? <a href="{{ url_for('login') }}" class="text-decoration-none">Se connecter</a>
+                    </small>
+                </div>
+            </div>
+        </div>
     </div>
-    {% if error %}<p class="error"><strong>Error:</strong> {{ error }} {% endif %}
-    <p>Already have an account? <a href="{{ url_for('login') }}">Login here</a>.</p>
 </main>
 {% endblock main %}
 

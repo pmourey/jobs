@@ -2,31 +2,66 @@
 
 {% extends 'base.html' %}
 {% block main %}
-<main>
+<main class="container-fluid">
     {% include './partials/_menu.html' %}
-    {% if sessions %}
-    <table class="sessions">
-        <thead>
-        <tr>
-            <th>Login</th>
-            <th>Début</th>
-            <th>Navigateur</th>
-            <th>Adresse IP</th>
-        </tr>
-        </thead>
-        {% for session in sessions %}
-        <div id="session">
-            <tr>
-                <td>{{ session.username }}</td>
-                <td>{{ session.start|format_paris_time }}</td>
-                <td>{{ session.browser_family }} (version {{ session.browser_version }})</td>
-                <td>{{ session.client_ip }}</td>
-            </tr>
+    
+    <div class="row mb-3">
+        <div class="col-12">
+            <h2 class="h4">🔗 Sessions actives</h2>
         </div>
-        {%endfor %}
-    </table>
+    </div>
+    
+    {% if sessions %}
+    <!-- Desktop table -->
+    <div class="d-none d-md-block">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+            <tr>
+                <th>👤 Login</th>
+                <th>🕰 Début</th>
+                <th>🌐 Navigateur</th>
+                <th>🌍 Adresse IP</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for session in sessions %}
+            <tr>
+                <td><span class="badge bg-primary">{{ session.username }}</span></td>
+                <td>{{ session.start|format_paris_time }}</td>
+                <td>{{ session.browser_family }} <small class="text-muted">(v{{ session.browser_version }})</small></td>
+                <td><code>{{ session.client_ip }}</code></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Mobile cards -->
+    <div class="d-md-none">
+        {% for session in sessions %}
+        <div class="card mb-2">
+            <div class="card-body p-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="badge bg-primary">{{ session.username }}</span>
+                    <small class="text-muted">{{ session.start.strftime('%d/%m %H:%M') }}</small>
+                </div>
+                <div class="small text-muted">
+                    🌐 {{ session.browser_family }} (v{{ session.browser_version }})
+                </div>
+                <div class="small">
+                    🌍 <code>{{ session.client_ip }}</code>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
     {% else %}
-    <p style="font-size: 16px; text-align: center;">Pas de session en cours ✌️</p>
+    <div class="text-center mt-5">
+        <div class="alert alert-info" role="alert">
+            <h4 class="alert-heading">😴 Aucune session active</h4>
+            <p class="mb-0">Pas de session en cours ✌️</p>
+        </div>
+    </div>
     {% endif %}
 </main>
 {% endblock main %}

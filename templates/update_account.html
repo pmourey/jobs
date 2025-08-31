@@ -1,28 +1,36 @@
 {% extends 'base.html' %}
 {% block main %}
 
-<main>
-    <form action="{{ url_for('update_account', id=user.id) }}" , method="POST" , onsubmit="return confirmSubmit();">
-        <table class="update-form">
-            <tr>
-                <td><label for="role">Sélectionnez un nouveau rôle pour l'utilisateur {{ user.username }}:</label></td>
-                <td>
-                    <select id="role" name="role">
-                        <option value="Administrateur" {% if user.is_admin %} selected {% endif %} >Administrateur</option>
-                        <option value="Editeur"  {% if user.is_editor %} selected {% endif %}>Editeur</option>
-                        <option value="Lecteur" {% if user.is_reader %} selected {% endif %}>Lecteur</option>
-                    </select>
-                </td>
-            </tr>
-            <tr>
-                <td>&nbsp;</td>
-                <td><input type="submit" value="Update"></td>
-            </tr>
-        </table>
-    </form>
+<main class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-10">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">👥 Modification du compte</h5>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('update_account', id=user.id) }}" method="POST" onsubmit="return confirmSubmit();">
+                        <div class="mb-3">
+                            <label for="role" class="form-label">Sélectionnez un nouveau rôle pour <strong>{{ user.username }}</strong>:</label>
+                            <select id="role" name="role" class="form-select">
+                                <option value="Administrateur" {% if user.is_admin %} selected {% endif %}>🔴 Administrateur</option>
+                                <option value="Editeur" {% if user.is_editor %} selected {% endif %}>🟠 Editeur</option>
+                                <option value="Lecteur" {% if user.is_reader %} selected {% endif %}>⚪ Lecteur</option>
+                            </select>
+                        </div>
+                        <div class="text-end">
+                            <a href="{{ url_for('show_accounts') }}" class="btn btn-secondary me-2">Annuler</a>
+                            <button type="submit" class="btn btn-primary">✅ Mettre à jour</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <script>
         function confirmSubmit() {
-            var result = confirm("Are you sure you want to submit the form?");
+            var result = confirm("Êtes-vous sûr de vouloir modifier ce rôle ?");
             return result;
         }
     </script>

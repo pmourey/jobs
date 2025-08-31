@@ -1,11 +1,14 @@
 <!-- jobs/templates/partials/_menu.html -->
 
-    <table class="menu">
-        <tr>
-            {% if 'id' in session %}
-            <td><a href="{{ url_for('logout') }}"><button>Déconnexion</button></a></td>
+<nav class="navbar navbar-expand-sm navbar-light bg-light mb-3">
+    <div class="container-fluid">
+        <span class="navbar-brand mb-0 h1">💼 Candidatures</span>
+        <div class="navbar-nav ms-auto">
+            <a href="{{ url_for('welcome') }}" class="nav-link">🏠 Accueil</a>
+            {% if 'login_id' in session %}
+            <a href="{{ url_for('logout') }}" class="nav-link text-danger">🚪 Déconnexion</a>
             {% endif %}
-            <td><a href="{{ url_for('welcome') }}"><button>Menu principal</button></a></td>
-        </tr>
-    </table>
+        </div>
+    </div>
+</nav>
 

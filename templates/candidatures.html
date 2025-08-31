@@ -16,11 +16,11 @@
         });
     }
 </script>
+{% if user.is_admin %}
+{% include './partials/_form.html' %}
+{% endif %}
 <main class="container-fluid">
-    {% if user.is_admin %}
-    {% include './partials/_form.html' %}
-    {% endif %}
-    {% if jobs %}
+{% if jobs %}
     <!-- Desktop table -->
     <div class="d-none d-lg-block">
         <table class="table table-striped table-hover">

@@ -1,16 +1,35 @@
 <!-- jobs/templates/partials/_form.html -->
 
-<form action="{{ url_for('new') }}" method="POST" enctype="multipart/form-data">
-    <table class="add-form">
-        <tr>
-            <td><input type="text" name="name" placeholder="Job" value="{{ form_data.name if form_data else '' }}"></td>
-            <td><input type="text" name="url" placeholder="Url" value="{{ form_data.url if form_data else '' }}"></td>
-            <td><input type="text" name="zipCode" placeholder="zipCode" value="{{ form_data.zipCode if form_data else '' }}"></td>
-            <td><input type="text" name="company" placeholder="Company" value="{{ form_data.company if form_data else '' }}"></td>
-            <td><input type="text" name="contact" placeholder="Contact" value="{{ form_data.contact if form_data else '' }}"></td>
-            <td><input type="email" name="email" placeholder="E-Mail" value="{{ form_data.email if form_data else '' }}"/></td>
-            <td><input type="file" name="capture_file" accept=".pdf"></td>
-            <td><input type="submit" value="Ajout candidature"></td>
-        </tr>
-    </table>
-</form>
+<div class="bg-light p-3 mb-4 rounded">
+    <h6 class="mb-3">➕ Nouvelle candidature</h6>
+    <form action="{{ url_for('new') }}" method="POST" enctype="multipart/form-data">
+        <div class="row g-2">
+            <div class="col-md-6 col-lg-3">
+                <input type="text" class="form-control form-control-sm" name="name" placeholder="Offre" value="{{ form_data.name if form_data else '' }}" required>
+            </div>
+            <div class="col-md-6 col-lg-2">
+                <input type="text" class="form-control form-control-sm" name="zipCode" placeholder="Code postal" value="{{ form_data.zipCode if form_data else '' }}">
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <input type="text" class="form-control form-control-sm" name="company" placeholder="Entreprise" value="{{ form_data.company if form_data else '' }}" required>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <input type="text" class="form-control form-control-sm" name="contact" placeholder="Contact" value="{{ form_data.contact if form_data else '' }}">
+            </div>
+        </div>
+        <div class="row g-2 mt-1">
+            <div class="col-md-4">
+                <input type="url" class="form-control form-control-sm" name="url" placeholder="URL de l'offre" value="{{ form_data.url if form_data else '' }}">
+            </div>
+            <div class="col-md-3">
+                <input type="email" class="form-control form-control-sm" name="email" placeholder="E-mail contact" value="{{ form_data.email if form_data else '' }}">
+            </div>
+            <div class="col-md-3">
+                <input type="file" class="form-control form-control-sm" name="capture_file" accept=".pdf" title="PDF max 2Mo">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100">➕ Ajouter</button>
+            </div>
+        </div>
+    </form>
+</div>

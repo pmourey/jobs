@@ -2,33 +2,82 @@
 
 {% extends 'base.html' %}
 {% block main %}
-<main>
-    <!-- Votre contenu de page ici -->
+<main class="container mt-4">
     {% if 'login_id' in session %}
-        <p>Bienvenue, {{user.username}}!</p>
-        <table class="welcome">
-            <tr>
-                <td> <a href="{{ url_for('show_all') }}">Suivi candidatures</a></td>
-            </tr>
+        <div class="row">
+            <div class="col-12">
+                <div class="alert alert-success" role="alert">
+                    <h4 class="alert-heading">Bienvenue, {{user.username}}! 👋</h4>
+                    <p class="mb-0">Accédez à vos fonctionnalités ci-dessous</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row g-3">
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">💼 Candidatures</h5>
+                        <p class="card-text">Suivi de vos candidatures d'emploi</p>
+                        <a href="{{ url_for('show_all') }}" class="btn btn-primary">Accéder</a>
+                    </div>
+                </div>
+            </div>
+            
             {% if user.is_admin %}
-            <tr>
-                <td><a href="{{ url_for('show_sessions') }}">Sessions ouvertes</a></td>
-            </tr>
-            <tr>
-                <td><a href="{{ url_for('show_accounts') }}">Gestion comptes utilisateurs</a></td>
-            </tr>
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">🔗 Sessions</h5>
+                        <p class="card-text">Sessions utilisateurs ouvertes</p>
+                        <a href="{{ url_for('show_sessions') }}" class="btn btn-warning">Gérer</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">👥 Comptes</h5>
+                        <p class="card-text">Gestion des utilisateurs</p>
+                        <a href="{{ url_for('show_accounts') }}" class="btn btn-info">Gérer</a>
+                    </div>
+                </div>
+            </div>
             {% endif %}
-            <tr>
-                <td><a href="{{ url_for('reset_password', token=token) }}">Changement mot de passe</a></td>
-            </tr>
-            <tr>
-                <td><a href="{{ url_for('logout') }}">Déconnexion</a></td>
-            </tr>
-        </table>
+            
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">🔐 Mot de passe</h5>
+                        <p class="card-text">Changer votre mot de passe</p>
+                        <a href="{{ url_for('reset_password', token=token) }}" class="btn btn-secondary">Modifier</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 border-danger">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-danger">🚪 Déconnexion</h5>
+                        <p class="card-text">Se déconnecter de l'application</p>
+                        <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Déconnecter</a>
+                    </div>
+                </div>
+            </div>
+        </div>
     {% else %}
-        <p>Vous n'êtes pas connecté.</p>
-        <p><a href="{{ url_for('login') }}">Veuillez vous identifier!</a>.</p>
-        <!-- Autres éléments pour les utilisateurs non connectés -->
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">🔒 Accès restreint</h5>
+                        <p class="card-text">Vous n'êtes pas connecté.</p>
+                        <a href="{{ url_for('login') }}" class="btn btn-primary">Se connecter</a>
+                    </div>
+                </div>
+            </div>
+        </div>
     {% endif %}
 </main>
 {% endblock main %}
