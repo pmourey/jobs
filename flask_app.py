@@ -451,7 +451,9 @@ def new():
                 file = request.files['capture_file']
                 if file and file.filename:
                     filename = f'capture_{job.id}.pdf'
-                    file_path = os.path.join('static/images', filename)
+                    images_dir = os.path.join(os.path.dirname(__file__), 'static', 'images')
+                    os.makedirs(images_dir, exist_ok=True)
+                    file_path = os.path.join(images_dir, filename)
                     file.save(file_path)
                     job.is_capture = 1
                     db.session.commit()
