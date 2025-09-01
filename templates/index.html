@@ -38,6 +38,16 @@
             <div class="col-md-6 col-lg-4">
                 <div class="card h-100">
                     <div class="card-body text-center">
+                        <h5 class="card-title">🔒 Sessions fermées</h5>
+                        <p class="card-text">Historique des sessions</p>
+                        <a href="{{ url_for('show_closed_sessions') }}" class="btn btn-secondary">Consulter</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body text-center">
                         <h5 class="card-title">👥 Comptes</h5>
                         <p class="card-text">Gestion des utilisateurs</p>
                         <a href="{{ url_for('show_accounts') }}" class="btn btn-info">Gérer</a>
