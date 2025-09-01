@@ -388,9 +388,10 @@ def show_accounts():
     user = get_user_by_id(session['login_id'])
     # Reverse order query
     accounts = User.query.order_by(desc(User.id)).all()
-    # Get last session for each account
+    # Get last session and connection count for each account
     for account in accounts:
         account.last_session = Session.query.filter_by(login_id=account.id).order_by(desc(Session.start)).first()
+        account.connection_count = Session.query.filter_by(login_id=account.id).count()
     return render_template('accounts.html', accounts=accounts, user=user)
 
 
@@ -417,9 +418,13 @@ def show_sessions():
 @is_connected
 @is_admin
 def show_closed_sessions():
-    # Reverse order query
-    sessions = Session.query.filter(Session.end.is_not(None)).order_by(desc(Session.end)).all()
-    return render_template('closed_sessions.html', sessions=sessions)
+    username_filter = request.args.get('username', '')
+    query = Session.query.filter(Session.end.is_not(None))
+    if username_filter:
+        query = query.join(User).filter(User.username == username_filter)
+    sessions = query.order_by(desc(Session.end)).all()
+    users = db.session.query(User.username).distinct().order_by(User.username).all()
+    return render_template('closed_sessions.html', sessions=sessions, username_filter=username_filter, users=users)
 
 
 @app.route('/suivi')
