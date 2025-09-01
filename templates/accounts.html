@@ -32,6 +32,7 @@
                 <th>👤 Login</th>
                 <th>📅 Date création</th>
                 <th>🕰 Dernière connexion</th>
+                <th>📊 Connexions</th>
                 <th>🏆 Rôle</th>
             </tr>
             </thead>
@@ -53,6 +54,7 @@
                 <td><strong>{{ account.username }}</strong></td>
                 <td>{{ account.creationDate|format_paris_time }}</td>
                 <td>{% if account.last_session %}{{ account.last_session.start|format_paris_time }}{% else %}<span class="text-muted">Jamais</span>{% endif %}</td>
+                <td><span class="badge bg-info">{{ account.connection_count }}</span></td>
                 <td>
                     {% if account.is_admin %}
                         <span class="badge bg-danger">Administrateur</span>
@@ -96,6 +98,9 @@
                 </div>
                 <div class="small text-muted">
                     🕰 {% if account.last_session %}{{ account.last_session.start.strftime('%d/%m/%Y %H:%M') }}{% else %}Jamais{% endif %}
+                </div>
+                <div class="small text-muted">
+                    📊 {{ account.connection_count }} connexion{{ 's' if account.connection_count > 1 else '' }}
                 </div>
             </div>
         </div>
