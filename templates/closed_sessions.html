@@ -1,0 +1,93 @@
+<!-- jobs/templates/closed_sessions.html -->
+
+{% extends 'base.html' %}
+{% block main %}
+<main class="container-fluid">
+    {% include './partials/_menu.html' %}
+    
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2 class="h4">🔒 Sessions fermées</h2>
+        </div>
+        <div class="col-md-4">
+            <form method="GET" class="d-flex">
+                <select name="username" class="form-select form-select-sm me-2" onchange="this.form.submit()">
+                    <option value="">Tous les utilisateurs</option>
+                    {% for user in users %}
+                    <option value="{{ user[0] }}" {% if username_filter == user[0] %}selected{% endif %}>{{ user[0] }}</option>
+                    {% endfor %}
+                </select>
+                {% if username_filter %}<a href="{{ url_for('show_closed_sessions') }}" class="btn btn-sm btn-secondary">❌</a>{% endif %}
+            </form>
+        </div>
+    </div>
+    
+    {% if sessions %}
+    <!-- Desktop table -->
+    <div class="d-none d-md-block">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+            <tr>
+                <th>👤 Login</th>
+                <th>🕰 Début</th>
+                <th>⏰ Fin</th>
+                <th>⏱️ Durée</th>
+                <th>🌐 Navigateur</th>
+                <th>🌍 Adresse IP</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for session in sessions %}
+            {% set duration = session.end - session.start %}
+            {% set hours = duration.total_seconds() // 3600 %}
+            {% set minutes = (duration.total_seconds() % 3600) // 60 %}
+            {% set seconds = duration.total_seconds() % 60 %}
+            <tr>
+                <td><span class="badge bg-secondary">{{ session.username }}</span></td>
+                <td>{{ session.start|format_paris_time }}</td>
+                <td>{{ session.end|format_paris_time }}</td>
+                <td>{{ "%02d:%02d:%02d"|format(hours|int, minutes|int, seconds|int) }}</td>
+                <td>{{ session.browser_family }} <small class="text-muted">(v{{ session.browser_version }})</small></td>
+                <td><code>{{ session.client_ip }}</code></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Mobile cards -->
+    <div class="d-md-none">
+        {% for session in sessions %}
+        {% set duration = session.end - session.start %}
+        {% set hours = duration.total_seconds() // 3600 %}
+        {% set minutes = (duration.total_seconds() % 3600) // 60 %}
+        {% set seconds = duration.total_seconds() % 60 %}
+        <div class="card mb-2">
+            <div class="card-body p-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="badge bg-secondary">{{ session.username }}</span>
+                    <small class="text-muted">{{ "%02d:%02d:%02d"|format(hours|int, minutes|int, seconds|int) }}</small>
+                </div>
+                <div class="small text-muted mb-1">
+                    🕰 {{ session.start.strftime('%d/%m %H:%M') }} → ⏰ {{ session.end.strftime('%d/%m %H:%M') }}
+                </div>
+                <div class="small text-muted">
+                    🌐 {{ session.browser_family }} (v{{ session.browser_version }})
+                </div>
+                <div class="small">
+                    🌍 <code>{{ session.client_ip }}</code>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center mt-5">
+        <div class="alert alert-info" role="alert">
+            <h4 class="alert-heading">📭 Aucune session fermée</h4>
+            <p class="mb-0">Pas de session fermée trouvée</p>
+        </div>
+    </div>
+    {% endif %}
+</main>
+{% endblock main %}
