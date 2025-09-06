@@ -375,8 +375,8 @@ def logout():
         sess.end = datetime.now()
         db.session.commit()
     logout_user()
-    # remove the username from the session if it's there
-    session.pop('id', None)
+    # clear all session data including cookies
+    session.clear()
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
 
