@@ -13,8 +13,45 @@ from werkzeug.security import generate_password_hash
 from Model import Job, User, db, Session
 from tools.send_emails import send_email
 
-""" SQL Alchemy requests """
+""" Hash functions """
+from werkzeug.security import generate_password_hash, check_password_hash as werkzeug_check_password_hash
+import hashlib
 
+# Define legacy hash methods here
+LEGACY_HASH_METHODS = {'sha256': lambda stored, pwd: stored == hashlib.sha256(pwd.encode()).hexdigest(), 'md5': lambda stored, pwd: stored == hashlib.md5(pwd.encode()).hexdigest(), # Add more if needed in the future
+}
+
+
+def check_password_and_upgrade(user, password):
+    """
+    Check password against multiple hash schemes, upgrade to Werkzeug hash automatically.
+
+    Args:
+        user: User object with .password attribute
+        password: Plaintext password to check
+        db: SQLAlchemy session for committing upgrades
+    Returns:
+        True if password is correct, False otherwise
+    """
+    password_hash = user.password
+
+    try:
+        # First, try Werkzeug's check
+        if werkzeug_check_password_hash(password_hash, password):
+            return True
+        return False
+    except ValueError as e:
+        # Werkzeug does not recognize the hash method
+        for method_name, checker in LEGACY_HASH_METHODS.items():
+            if checker(password_hash, password):
+                # Upgrade password to secure Werkzeug hash
+                user.password = generate_password_hash(password)
+                db.session.commit()
+                return True
+        return False
+
+
+""" SQL Alchemy requests """
 
 def get_user_by_id(user_id: int) -> User:
     # Effectue la requête pour récupérer un utilisateur par nom d'utilisateur et mot de passe

@@ -31,10 +31,9 @@ from validators import url
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import generate_password_hash#, check_password_hash
 
-from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email, \
-    send_confirmation_email, handle_file_upload
+from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email, send_confirmation_email, handle_file_upload, check_password_and_upgrade
 from Model import Job, User, db, Session
 from tools.send_emails import send_email
 
@@ -145,7 +144,8 @@ def welcome():
         s = Serializer(app.config['SECRET_KEY'])
         token = s.dumps({'user_id': user.id})
         # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
-        user.recovery_token = generate_password_hash(token, method='sha256')
+        # user.recovery_token = generate_password_hash(token, method='sha256')
+        user.recovery_token = generate_password_hash(token)
         user.token_expiration = datetime.now() + timedelta(hours=24)
         db.session.commit()
     else:
@@ -188,7 +188,8 @@ def register():
                 token = s.dumps({'user_id': user.id})
 
                 # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
-                user.recovery_token = generate_password_hash(token, method='sha256')
+                # user.recovery_token = generate_password_hash(token, method='sha256')
+                user.recovery_token = generate_password_hash(token)
                 user.token_expiration = datetime.now() + timedelta(minutes=10)
                 # app.logger.debug(f'time zone info: {user.token_expiration.tzinfo}')
 
@@ -211,8 +212,8 @@ def login():
     error = None
     if request.method == 'POST':
         user = User.query.filter_by(username=request.form['username']).first()
-        app.logger.debug(f'user = {user} - clear pwd = {request.form["password"]}')
-        if user and check_password_hash(user.password, password=request.form['password']):
+        app.logger.debug(f'user = {user} - password: {user.password} - clear pwd = {request.form["password"]}')
+        if user and check_password_and_upgrade(user, password=request.form['password']):
             if user.validated:
                 session['login_id'] = user.id
                 app.logger.debug(f'user (login) = {user.username} - id = {user.id} - session: {session}')
@@ -246,7 +247,8 @@ def change_password():
         app.logger.debug(
             f'user (change pwd) = {user.username} - new pwd = {new_password} - confirm_new_pwd = {confirm_new_password}')
         if new_password == confirm_new_password:
-            user.password = generate_password_hash(new_password, method='sha256')
+            # user.password = generate_password_hash(new_password, method='sha256')
+            user.password = generate_password_hash(new_password)
             db.session.add(user)
             db.session.commit()
             flash('Password was successfully changed!')
@@ -267,7 +269,8 @@ def request_reset_password():
             token = s.dumps({'user_id': user.id})
 
             # Mettez à jour le modèle d'utilisateur avec le jeton et le délai d'expiration
-            user.recovery_token = generate_password_hash(token, method='sha256')
+            # user.recovery_token = generate_password_hash(token, method='sha256')
+            user.recovery_token = generate_password_hash(token)
             user.token_expiration = datetime.now() + timedelta(minutes=10)
 
             db.session.commit()
@@ -350,7 +353,8 @@ def reset_password(token):
 
         if new_password == confirm_new_password:
             # Mettre à jour le mot de passe de l'utilisateur
-            user.password = generate_password_hash(new_password, method='sha256')
+            # user.password = generate_password_hash(new_password, method='sha256')
+            user.password = generate_password_hash(new_password)
 
             # Réinitialiser le champ de récupération de mot de passe
             user.recovery_token = None
