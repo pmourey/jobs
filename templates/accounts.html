@@ -30,6 +30,7 @@
                 <th>🗑️ Supprimer</th>
                 {% endif %}
                 <th>👤 Login</th>
+                <th>📧 E-Mail</th>
                 <th>📅 Date création</th>
                 <th>🕰 Dernière connexion</th>
                 <th>📊 Connexions</th>
@@ -52,6 +53,7 @@
                 </td>
                 {% endif %}
                 <td><strong>{{ account.username }}</strong></td>
+                <td>{{ account.email }}</td>
                 <td>{{ account.creationDate|format_paris_time }}</td>
                 <td>{% if account.last_session %}{{ account.last_session.start|format_paris_time }}{% else %}<span class="text-muted">Jamais</span>{% endif %}</td>
                 <td><span class="badge bg-info">{{ account.connection_count }}</span></td>
