@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% include './partials/_menu.html' %}
+
+{% block main %}
+<style>
+/* Small responsive tweaks for new.html */
+#pdf-preview-link { white-space: nowrap; }
+@media (max-width: 767.98px) {
+  /* Mobile: make action buttons full width and stack-friendly */
+  .action-buttons .btn { width: 100%; margin-bottom: .5rem; }
+  #pdf-preview-link { display: inline-block; width: 100%; text-align: center; }
+}
+@media (min-width: 992px) {
+  /* Large screens: give textarea more height and align inputs nicely */
+  #cover_letter_text { min-height: 180px; }
+}
+</style>
+
+<main class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-10">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="card-title mb-0">➕ Nouvelle candidature</h5>
+                </div>
+                <div class="card-body">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                      {% if messages %}
+                        {% for category, msg in messages %}
+                          <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ msg }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                          </div>
+                        {% endfor %}
+                      {% endif %}
+                    {% endwith %}
+
+                    <form action="{{ url_for('new') }}" method="POST" enctype="multipart/form-data" novalidate>
+                        <div class="row g-3">
+                            <div class="col-12 col-lg-6">
+                                <label for="name" class="form-label">Offre <span class="text-muted small">(Titre)</span></label>
+                                <input type="text" class="form-control" id="name" name="name" placeholder="Intitulé de l'offre" value="{{ form_data.name if form_data else '' }}" required autofocus>
+                            </div>
+                            <div class="col-12 col-lg-6">
+                                <label for="company" class="form-label">Entreprise</label>
+                                <input type="text" class="form-control" id="company" name="company" placeholder="Nom de l'entreprise" value="{{ form_data.company if form_data else '' }}" required>
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <label for="url" class="form-label">URL de l'offre</label>
+                                <input type="url" class="form-control" id="url" name="url" placeholder="https://..." value="{{ form_data.url if form_data else '' }}">
+                            </div>
+                            <div class="col-6 col-lg-3">
+                                <label for="zipCode" class="form-label">Code postal</label>
+                                <input type="text" class="form-control" id="zipCode" name="zipCode" placeholder="Ex: 75001" value="{{ form_data.zipCode if form_data else '' }}">
+                            </div>
+                            <div class="col-6 col-lg-3">
+                                <label for="contact" class="form-label">Contact</label>
+                                <input type="text" class="form-control" id="contact" name="contact" placeholder="Nom du contact / service" value="{{ form_data.contact if form_data else '' }}">
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <label for="email" class="form-label">E-mail contact</label>
+                                <input type="email" class="form-control" id="email" name="email" placeholder="contact@exemple.com" value="{{ form_data.email if form_data else '' }}">
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <label for="cover_letter_text" class="form-label">Lettre de motivation (texte)</label>
+                                <textarea class="form-control" id="cover_letter_text" name="cover_letter_text" rows="5" placeholder="Coller la lettre de motivation ici..." maxlength="8000">{{ form_data.cover_letter_text if form_data else '' }}</textarea>
+                                <div class="form-text d-flex justify-content-between">
+                                    <span>Coller votre lettre (texte uniquement).</span>
+                                    <small id="cl-count" class="text-muted">0 / 8000</small>
+                                </div>
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <label for="capture_file" class="form-label">Capture de l'offre (PDF) — max 2Mo</label>
+                                <input type="file" class="form-control" id="capture_file" name="capture_file" accept="application/pdf" title="PDF max 2Mo">
+                                <div class="form-text mt-1">
+                                    <span id="file-info" class="text-muted">Aucun fichier sélectionné.</span>
+                                </div>
+                                <div class="mt-2" id="pdf-preview" style="display:none;">
+                                    <a id="pdf-preview-link" href="#" target="_blank" class="btn btn-sm btn-outline-secondary">Prévisualiser le PDF</a>
+                                </div>
+                            </div>
+
+                            <div class="col-12 col-lg-6 action-buttons">
+                                <div class="d-grid d-lg-block gap-2">
+                                    <a href="{{ url_for('show_all') }}" class="btn btn-secondary">Annuler</a>
+                                    <button type="submit" class="btn btn-primary">➕ Ajouter</button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div class="small text-muted mt-2">Astuce: vous pouvez coller la lettre de motivation et joindre la capture PDF de l'offre si nécessaire.</div>
+        </div>
+    </div>
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const clText = document.getElementById('cover_letter_text');
+    const clCount = document.getElementById('cl-count');
+    const fileInput = document.getElementById('capture_file');
+    const fileInfo = document.getElementById('file-info');
+    const pdfPreview = document.getElementById('pdf-preview');
+    const pdfPreviewLink = document.getElementById('pdf-preview-link');
+
+    function updateCount() {
+        const len = clText.value.length;
+        clCount.textContent = `${len} / ${clText.getAttribute('maxlength')}`;
+    }
+
+    if (clText) {
+        updateCount();
+        clText.addEventListener('input', updateCount);
+    }
+
+    if (fileInput) {
+        fileInput.addEventListener('change', function(e) {
+            const file = this.files[0];
+            if (!file) {
+                fileInfo.textContent = 'Aucun fichier sélectionné.';
+                pdfPreview.style.display = 'none';
+                return;
+            }
+            // display name and size
+            const sizeKB = (file.size / 1024).toFixed(0);
+            fileInfo.textContent = `${file.name} — ${sizeKB} Ko`;
+
+            // validate size (2MB)
+            if (file.size > 2 * 1024 * 1024) {
+                fileInfo.textContent += ' — Fichier trop volumineux (max 2Mo)';
+            }
+
+            // preview URL
+            try {
+                const url = URL.createObjectURL(file);
+                pdfPreviewLink.href = url;
+                pdfPreview.style.display = 'block';
+            } catch (err) {
+                pdfPreview.style.display = 'none';
+            }
+        });
+    }
+});
+</script>
+
+{% endblock main %}

@@ -135,6 +135,7 @@ class Job(db.Model):
     relaunchDate = db.Column(db.DateTime)
     refusalDate = db.Column(db.DateTime)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    cover_letter_text = db.Column(db.Text)
 
     # Relation avec la table Utilisateur
     # utilisateur = relationship('user', backref='job')

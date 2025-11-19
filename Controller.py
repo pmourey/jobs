@@ -72,27 +72,27 @@ def check(regex: str, email: str) -> Match[str] | None:
 
 
 def handle_file_upload(job_id):
-    """Handle PDF file upload with validation. Returns (success, error_message)"""
+    """Handle offer capture PDF upload with validation. Returns (success, error_message)"""
     if 'capture_file' not in request.files:
         return True, None
-    
+
     file = request.files['capture_file']
     if not file or not file.filename:
         return True, None
-    
+
     # Check file size (2MB max)
     file.seek(0, 2)
     file_size = file.tell()
     file.seek(0)
     if file_size > 2 * 1024 * 1024:
         return False, 'Erreur: Le fichier ne doit pas dépasser 2Mo!'
-    
+
     # Check PDF header
     header = file.read(4)
     file.seek(0)
     if header != b'%PDF':
         return False, 'Erreur: Le fichier n\'est pas un PDF valide!'
-    
+
     # Save file
     filename = f'capture_{job_id}.pdf'
     images_dir = os.path.join(os.path.dirname(__file__), 'static', 'images')

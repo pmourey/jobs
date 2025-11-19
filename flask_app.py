@@ -448,35 +448,41 @@ def show_all():
 @is_editor_or_admin
 def new():
     if request.method == 'POST':
-        email: str = request.form['email']
-        if not (request.form['name'] and request.form['url'] and request.form['company']):
+        email: str = request.form.get('email', '')
+        if not (request.form.get('name') and request.form.get('company')):
             flash('Please enter all the fields', 'error')
         elif email and not check(app.config['REGEX'], email):
             flash(f'Invalid E-Mail {email}!', 'error')
         else:
             # Create job
-            job = Job(name=request.form['name'], url=request.form['url'],
-                      zipCode=request.form['zipCode'], company=request.form['company'],
-                      contact=request.form['contact'], date=datetime.now(), email=email,
+            job = Job(name=request.form.get('name'), url=request.form.get('url'),
+                      zipCode=request.form.get('zipCode'), company=request.form.get('company'),
+                      contact=request.form.get('contact'), date=datetime.now(), email=email,
                       user_id=session['login_id'])
+            # Save cover letter text if provided
+            cover_text = request.form.get('cover_letter_text')
+            if cover_text:
+                job.cover_letter_text = cover_text
             db.session.add(job)
             db.session.commit()
-            
-            # Handle file upload
+
+            # Handle file upload (capture and cover letter)
             success, error_msg = handle_file_upload(job.id)
             if not success:
                 flash(error_msg, 'error')
                 user = get_user_by_id(session['login_id'])
-                jobs = Job.query.filter(Job.active).order_by(desc(Job.applicationDate)).all()
-                return render_template('candidatures.html', jobs=jobs, user=user, form_data=request.form)
-            
+                # in case of error, show new form with previous values
+                return render_template('new.html', form_data=request.form, user=user)
+
+            # set flags
             if success and 'capture_file' in request.files and request.files['capture_file'].filename:
                 job.is_capture = 1
-                db.session.commit()
-            
+            db.session.commit()
+
             flash('Record was successfully added')
-    return redirect(url_for('show_all'))
-    # return render_template('candidatures.html')
+            return redirect(url_for('show_all'))
+    else:
+        return render_template('new.html', form_data=None)
 
 
 @app.route('/toggle_expired/<int:id>', methods=['POST'])
@@ -552,16 +558,20 @@ def update(id):
         job.relaunchDate = datetime.strptime(relaunch_date, '%Y-%m-%d') if relaunch_date else None
         refusal_date: str = request.form.get('refusalDate')
         job.refusalDate = datetime.strptime(refusal_date, '%Y-%m-%d') if refusal_date else None
-        
+
+        # cover letter text
+        cover_text = request.form.get('cover_letter_text')
+        job.cover_letter_text = cover_text if cover_text else None
+
         # Handle file upload
         success, error_msg = handle_file_upload(job.id)
         if not success:
             flash(error_msg, 'error')
             return render_template('update.html', job=job)
-        
+
         if success and 'capture_file' in request.files and request.files['capture_file'].filename:
             job.is_capture = 1
-        
+
         db.session.commit()
         flash('Record was successfully updated')
         return redirect(url_for('show_all'))
@@ -644,6 +654,7 @@ def format_paris_time(utc_dt):
 #     # Shut down the scheduler when exiting the app
 #     atexit.register(lambda: scheduler.shutdown())
 
-# app.run()
-# toolbar.init_app(app)
-# app.run(debug=True, use_debugger=True, use_reloader=False)
+if __name__ == '__main__':
+    app.run()
+    toolbar.init_app(app)
+    app.run(debug=True, use_debugger=True, use_reloader=False)

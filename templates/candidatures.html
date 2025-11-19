@@ -21,9 +21,22 @@
             window.location.href = '/delete/' + jobId;
         }
     }
+
+    function showLM(id) {
+        const elt = document.getElementById('lm-content-' + id);
+        const modalBody = document.getElementById('lmModalBody');
+        if (elt && modalBody) {
+            // use textContent to avoid interpreting HTML
+            modalBody.textContent = elt.textContent || elt.innerText || '';
+            var myModal = new bootstrap.Modal(document.getElementById('lmModal'));
+            myModal.show();
+        }
+    }
 </script>
 {% if not user.is_reader %}
-{% include './partials/_form.html' %}
+<div class="mb-3">
+    <a href="{{ url_for('new') }}" class="btn btn-primary btn-sm">➕ Ajouter une candidature</a>
+</div>
 {% endif %}
 <main class="container-fluid">
 {% if jobs %}
@@ -33,7 +46,7 @@
             <thead class="table-dark">
             <tr>
                 {% if not user.is_reader %}<th>Update</th><th>Delete</th>{% endif %}
-                <th>Offre</th><th>Capture</th><th>Location</th><th>Company</th><th>Contact</th><th>E-Mail</th><th>Date candidature</th><th>Date relance</th><th>Date refus</th><th>Expirée</th>
+                <th>Offre</th><th>Capture</th><th>LM</th><th>Location</th><th>Company</th><th>Contact</th><th>E-Mail</th><th>Date candidature</th><th>Date relance</th><th>Date refus</th><th>Expirée</th>
             </tr>
             </thead>
             <tbody>
@@ -42,6 +55,15 @@
                 {% if not user.is_reader %}<td><a href="{{ url_for('update', id=job.id) }}" class="btn btn-sm btn-primary" title="Modifier #{{job.id}}">✏️</a></td><td><button onclick="deleteJob({{ job.id }})" class="btn btn-sm btn-danger" title="Supprimer #{{job.id}}">🗑️</button></td>{% endif %}
                 <td><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></td>
                 <td>{% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success">PDF</a>{% else %}<span class="text-muted">⌐</span>{% endif %}</td>
+                <td>
+                    {% if job.cover_letter_text %}
+                        <span class="text-truncate d-inline-block" style="max-width:160px">{{ job.cover_letter_text }}</span>
+                        <button type="button" class="btn btn-sm btn-link p-0 ms-2" onclick="showLM({{ job.id }})">Aperçu</button>
+                        <div id="lm-content-{{ job.id }}" class="d-none">{{ job.cover_letter_text | e }}</div>
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
                 <td>{{ job.zipCode }}</td><td>{{ job.company }}</td><td>{{ job.contact }}</td>
                 <td class="{% if not job.email %}bg-warning{% endif %}">{{ job.email }}</td>
                 <td class="{% if job.expired %}bg-danger text-white{% endif %}">{{job.applicationDate.strftime('%d/%m/%Y')}}</td>
@@ -72,6 +94,11 @@
                     <span class="{% if job.expired %}bg-danger text-white px-1 rounded{% endif %}">{{job.applicationDate.strftime('%d/%m')}}</span>
                     <div>
                         {% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success py-0">PDF</a>{% endif %}
+                        {% if job.cover_letter_text %}
+                            <span class="ms-1 small text-truncate" style="max-width:120px">{{ job.cover_letter_text }}</span>
+                            <button type="button" class="btn btn-sm btn-link p-0 ms-2" onclick="showLM({{ job.id }})">Aperçu</button>
+                            <div id="lm-content-{{ job.id }}" class="d-none">{{ job.cover_letter_text | e }}</div>
+                        {% endif %}
                         <input type="checkbox" class="form-check-input ms-2" {% if not user.is_reader  %}onchange="toggleExpired({{ job.id }})"{% else %}disabled{% endif %} {% if not job.active %}checked{% endif %} title="Expirée">
                     </div>
                 </div>
@@ -83,4 +110,21 @@
     <div class="text-center mt-5"><p class="fs-5">Pas de candidature en cours ✌️</p></div>
     {% endif %}
 </main>
+
+<!-- Modal for cover letter preview -->
+<div class="modal fade" id="lmModal" tabindex="-1" aria-labelledby="lmModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="lmModalLabel">Aperçu - Lettre de motivation</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="lmModalBody" style="white-space:pre-wrap;"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock main %}

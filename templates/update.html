@@ -62,6 +62,13 @@
                             <input type="file" class="form-control" name="capture_file" id="capture_file" accept=".pdf">
                             <div class="form-text">Fichier PDF uniquement, taille max 2Mo</div>
                         </div>
+
+                        <!-- Cover letter fields (texte seulement) -->
+                        <div class="mb-3">
+                            <label for="cover_letter_text" class="form-label">Lettre de motivation (texte)</label>
+                            <textarea class="form-control" name="cover_letter_text" id="cover_letter_text" rows="4">{{ job.cover_letter_text or '' }}</textarea>
+                        </div>
+
                         <div class="text-end">
                             <a href="{{ url_for('show_all') }}" class="btn btn-secondary me-2">Annuler</a>
                             <button type="submit" class="btn btn-primary">✅ Mettre à jour</button>
