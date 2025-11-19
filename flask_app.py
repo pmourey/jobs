@@ -24,7 +24,7 @@ from pytz import timezone
 from flask import Flask, request, flash, url_for, redirect, render_template, session, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_debugtoolbar import DebugToolbarExtension
-from sqlalchemy import DateTime, desc
+from sqlalchemy import DateTime, desc, func
 from user_agents import parse
 from user_agents.parsers import UserAgent
 from validators import url
@@ -390,12 +390,15 @@ def logout():
 @is_admin
 def show_accounts():
     user = get_user_by_id(session['login_id'])
-    # Reverse order query
-    accounts = User.query.order_by(desc(User.id)).all()
-    # Get last session and connection count for each account
-    for account in accounts:
-        account.last_session = Session.query.filter_by(login_id=account.id).order_by(desc(Session.start)).first()
-        account.connection_count = Session.query.filter_by(login_id=account.id).count()
+    # Query users together with their session counts and sort by count desc
+    count_expr = func.count(Session.id)
+    results = db.session.query(User, count_expr.label('connection_count')).outerjoin(Session, Session.login_id == User.id).group_by(User.id).order_by(desc(count_expr)).all()
+    accounts = []
+    for user_obj, conn_count in results:
+        # attach the count and last session
+        user_obj.connection_count = conn_count
+        user_obj.last_session = Session.query.filter_by(login_id=user_obj.id).order_by(desc(Session.start)).first()
+        accounts.append(user_obj)
     return render_template('accounts.html', accounts=accounts, user=user)
 
 
