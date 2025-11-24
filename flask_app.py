@@ -415,12 +415,15 @@ def show_accounts():
 @is_admin
 def delete_session(id):
     session_obj = Session.query.get_or_404(id)
+    current_user_id = session['login_id']
     if session_obj.end is None:
-        # Close active session
+        if session_obj.login_id == current_user_id:
+            return jsonify({ 'error': 'Cannot close your own active session' }), 403
+        # Close active session of another user
         session_obj.end = datetime.now()
         db.session.commit()
     else:
-        # Delete closed session permanently
+        # Delete closed session permanently (any user)
         db.session.delete(session_obj)
         db.session.commit()
     return '', 200
@@ -463,9 +466,13 @@ def delete_sessions():
     now = datetime.now()
     closed_ids = []
     deleted_ids = []
+    current_user_id = session['login_id']
     for sess in sessions_to_close:
-        print(f"DEBUG Processing session {sess.id}, end={sess.end}")
+        print(f"DEBUG Processing session {sess.id}, end={sess.end}, login_id={sess.login_id}")
         if sess.end is None:
+            if sess.login_id == current_user_id:
+                print(f"DEBUG Skipping own active session {sess.id}")
+                continue  # Skip closing own session
             sess.end = now
             closed_ids.append(sess.id)
         else:
@@ -487,7 +494,8 @@ def delete_sessions():
 def show_sessions():
     # Reverse order query
     sessions = Session.query.filter(Session.end.is_(None)).order_by(desc(Session.id)).all()
-    return render_template('sessions.html', sessions=sessions)
+    user = get_user_by_id(session['login_id'])
+    return render_template('sessions.html', sessions=sessions, user=user)
 
 
 @app.route('/closed_sessions')

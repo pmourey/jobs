@@ -42,7 +42,7 @@
             {% for session in sessions %}
             <tr>
                 <td>
-                    {% if not session.user.is_reader %}
+                    {% if session.login_id != user.id %}
                     <input class="session-checkbox" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />
                     {% endif %}
                 </td>
@@ -50,7 +50,7 @@
                 <td>{{ session.start|format_paris_time }}</td>
                 <td>{{ session.browser_family }} <small class="text-muted">(v{{ session.browser_version }})</small></td>
                 <td><code>{{ session.client_ip }}</code></td>
-                <td>{% if not session.user.is_reader %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer session">🗑️</button>{% endif %}</td>
+                <td>{% if session.login_id != user.id %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer session">🗑️</button>{% endif %}</td>
             </tr>
             {% endfor %}
             </tbody>
@@ -64,7 +64,7 @@
             <div class="card-body p-2">
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <div class="d-flex align-items-center">
-                        {% if not session.user.is_reader %}<input class="session-checkbox me-2" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />{% endif %}
+                        {% if session.login_id != user.id %}<input class="session-checkbox me-2" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />{% endif %}
                         <span class="badge bg-primary">{{ session.username }}</span>
                     </div>
                     <small class="text-muted">{{ session.start.strftime('%d/%m %H:%M') }}</small>
@@ -74,7 +74,7 @@
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
                     <div class="small">🌍 <code>{{ session.client_ip }}</code></div>
-                    {% if not session.user.is_reader %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer">🗑️</button>{% endif %}
+                    {% if session.login_id != user.id %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer">🗑️</button>{% endif %}
                 </div>
             </div>
         </div>
