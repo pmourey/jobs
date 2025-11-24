@@ -21,7 +21,7 @@ import pytz
 from dateutil.relativedelta import relativedelta
 from itsdangerous import Serializer, URLSafeSerializer
 from pytz import timezone
-from flask import Flask, request, flash, url_for, redirect, render_template, session, send_file
+from flask import Flask, request, flash, url_for, redirect, render_template, session, send_file, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy import DateTime, desc, func
@@ -74,6 +74,10 @@ def is_connected(func):
         # app.logger.debug(f'is_connected: session = {session}')
         if 'login_id' not in session:
             error = 'Restricted access! Please authenticate.'
+            # Si requête AJAX / JSON, retourner 401 JSON utile au JS
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+                from flask import jsonify
+                return jsonify({ 'error': error }), 401
             return render_template('login.html', error=error)
             # return redirect(url_for('login.html'))  # Remplacez 'login.html' par l'URL de votre page de connexion
         return func(*args, **kwargs)
@@ -86,6 +90,10 @@ def is_admin(func):
         user = get_user_by_id(session['login_id'])
         if not user.is_admin:
             error = 'Insufficient privileges for this operation! Please contact administrator...'
+            # Si requête AJAX / JSON, retourner 403 JSON utile au JS
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+                from flask import jsonify
+                return jsonify({ 'error': error }), 403
             return render_template('login.html', error=error)
         return func(*args, **kwargs)
     return wrapper
@@ -245,7 +253,7 @@ def change_password():
         new_password: str = request.form["new_password"]
         confirm_new_password: str = request.form["confirm_new_password"]
         app.logger.debug(
-            f'user (change pwd) = {user.username} - new pwd = {new_password} - confirm_new_pwd = {confirm_new_password}')
+            f'user (change pwd) = {user.username} - new pwd = {new_password} - confirm new_pwd = {confirm_new_password}')
         if new_password == confirm_new_password:
             # user.password = generate_password_hash(new_password, method='sha256')
             user.password = generate_password_hash(new_password)
@@ -407,9 +415,70 @@ def show_accounts():
 @is_admin
 def delete_session(id):
     session_obj = Session.query.get_or_404(id)
-    session_obj.end = datetime.now()
-    db.session.commit()
+    if session_obj.end is None:
+        # Close active session
+        session_obj.end = datetime.now()
+        db.session.commit()
+    else:
+        # Delete closed session permanently
+        db.session.delete(session_obj)
+        db.session.commit()
     return '', 200
+
+
+@app.route('/delete_sessions', methods=['GET', 'POST'])
+@is_connected
+@is_admin
+def delete_sessions():
+    """Supprime (marque end=now) plusieurs sessions à la fois.
+    - GET : renvoie un message de diagnostic (utilisé pour vérifier que la route est bien active).
+    - POST : attend un JSON { "ids": [1,2,3] } et met à jour les sessions.
+    """
+    app.logger.debug(f"delete_sessions called: method={request.method} path={request.path}")
+    try:
+        raw = request.get_data(as_text=True)
+    except Exception:
+        raw = None
+    app.logger.debug(f"delete_sessions raw payload: {raw}")
+
+    if request.method == 'GET':
+        return jsonify({ 'message': 'Endpoint /delete_sessions disponible', 'method': 'GET' }), 200
+
+    # POST handler
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        return jsonify({ 'error': 'Invalid JSON' }), 400
+
+    if not data or 'ids' not in data:
+        return jsonify({ 'error': 'Missing ids list' }), 400
+
+    ids = data.get('ids')
+    if not isinstance(ids, list) or any(not isinstance(i, int) for i in ids):
+        return jsonify({ 'error': 'ids must be a list of integers' }), 400
+
+    # Query all sessions matching provided ids
+    sessions_to_close = Session.query.filter(Session.id.in_(ids)).all()
+    print(f"DEBUG delete_sessions: found {len(sessions_to_close)} sessions for ids {ids}")
+    now = datetime.now()
+    closed_ids = []
+    deleted_ids = []
+    for sess in sessions_to_close:
+        print(f"DEBUG Processing session {sess.id}, end={sess.end}")
+        if sess.end is None:
+            sess.end = now
+            closed_ids.append(sess.id)
+        else:
+            db.session.delete(sess)
+            deleted_ids.append(sess.id)
+    try:
+        db.session.commit()
+        print(f"DEBUG Committed successfully: closed {closed_ids}, deleted {deleted_ids}")
+    except Exception as e:
+        print(f"DEBUG Commit failed: {e}")
+        db.session.rollback()
+        return jsonify({ 'error': 'Commit failed' }), 500
+    return jsonify({ 'closed': closed_ids, 'deleted': deleted_ids }), 200
 
 
 @app.route('/sessions')

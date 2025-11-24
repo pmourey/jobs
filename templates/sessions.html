@@ -12,11 +12,25 @@
     </div>
     
     {% if sessions %}
+    <!-- Toolbar for multi-delete -->
+    <div class="row mb-2">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <div>
+                <button id="delete-selected" class="btn btn-danger btn-sm" disabled title="Supprimer les sessions sélectionnées">🗑️ Supprimer sélectionnées</button>
+                <span id="selected-count" class="ms-2 text-muted">(0)</span>
+            </div>
+            <div>
+                <button id="select-all-toggle" class="btn btn-outline-secondary btn-sm">Tout sélectionner</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Desktop table -->
     <div class="d-none d-md-block">
         <table class="table table-striped table-hover">
             <thead class="table-dark">
             <tr>
+                <th style="width:40px"><input id="select-all" type="checkbox" aria-label="Sélectionner tout" /></th>
                 <th>👤 Login</th>
                 <th>🕰 Début</th>
                 <th>🌐 Navigateur</th>
@@ -27,6 +41,11 @@
             <tbody>
             {% for session in sessions %}
             <tr>
+                <td>
+                    {% if not session.user.is_reader %}
+                    <input class="session-checkbox" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />
+                    {% endif %}
+                </td>
                 <td><span class="badge bg-primary">{{ session.username }}</span></td>
                 <td>{{ session.start|format_paris_time }}</td>
                 <td>{{ session.browser_family }} <small class="text-muted">(v{{ session.browser_version }})</small></td>
@@ -44,7 +63,10 @@
         <div class="card mb-2">
             <div class="card-body p-2">
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="badge bg-primary">{{ session.username }}</span>
+                    <div class="d-flex align-items-center">
+                        {% if not session.user.is_reader %}<input class="session-checkbox me-2" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />{% endif %}
+                        <span class="badge bg-primary">{{ session.username }}</span>
+                    </div>
                     <small class="text-muted">{{ session.start.strftime('%d/%m %H:%M') }}</small>
                 </div>
                 <div class="small text-muted">
@@ -69,14 +91,98 @@
 </main>
 
 <script>
+// Gère la suppression unique (existant)
 function deleteSession(sessionId) {
     if (confirm('Êtes-vous sûr de vouloir supprimer cette session ?')) {
         fetch('/delete_session/' + sessionId, {
-            method: 'POST'
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
         }).then(() => {
             location.reload();
         });
     }
 }
+
+// Sélection multiple
+function getCheckboxes() {
+    return Array.from(document.querySelectorAll('.session-checkbox'));
+}
+
+function updateSelectionState() {
+    const checkboxes = getCheckboxes();
+    const selected = checkboxes.filter(cb => cb.checked).map(cb => cb.dataset.id);
+    const btn = document.getElementById('delete-selected');
+    const count = document.getElementById('selected-count');
+    if (btn) btn.disabled = selected.length === 0;
+    if (count) count.textContent = `(${selected.length})`;
+}
+
+function deleteSelectedSessions() {
+    const checkboxes = getCheckboxes();
+    const selected = checkboxes.filter(cb => cb.checked).map(cb => cb.dataset.id);
+    if (selected.length === 0) return;
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer ${selected.length} session(s) ?`)) return;
+
+    const deleteBtn = document.getElementById('delete-selected');
+    if (deleteBtn) deleteBtn.disabled = true;
+
+    // Envoie une seule requête JSON contenant la liste des ids
+    fetch('/delete_sessions', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify({ ids: selected.map(id => parseInt(id, 10)) })
+    }).then(resp => {
+        if (resp.ok) return resp.text().then(() => location.reload());
+        return resp.text().then(text => { throw new Error(`${resp.status} ${resp.statusText}: ${text}`); });
+    }).catch(err => {
+        console.error(err);
+        alert('Erreur lors de la suppression des sessions: ' + err.message);
+    }).finally(() => {
+        if (deleteBtn) deleteBtn.disabled = false;
+    });
+}
+
+// Select all toggle
+function toggleSelectAll(checked) {
+    const checkboxes = getCheckboxes();
+    checkboxes.forEach(cb => cb.checked = checked);
+    updateSelectionState();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // per-checkbox change
+    getCheckboxes().forEach(cb => cb.addEventListener('change', updateSelectionState));
+
+    // header select-all
+    const selectAll = document.getElementById('select-all');
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            toggleSelectAll(this.checked);
+        });
+    }
+
+    // select all toggle button (convenience for mobile)
+    const selectAllToggle = document.getElementById('select-all-toggle');
+    if (selectAllToggle) {
+        selectAllToggle.addEventListener('click', function() {
+            const checkboxes = getCheckboxes();
+            const anyUnchecked = checkboxes.some(cb => !cb.checked);
+            toggleSelectAll(anyUnchecked);
+            // sync header checkbox if present
+            const header = document.getElementById('select-all');
+            if (header) header.checked = anyUnchecked;
+            this.textContent = anyUnchecked ? 'Tout désélectionner' : 'Tout sélectionner';
+        });
+    }
+
+    // delete selected button
+    const deleteBtn = document.getElementById('delete-selected');
+    if (deleteBtn) deleteBtn.addEventListener('click', deleteSelectedSessions);
+
+    // initial state
+    updateSelectionState();
+});
 </script>
 {% endblock main %}
