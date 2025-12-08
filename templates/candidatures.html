@@ -52,7 +52,8 @@
             const tbody = document.querySelector('table.table tbody');
             if (tbody) {
                 const rows = Array.from(tbody.querySelectorAll('tr'));
-                rows.sort((a, b) => Number(a.getAttribute('data-order') || 0) - Number(b.getAttribute('data-order') || 0));
+                // server order is DESC (most recent first), sort client-side accordingly
+                rows.sort((a, b) => Number(b.getAttribute('data-order') || 0) - Number(a.getAttribute('data-order') || 0));
                 rows.forEach(r => tbody.appendChild(r)); // appendChild moves existing nodes
             }
         } catch (e) {
@@ -64,7 +65,8 @@
             const cardsContainer = document.querySelector('div.d-lg-none');
             if (cardsContainer) {
                 const cards = Array.from(cardsContainer.querySelectorAll('div.card'));
-                cards.sort((a, b) => Number(a.getAttribute('data-order') || 0) - Number(b.getAttribute('data-order') || 0));
+                // preserve server-side descending order
+                cards.sort((a, b) => Number(b.getAttribute('data-order') || 0) - Number(a.getAttribute('data-order') || 0));
                 cards.forEach(c => cardsContainer.appendChild(c));
             }
         } catch (e) {
@@ -110,7 +112,7 @@
             </thead>
             <tbody>
             {% for job in jobs %}
-            <tr class="{% if not job.active %}table-secondary{% endif %}" data-closed="{{ '1' if not job.active else '0' }}" data-order="{{ loop.index0 }}">
+            <tr class="{% if not job.active %}table-secondary{% endif %}" data-closed="{{ '1' if not job.active else '0' }}" data-order="{{ job.recent_ts }}">
                 {% if not user.is_reader %}<td><a href="{{ url_for('update', id=job.id) }}" class="btn btn-sm btn-primary" title="Modifier #{{job.id}}">✏️</a></td><td><button onclick="deleteJob({{ job.id }})" class="btn btn-sm btn-danger" title="Supprimer #{{job.id}}">🗑️</button></td>{% endif %}
                 <td><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></td>
                 <td>{% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success">PDF</a>{% else %}<span class="text-muted">⌐</span>{% endif %}</td>
@@ -152,7 +154,7 @@
     <!-- Mobile cards -->
     <div class="d-lg-none">
         {% for job in jobs %}
-        <div class="card mb-2 {% if not job.active %}bg-light{% endif %}" data-closed="{{ '1' if not job.active else '0' }}" data-order="{{ loop.index0 }}">
+        <div class="card mb-2 {% if not job.active %}bg-light{% endif %}" data-closed="{{ '1' if not job.active else '0' }}" data-order="{{ job.recent_ts }}">
             <div class="card-body p-2">
                 <div class="d-flex justify-content-between align-items-start mb-1">
                     <h6 class="card-title mb-0 small"><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></h6>

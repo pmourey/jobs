@@ -24,7 +24,7 @@ from pytz import timezone
 from flask import Flask, request, flash, url_for, redirect, render_template, session, send_file, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_debugtoolbar import DebugToolbarExtension
-from sqlalchemy import DateTime, desc, func
+from sqlalchemy import DateTime, desc, func, case
 from user_agents import parse
 from user_agents.parsers import UserAgent
 from validators import url
@@ -518,7 +518,31 @@ def show_all():
     # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
     app.logger.debug('This is a debug message.')
     # Reverse order query - show all jobs including expired
-    jobs = Job.query.order_by(desc(Job.applicationDate)).all()
+    # jobs = Job.query.order_by(desc(Job.applicationDate)).all()
+    # Order by the most recent date between relaunchDate and applicationDate
+    # If a relaunchDate exists, use it; otherwise fall back to applicationDate
+    # jobs = Job.query.order_by(desc(func.coalesce(Job.relaunchDate, Job.applicationDate))).all()
+    # Order by the most recent date between relaunchDate and applicationDate
+    # Use SQL MAX function which is supported by SQLite/Postgres/MySQL to pick the most recent (greatest) date
+    # recent_date = func.max(Job.relaunchDate, Job.applicationDate)
+    # jobs = Job.query.order_by(desc(recent_date)).all()
+    # Fetch all jobs and sort in Python by the most recent date between relaunchDate and applicationDate
+    jobs = Job.query.all()
+    def most_recent_date(job):
+        # return the most recent non-None date between relaunchDate and applicationDate
+        dates = [d for d in (job.relaunchDate, job.applicationDate) if d]
+        if not dates:
+            return datetime.min
+        return max(dates)
+
+    jobs.sort(key=most_recent_date, reverse=True)
+    # Attach a stable numeric sort key (epoch seconds) so the template/JS can preserve the server order
+    for j in jobs:
+        rd = most_recent_date(j)
+        try:
+            j.recent_ts = int(rd.timestamp())
+        except Exception:
+            j.recent_ts = 0
     user = get_user_by_id(user_id)
     return render_template('candidatures.html', jobs=jobs, user=user)
 
