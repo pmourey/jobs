@@ -5,6 +5,8 @@
 
 {% block main %}
 <script>
+    let showClosed = false;
+
     function toggleExpired(jobId) {
         fetch('/toggle_expired/' + jobId, {
             method: 'POST',
@@ -23,7 +25,8 @@
     }
 
     function showLM(id) {
-        const elt = document.getElementById('lm-content-' + id);
+        // prefer desktop element, fallback to mobile
+        const elt = document.getElementById('lm-content-desktop-' + id) || document.getElementById('lm-content-mobile-' + id);
         const modalBody = document.getElementById('lmModalBody');
         if (elt && modalBody) {
             // use textContent to avoid interpreting HTML
@@ -32,12 +35,68 @@
             myModal.show();
         }
     }
+
+    function applyClosedFilter() {
+        showClosed = document.getElementById('showClosed').checked;
+        document.querySelectorAll('[data-closed]').forEach(el => {
+            const isClosed = el.getAttribute('data-closed') === '1';
+            if (isClosed && !showClosed) {
+                el.classList.add('d-none');
+            } else {
+                el.classList.remove('d-none');
+            }
+        });
+
+        // Re-order table rows in tbody according to data-order to preserve original sort
+        try {
+            const tbody = document.querySelector('table.table tbody');
+            if (tbody) {
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                rows.sort((a, b) => Number(a.getAttribute('data-order') || 0) - Number(b.getAttribute('data-order') || 0));
+                rows.forEach(r => tbody.appendChild(r)); // appendChild moves existing nodes
+            }
+        } catch (e) {
+            console.debug('applyClosedFilter: table reorder failed', e);
+        }
+
+        // Re-order mobile cards container
+        try {
+            const cardsContainer = document.querySelector('div.d-lg-none');
+            if (cardsContainer) {
+                const cards = Array.from(cardsContainer.querySelectorAll('div.card'));
+                cards.sort((a, b) => Number(a.getAttribute('data-order') || 0) - Number(b.getAttribute('data-order') || 0));
+                cards.forEach(c => cardsContainer.appendChild(c));
+            }
+        } catch (e) {
+            console.debug('applyClosedFilter: cards reorder failed', e);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // initial state (checkbox checked by default)
+        const cb = document.getElementById('showClosed');
+        if (cb) {
+            cb.checked = false;
+        }
+        applyClosedFilter();
+    });
 </script>
-{% if not user.is_reader %}
 <div class="mb-3">
-    <a href="{{ url_for('new') }}" class="btn btn-primary btn-sm">➕ Ajouter une candidature</a>
+  <div class="d-flex justify-content-between align-items-center">
+    <div>
+      {% if not user.is_reader %}
+        <a href="{{ url_for('new') }}" class="btn btn-primary btn-sm">➕ Ajouter une candidature</a>
+      {% endif %}
+    </div>
+    <div>
+      <!-- Filtre pour offres clôturées -->
+      <div class="form-check form-switch d-inline-flex align-items-center" style="gap:0.5rem;">
+        <input class="form-check-input" type="checkbox" id="showClosed" onchange="applyClosedFilter()" style="transform: scale(0.8); transform-origin: center;">
+        <label class="form-check-label small mb-0" for="showClosed">Afficher les offres clôturées</label>
+      </div>
+    </div>
+  </div>
 </div>
-{% endif %}
 <main class="container-fluid">
 {% if jobs %}
     <!-- Desktop table -->
@@ -46,12 +105,12 @@
             <thead class="table-dark">
             <tr>
                 {% if not user.is_reader %}<th>Update</th><th>Delete</th>{% endif %}
-                <th>Offre</th><th>Capture</th><th>LM</th><th>Location</th><th>Company</th><th>Contact</th><th>E-Mail</th><th>Date candidature</th><th>Date relance</th><th>Date refus</th><th>Expirée</th>
+                <th>Offre</th><th>Capture</th><th>LM</th><th>Location</th><th>Company</th><th>Contact</th><th>E-Mail</th><th>Date candidature</th><th>Date relance</th><th>Date refus</th><th>Clôturée</th>
             </tr>
             </thead>
             <tbody>
             {% for job in jobs %}
-            <tr class="{% if not job.active %}table-secondary{% endif %}">
+            <tr class="{% if not job.active %}table-secondary{% endif %}" data-closed="{{ '1' if not job.active else '0' }}" data-order="{{ loop.index0 }}">
                 {% if not user.is_reader %}<td><a href="{{ url_for('update', id=job.id) }}" class="btn btn-sm btn-primary" title="Modifier #{{job.id}}">✏️</a></td><td><button onclick="deleteJob({{ job.id }})" class="btn btn-sm btn-danger" title="Supprimer #{{job.id}}">🗑️</button></td>{% endif %}
                 <td><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></td>
                 <td>{% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success">PDF</a>{% else %}<span class="text-muted">⌐</span>{% endif %}</td>
@@ -59,7 +118,7 @@
                     {% if job.cover_letter_text %}
                         <span class="text-truncate d-inline-block" style="max-width:160px">{{ job.cover_letter_text }}</span>
                         <button type="button" class="btn btn-sm btn-link p-0 ms-2" onclick="showLM({{ job.id }})">Aperçu</button>
-                        <div id="lm-content-{{ job.id }}" class="d-none">{{ job.cover_letter_text | e }}</div>
+                        <div id="lm-content-desktop-{{ job.id }}" class="d-none">{{ job.cover_letter_text | e }}</div>
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
@@ -69,7 +128,21 @@
                 <td class="{% if job.expired %}bg-danger text-white{% endif %}">{{job.applicationDate.strftime('%d/%m/%Y')}}</td>
                 <td>{% if job.relaunchDate %}{{job.relaunchDate.strftime('%d/%m/%Y')}}{% endif %}</td>
                 <td>{% if job.refusalDate %}{{job.refusalDate.strftime('%d/%m/%Y')}}{% endif %}</td>
-                <td><input type="checkbox" class="form-check-input" {% if not user.is_reader %}onchange="toggleExpired({{ job.id }})"{% else %}disabled{% endif %} {% if not job.active %}checked{% endif %}></td>
+                <td>
+                    {% if not user.is_reader %}
+                        {% if not job.active %}
+                            <input type="checkbox" class="form-check-input" onchange="toggleExpired({{ job.id }})" aria-label="Marquer comme clôturée" checked>
+                        {% else %}
+                            <input type="checkbox" class="form-check-input" onchange="toggleExpired({{ job.id }})" aria-label="Marquer comme clôturée">
+                        {% endif %}
+                    {% else %}
+                        {% if not job.active %}
+                            <input type="checkbox" class="form-check-input" aria-label="Marquer comme clôturée" disabled checked>
+                        {% else %}
+                            <input type="checkbox" class="form-check-input" aria-label="Marquer comme clôturée" disabled>
+                        {% endif %}
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
             </tbody>
@@ -79,7 +152,7 @@
     <!-- Mobile cards -->
     <div class="d-lg-none">
         {% for job in jobs %}
-        <div class="card mb-2 {% if not job.active %}bg-light{% endif %}">
+        <div class="card mb-2 {% if not job.active %}bg-light{% endif %}" data-closed="{{ '1' if not job.active else '0' }}" data-order="{{ loop.index0 }}">
             <div class="card-body p-2">
                 <div class="d-flex justify-content-between align-items-start mb-1">
                     <h6 class="card-title mb-0 small"><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></h6>
@@ -97,9 +170,21 @@
                         {% if job.cover_letter_text %}
                             <span class="ms-1 small text-truncate" style="max-width:120px">{{ job.cover_letter_text }}</span>
                             <button type="button" class="btn btn-sm btn-link p-0 ms-2" onclick="showLM({{ job.id }})">Aperçu</button>
-                            <div id="lm-content-{{ job.id }}" class="d-none">{{ job.cover_letter_text | e }}</div>
+                            <div id="lm-content-mobile-{{ job.id }}" class="d-none">{{ job.cover_letter_text | e }}</div>
                         {% endif %}
-                        <input type="checkbox" class="form-check-input ms-2" {% if not user.is_reader  %}onchange="toggleExpired({{ job.id }})"{% else %}disabled{% endif %} {% if not job.active %}checked{% endif %} title="Expirée">
+                        {% if not user.is_reader %}
+                            {% if not job.active %}
+                                <input type="checkbox" class="form-check-input ms-2" onchange="toggleExpired({{ job.id }})" title="Clôturée" aria-label="Marquer comme clôturée" checked>
+                            {% else %}
+                                <input type="checkbox" class="form-check-input ms-2" onchange="toggleExpired({{ job.id }})" title="Clôturée" aria-label="Marquer comme clôturée">
+                            {% endif %}
+                        {% else %}
+                            {% if not job.active %}
+                                <input type="checkbox" class="form-check-input ms-2" disabled title="Clôturée" aria-label="Marquer comme clôturée" checked>
+                            {% else %}
+                                <input type="checkbox" class="form-check-input ms-2" disabled title="Clôturée" aria-label="Marquer comme clôturée">
+                            {% endif %}
+                        {% endif %}
                     </div>
                 </div>
             </div>
