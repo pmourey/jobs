@@ -69,7 +69,9 @@
             {% set seconds = duration.total_seconds() % 60 %}
             <tr>
                 <td>
+                    {% if not session.user.is_reader %}
                     <input class="session-checkbox" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />
+                    {% endif %}
                 </td>
                 <td><span class="badge bg-secondary">{{ session.username }}</span></td>
                 <td>{{ session.start|format_paris_time }}</td>
@@ -94,7 +96,7 @@
             <div class="card-body p-2">
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <div class="d-flex align-items-center">
-                        <input class="session-checkbox me-2" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />
+                        {% if not session.user.is_reader %}<input class="session-checkbox me-2" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />{% endif %}
                         <span class="badge bg-secondary">{{ session.username }}</span>
                     </div>
                     <small class="text-muted">{{ "%02d:%02d:%02d"|format(hours|int, minutes|int, seconds|int) }}</small>
