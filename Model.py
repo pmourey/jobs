@@ -41,7 +41,7 @@ class User(db.Model):
 
     def __init__(self, username: str, password: str, creation_date: DateTime, email: str):
         self.username = username
-        self.password = generate_password_hash(password, method='sha256')
+        self.password = generate_password_hash(password)
         # self.password = generate_password_hash(password, method='scrypt')
         self.creationDate = creation_date
         self.email = email
