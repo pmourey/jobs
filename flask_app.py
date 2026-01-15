@@ -554,9 +554,14 @@ def new():
     if request.method == 'POST':
         email: str = request.form.get('email', '')
         if not (request.form.get('name') and request.form.get('company')):
-            flash('Please enter all the fields', 'error')
+            flash('Veuillez remplir tous les champs obligatoires (Offre et Entreprise)', 'error')
+            user = get_user_by_id(session['login_id'])
+            # return the form with previously entered values
+            return render_template('new.html', form_data=request.form, user=user)
         elif email and not check(app.config['REGEX'], email):
-            flash(f'Invalid E-Mail {email}!', 'error')
+            flash(f'E-mail invalide : {email}', 'error')
+            user = get_user_by_id(session['login_id'])
+            return render_template('new.html', form_data=request.form, user=user)
         else:
             # Create job
             job = Job(name=request.form.get('name'), url=request.form.get('url'),
@@ -586,7 +591,8 @@ def new():
             flash('Record was successfully added')
             return redirect(url_for('show_all'))
     else:
-        return render_template('new.html', form_data=None)
+        user = get_user_by_id(session['login_id'])
+        return render_template('new.html', form_data=None, user=user)
 
 
 @app.route('/toggle_expired/<int:id>', methods=['POST'])
