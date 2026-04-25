@@ -9,8 +9,10 @@ greenlet==3.2.4
 itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.2
+python-docx==1.2.0
 python-dateutil==2.9.0.post0
 pytz==2025.2
+reportlab==4.4.1
 six==1.17.0
 SQLAlchemy==2.0.43
 typing_extensions==4.15.0

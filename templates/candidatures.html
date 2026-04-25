@@ -117,13 +117,16 @@
                 <td><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></td>
                 <td>{% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success">PDF</a>{% else %}<span class="text-muted">⌐</span>{% endif %}</td>
                 <td>
-                    {% if job.cover_letter_text %}
-                        <span class="text-truncate d-inline-block" style="max-width:160px">{{ job.cover_letter_text }}</span>
-                        <button type="button" class="btn btn-sm btn-link p-0 ms-2" onclick="showLM({{ job.id }})">Aperçu</button>
-                        <div id="lm-content-desktop-{{ job.id }}" class="d-none">{{ job.cover_letter_text | e }}</div>
-                    {% else %}
-                        <span class="text-muted">—</span>
-                    {% endif %}
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        {% if job.cover_letter_text %}
+                            <span class="text-truncate d-inline-block" style="max-width:160px">{{ job.cover_letter_text }}</span>
+                            <button type="button" class="btn btn-sm btn-link p-0" onclick="showLM({{ job.id }})">Aperçu</button>
+                            <div id="lm-content-desktop-{{ job.id }}" class="d-none">{{ job.cover_letter_text | e }}</div>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                        <a href="{{ url_for('generate_cover_letter_pdf', id=job.id) }}" class="btn btn-sm btn-outline-secondary" title="Générer la lettre de motivation en PDF">PDF</a>
+                    </div>
                 </td>
                 <td>{{ job.zipCode }}</td><td>{{ job.company }}</td><td>{{ job.contact }}</td>
                 <td class="{% if not job.email %}bg-warning{% endif %}">{{ job.email }}</td>
@@ -169,6 +172,7 @@
                     <span class="{% if job.expired %}bg-danger text-white px-1 rounded{% endif %}">{{job.applicationDate.strftime('%d/%m')}}</span>
                     <div>
                         {% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success py-0">PDF</a>{% endif %}
+                        <a href="{{ url_for('generate_cover_letter_pdf', id=job.id) }}" class="btn btn-sm btn-outline-secondary py-0 ms-1" title="Générer la lettre de motivation en PDF">LM PDF</a>
                         {% if job.cover_letter_text %}
                             <span class="ms-1 small text-truncate" style="max-width:120px">{{ job.cover_letter_text }}</span>
                             <button type="button" class="btn btn-sm btn-link p-0 ms-2" onclick="showLM({{ job.id }})">Aperçu</button>

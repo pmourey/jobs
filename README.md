@@ -19,6 +19,7 @@ Application Flask de suivi des candidatures d'emploi avec envoi automatique de r
 ### Prérequis
 - Python 3.10+ ([Télécharger](https://www.python.org/downloads/))
 - Compte Gmail avec mot de passe d'application
+- LibreOffice uniquement si vous voulez convertir localement des documents Word legacy (`.dot`) ; la génération PDF serveur fonctionne maintenant en pur Python
 
 ### Configuration
 
@@ -35,6 +36,14 @@ Application Flask de suivi des candidatures d'emploi avec envoi automatique de r
    *En cas d'erreur, mettre à jour pip :*
    ```bash
    python -m pip install --upgrade pip
+   ```
+
+   **Optionnel – pour convertir localement un template Word legacy `.dot` :**
+   - macOS : installer LibreOffice puis vérifier la présence de `soffice`
+   - exemple avec Homebrew :
+   ```bash
+   brew install --cask libreoffice
+   /Applications/LibreOffice.app/Contents/MacOS/soffice --version
    ```
 
 3. **Configuration**
@@ -54,6 +63,8 @@ Application Flask de suivi des candidatures d'emploi avec envoi automatique de r
    ```
 
 ## 🚀 Utilisation
+
+La lettre de motivation PDF est générée côté serveur en **pur Python** via `reportlab`, ce qui est compatible avec des hébergeurs comme **PythonAnywhere** sans installation de LibreOffice ni ouverture de Microsoft Word.
 
 ### Lancement de l'application
 ```bash

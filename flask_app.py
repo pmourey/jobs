@@ -6,6 +6,7 @@ This script provides CRUD features inside a Flask application for job's research
 """
 from __future__ import annotations
 import atexit
+from io import BytesIO
 import re
 from _socket import gethostbyname
 from functools import wraps
@@ -35,6 +36,7 @@ from werkzeug.security import generate_password_hash#, check_password_hash
 
 from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email, send_confirmation_email, handle_file_upload, check_password_and_upgrade
 from Model import Job, User, db, Session
+from tools.document_tools import build_cover_letter_pdf_filename, generate_cover_letter_pdf_bytes, resolve_cover_letter_template_path
 from tools.send_emails import send_email
 
 from flask import render_template, redirect, url_for, flash
@@ -545,6 +547,30 @@ def show_all():
             j.recent_ts = 0
     user = get_user_by_id(user_id)
     return render_template('candidatures.html', jobs=jobs, user=user)
+
+
+@app.route('/generate_cover_letter_pdf/<int:id>', endpoint='generate_cover_letter_pdf')
+@is_connected
+def generate_cover_letter_pdf(id):
+    job = Job.query.get_or_404(id)
+    try:
+        template_path = resolve_cover_letter_template_path(app.static_folder)
+        letter_date = datetime.now(app.config['PARIS']) if app.config.get('PARIS') else datetime.now()
+        pdf_bytes = generate_cover_letter_pdf_bytes(job=job, template_path=template_path, letter_date=letter_date)
+    except FileNotFoundError:
+        flash('Le template Word de lettre de motivation est introuvable.', 'error')
+        return redirect(url_for('show_all'))
+    except RuntimeError as exc:
+        app.logger.error(f'Erreur lors de la génération du PDF pour la candidature #{job.id}: {exc}')
+        flash(str(exc), 'error')
+        return redirect(url_for('show_all'))
+
+    return send_file(
+        BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=build_cover_letter_pdf_filename(job),
+    )
 
 
 @app.route('/new/', methods=['GET', 'POST'])
