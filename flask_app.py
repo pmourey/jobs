@@ -680,6 +680,39 @@ def update_account(id):
 @is_editor_or_admin
 def update(id):
     job: Job = Job.query.get_or_404(id)
+    def _parse_form_date(value: Optional[str], original: Optional[datetime] = None) -> Optional[datetime]:
+        """Parse a date/time coming from the form.
+        - Si value est vide, retourne None.
+        - Si le formulaire envoie uniquement une date (YYYY-MM-DD, sans heure),
+          on préserve l'heure de 'original' pour ne pas écraser le composant horaire
+          déjà stocké en base.
+        - Accepte aussi les formats datetime-local complets.
+        """
+        if not value:
+            return None
+        v = value.strip()
+        # Formats avec heure : on les utilise tels quels
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                return datetime.strptime(v, fmt)
+            except Exception:
+                continue
+        # Format date seule (YYYY-MM-DD) : préserver l'heure originale si disponible
+        try:
+            parsed_date = datetime.strptime(v, "%Y-%m-%d")
+            if original is not None:
+                return parsed_date.replace(hour=original.hour, minute=original.minute,
+                                           second=original.second, microsecond=original.microsecond)
+            return parsed_date
+        except Exception:
+            pass
+        # Dernier recours : fromisoformat
+        try:
+            return datetime.fromisoformat(v)
+        except Exception:
+            pass
+        return None
+
     if request.method == 'POST':
         job.name = request.form.get('name')
         job.url = request.form.get('url')
@@ -687,13 +720,16 @@ def update(id):
         job.company = request.form.get('company')
         job.contact = request.form.get('contact')
         job.email = request.form.get('email')
+
         application_date: str = request.form.get('applicationDate')
-        app.logger.debug(f'application_date: {application_date}')
-        job.applicationDate = datetime.strptime(application_date, '%Y-%m-%d') if application_date else None
+        app.logger.debug(f'application_date raw: {application_date}')
+        job.applicationDate = _parse_form_date(application_date, original=job.applicationDate)
+
         relaunch_date: str = request.form.get('relaunchDate')
-        job.relaunchDate = datetime.strptime(relaunch_date, '%Y-%m-%d') if relaunch_date else None
+        job.relaunchDate = _parse_form_date(relaunch_date, original=job.relaunchDate)
+
         refusal_date: str = request.form.get('refusalDate')
-        job.refusalDate = datetime.strptime(refusal_date, '%Y-%m-%d') if refusal_date else None
+        job.refusalDate = _parse_form_date(refusal_date, original=job.refusalDate)
 
         # cover letter text
         cover_text = request.form.get('cover_letter_text')
