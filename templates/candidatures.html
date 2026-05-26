@@ -6,6 +6,9 @@
 {% block main %}
 <script>
     let showClosed = false;
+    let currentCvPreviewJobId = null;
+    let currentCvPreviewJobName = '';
+    let currentCvPreviewCompany = '';
 
     function toggleExpired(jobId) {
         fetch('/toggle_expired/' + jobId, {
@@ -36,31 +39,46 @@
         }
     }
 
-    async function showCVPreview(jobId, jobName, company) {
-        // Afficher la modale avec état de chargement
-        document.getElementById('cvModalTitle').textContent = 'Génération du CV pour ' + (jobName || 'cette offre');
-        document.getElementById('cvModalBody').innerHTML =
-            '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div>' +
-            '<p class="mt-3 text-muted">Analyse IA de l\'offre en cours…</p></div>';
-        document.getElementById('cvDownloadBtn').classList.add('d-none');
+    function openCvModal(jobId, jobName, company) {
+        currentCvPreviewJobId = jobId;
+        currentCvPreviewJobName = jobName || '';
+        currentCvPreviewCompany = company || '';
+        document.getElementById('cvModalTitle').textContent = 'Génération du CV pour ' + (currentCvPreviewJobName || 'cette offre');
+        document.getElementById('cvRetryBtn').classList.remove('d-none');
+        loadCvPreview(jobId);
         var modal = new bootstrap.Modal(document.getElementById('cvModal'));
         modal.show();
+    }
+
+    async function loadCvPreview(jobId) {
+        const body = document.getElementById('cvModalBody');
+        const retryBtn = document.getElementById('cvRetryBtn');
+        const dlBtn = document.getElementById('cvDownloadBtn');
+        body.innerHTML =
+            '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div>' +
+            '<p class="mt-3 text-muted">Analyse IA de l\'offre en cours…</p></div>';
+        dlBtn.classList.add('d-none');
+        retryBtn.disabled = true;
 
         try {
             const resp = await fetch('/preview_cv_data/' + jobId);
             const data = await resp.json();
             if (!resp.ok) {
-                document.getElementById('cvModalBody').innerHTML =
+                body.innerHTML =
                     '<div class="alert alert-danger"><strong>Erreur :</strong> ' + (data.error || resp.statusText) + '</div>';
+                retryBtn.disabled = false;
                 return;
             }
-            // Construire le HTML d'aperçu
+
             let html = '';
             if (data.cv_title) {
                 html += '<h6 class="text-primary fw-bold">' + escapeHtml(data.cv_title) + '</h6>';
             }
             if (data.summary) {
                 html += '<p class="small mt-2">' + escapeHtml(data.summary) + '</p>';
+            }
+            if (data.warning) {
+                html += '<div class="alert alert-warning py-2 small mb-2">' + escapeHtml(data.warning) + '</div>';
             }
             if (data.highlighted_work_details && data.highlighted_work_details.length > 0) {
                 html += '<hr><strong class="small">Expériences mises en avant :</strong><ul class="small mt-1">';
@@ -77,14 +95,23 @@
                 });
                 html += '</div>';
             }
-            document.getElementById('cvModalBody').innerHTML = html;
-            // Mettre à jour le lien de téléchargement
-            const dlBtn = document.getElementById('cvDownloadBtn');
+            body.innerHTML = html;
             dlBtn.href = '/generate_cv_pdf/' + jobId;
             dlBtn.classList.remove('d-none');
         } catch (err) {
-            document.getElementById('cvModalBody').innerHTML =
-                '<div class="alert alert-danger"><strong>Erreur réseau :</strong> ' + err.message + '</div>';
+            body.innerHTML = '<div class="alert alert-danger"><strong>Erreur réseau :</strong> ' + escapeHtml(err.message) + '</div>';
+        } finally {
+            retryBtn.disabled = false;
+        }
+    }
+
+    async function showCVPreview(jobId, jobName, company) {
+        openCvModal(jobId, jobName, company);
+    }
+
+    function retryCvPreview() {
+        if (currentCvPreviewJobId !== null) {
+            loadCvPreview(currentCvPreviewJobId);
         }
     }
 
@@ -296,6 +323,9 @@
       </div>
       <div class="modal-body" id="cvModalBody"></div>
       <div class="modal-footer">
+        <button id="cvRetryBtn" type="button" class="btn btn-outline-primary d-none" onclick="retryCvPreview()">
+          ↻ Réessayer
+        </button>
         <a id="cvDownloadBtn" href="#" class="btn btn-success d-none" download>
           ⬇️ Télécharger le CV (PDF)
         </a>

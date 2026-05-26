@@ -27,9 +27,28 @@ def load_cv_data(static_folder) -> dict:
         return _json.load(f)
 
 
+def _default_cv_suggestions(cv_data: dict) -> dict:
+    skills = cv_data.get('skills', [])
+    return {
+        'cv_title': cv_data.get('basics', {}).get('label', 'Développeur / Consultant IT'),
+        'summary': cv_data.get('basics', {}).get('summary', ''),
+        'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
+        'highlighted_skill_names': [s['name'] for s in skills[:6]],
+        'warning': "Aperçu généré sans IA à cause d'une indisponibilité réseau/API.",
+        'source': 'fallback',
+    }
+
+
 def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str) -> dict:
     """Appelle l'API GitHub Models pour obtenir des suggestions de personnalisation du CV."""
     from openai import OpenAI
+    try:
+        from flask import current_app
+        base_url = current_app.config.get('GITHUB_MODELS_BASE_URL', 'https://models.github.ai/inference')
+        model_name = current_app.config.get('GITHUB_MODELS_MODEL', 'openai/gpt-4o-mini')
+    except Exception:
+        base_url = 'https://models.github.ai/inference'
+        model_name = 'openai/gpt-4o-mini'
 
     work_summary = '\n'.join(
         '[{i}] {pos} chez {co} ({start} - {end}): {summary}'.format(
@@ -73,15 +92,12 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str) -> dict:
         skills=skills_summary,
     )
 
-    client = OpenAI(
-        base_url='https://models.inference.ai.azure.com',
-        api_key=github_token,
-    )
+    client = OpenAI(base_url=base_url, api_key=github_token)
 
     raw = None
     try:
         response = client.chat.completions.create(
-            model='gpt-4o-mini',
+            model=model_name,
             messages=[
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_prompt},
@@ -92,16 +108,21 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str) -> dict:
         )
         raw = response.choices[0].message.content
     except Exception:
-        response = client.chat.completions.create(
-            model='gpt-4o-mini',
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_prompt},
-            ],
-            temperature=0.3,
-            max_tokens=900,
-        )
-        raw = response.choices[0].message.content
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt},
+                ],
+                temperature=0.3,
+                max_tokens=900,
+            )
+            raw = response.choices[0].message.content
+        except Exception as exc:
+            fallback = _default_cv_suggestions(cv_data)
+            fallback['warning'] = f"Aperçu généré sans IA : {exc}"
+            return fallback
 
     if raw:
         raw = raw.strip()
@@ -111,12 +132,7 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str) -> dict:
     try:
         return _json.loads(raw or '{}')
     except Exception:
-        return {
-            'cv_title': cv_data.get('basics', {}).get('label', 'Developpeur / Consultant IT'),
-            'summary': cv_data.get('basics', {}).get('summary', ''),
-            'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
-            'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
-        }
+        return _default_cv_suggestions(cv_data)
 
 
 def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict) -> bytes:
@@ -369,4 +385,5 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict) -
     )
     doc.build(story)
     return buffer.getvalue()
+
 

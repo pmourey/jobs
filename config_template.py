@@ -13,6 +13,9 @@ class Config:
     GMAIL_USER = 'philippe.mourey@gmail.com'
     GMAIL_APP_PWD = "your GMail Application password"
     CV_RESUME = 'https://www.linkedin.com/in/pmourey/<br>https://github.com/pmourey/jobs<br>https://pmourey.github.io/portfolio/'
+    GITHUB_TOKEN = ''
+    GITHUB_MODELS_BASE_URL = 'https://models.github.ai/inference'
+    GITHUB_MODELS_MODEL = 'openai/gpt-4o-mini'
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24
     # SCHEDULER_INTERVAL = 10
