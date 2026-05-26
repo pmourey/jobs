@@ -1,0 +1,971 @@
+{
+  "basics": {
+    "name": "Philippe Mourey",
+    "label": "IT Specialist - Application developer - IT Security consultant",
+    "image": "https://avatars.githubusercontent.com/u/25690768?v=4",
+    "email": "philippe@mourey.com",
+    "url": "https://philippe9146.wixsite.com/flask",
+    "summary": "Lors de mon expérience professionnelle dans les domaines du développement, production et sécurité informatique, j'ai été amené à travailler sur plusieurs missions dans le domaine du développement informatique. Rigoureux et motivé, je recherche de nouvelles opportunités dans le département des Alpes-Maritimes (06) pour contribuer à des projets innovants.",
+    "location": {
+      "city": "Saint-Laurent-du-Var",
+      "region": "France"
+    },
+    "profiles": [
+      {
+        "network": "gitconnected",
+        "username": "pmourey",
+        "url": "https://gitconnected.com/pmourey"
+      },
+      {
+        "network": "GitHub",
+        "username": "pmourey",
+        "url": "https://github.com/pmourey"
+      },
+      {
+        "network": "LinkedIn",
+        "username": "https://www.linkedin.com/in/pmourey/",
+        "url": "https://linkedin.com/in/https://www.linkedin.com/in/pmourey/"
+      }
+    ],
+    "yearsOfExperience": 20002,
+    "username": "pmourey",
+    "locationAsString": "Saint-Laurent-du-Var, France",
+    "region": "Saint-Laurent-du-Var, France",
+    "id": "a3e46c79-7cc7-48cd-85cc-15e384c8075b",
+    "followers": 5,
+    "following": 30,
+    "picture": "https://avatars.githubusercontent.com/u/25690768?v=4",
+    "website": "https://philippe9146.wixsite.com/flask"
+  },
+  "work": [
+    {
+      "name": "IDEA Informatique",
+      "position": "Développeur Delphi",
+      "url": "https://www.idea-informatique.fr/",
+      "startDate": "2023-09-01",
+      "endDate": "2023-11-01",
+      "summary": "Développement informatique",
+      "highlights": [
+        "Delphi, Oracle, Javascript, Pascal Objet"
+      ],
+      "location": "Nice, France",
+      "isCurrentRole": false,
+      "start": {
+        "year": 2023,
+        "month": 9
+      },
+      "end": {
+        "year": 2023,
+        "month": 11
+      },
+      "company": "IDEA Informatique",
+      "website": "https://www.idea-informatique.fr/"
+    },
+    {
+      "name": "Sopra Steria",
+      "position": "Intégrateur technique",
+      "url": "https://www.linkedin.com/company/soprasteria/",
+      "startDate": "2022-04-01",
+      "endDate": "2022-10-01",
+      "summary": "Réceptionner et contrôler les livrables\nIntégrer ces livrables aux environnements de qualification\nMettre en place une démarche d’automatisation sur certaines phases, assurer un support pour les mises en production\nMaintenir et faire évoluer la documentation",
+      "highlights": [
+        "Kubernetes (monitoring), Shell, GIT, Linux, Java Spring, Python, Redmine"
+      ],
+      "location": "Sophia-Antipolis, France",
+      "isCurrentRole": false,
+      "start": {
+        "year": 2022,
+        "month": 4
+      },
+      "end": {
+        "year": 2022,
+        "month": 10
+      },
+      "company": "Sopra Steria",
+      "website": "https://www.linkedin.com/company/soprasteria/"
+    },
+    {
+      "name": "Freelance",
+      "position": "Développeur programmes",
+      "url": "https://philippe9146.wixsite.com/flask",
+      "startDate": "2017-11-01",
+      "endDate": "2019-03-01",
+      "summary": "Programmation informatique",
+      "highlights": [
+        "Python, Flask, HTML/CSS, Linux"
+      ],
+      "location": "Saint-Laurent-du-Var",
+      "isCurrentRole": false,
+      "start": {
+        "year": 2017,
+        "month": 11
+      },
+      "end": {
+        "year": 2019,
+        "month": 3
+      },
+      "company": "Freelance",
+      "website": "https://philippe9146.wixsite.com/flask"
+    },
+    {
+      "name": "BYmyCAR - BMW BMWi MINI MOTORRAD",
+      "position": "Programmeur VBA sur Excel et Access",
+      "url": "https://www.linkedin.com/company/bymycar-bmw/",
+      "startDate": "2017-07-01",
+      "endDate": "2017-09-01",
+      "summary": "Programmation sur Excel et Access.\nDéveloppement d'outils à base de Visual Basic for Applications pour améliorer l'exploitation de la base de données Client et suivi des ventes pour le service Marketing",
+      "highlights": [
+        "VBA 7.1 for Office 2013, Visual Basic Microsoft Forms, .Net framework"
+      ],
+      "location": "Villeneuve-Loubet, France",
+      "isCurrentRole": false,
+      "start": {
+        "year": 2017,
+        "month": 7
+      },
+      "end": {
+        "year": 2017,
+        "month": 9
+      },
+      "company": "BYmyCAR - BMW BMWi MINI MOTORRAD",
+      "website": "https://www.linkedin.com/company/bymycar-bmw/"
+    },
+    {
+      "name": "ACETIAM (Accelis)",
+      "position": "Stage informatique en développement",
+      "url": "https://www.linkedin.com/company/accelis/",
+      "startDate": "2016-10-01",
+      "endDate": "2016-12-01",
+      "summary": "Gestion des évolutions de l’outil web CRM interne:\nIntégration du code PHP existant dans un logiciel de gestion de versions\nMise en place d’un lien contextuel entre la base d’incidents clients (CRM) et la base de gestion des bugs et évolutions de l’équipe de développement\nConception et développement d’une version externe de l’application CRM à base d’API Rest pour fournir aux clients un accès sécurisé à la base de données.",
+      "highlights": [
+        "PHP5, MySQL, HTML/CSS, Javascript"
+      ],
+      "location": "Sophia-Antipolis",
+      "isCurrentRole": false,
+      "start": {
+        "year": 2016,
+        "month": 10
+      },
+      "end": {
+        "year": 2016,
+        "month": 12
+      },
+      "company": "ACETIAM (Accelis)",
+      "website": "https://www.linkedin.com/company/accelis/"
+    },
+    {
+      "name": "IBM France",
+      "position": "IT System Management Specialist",
+      "url": "https://www.linkedin.com/company/ibm/",
+      "startDate": "2012-06-01",
+      "endDate": "2015-03-01",
+      "summary": "Mise en place et support de solutions de gestion du monitoring des serveurs infogérés à base de technologies Tivoli\nAnalyste Qualité dans la ligne de service « Storage »\nSupport technique d'un logiciel d'inventaire de composants réseaux pour AT&T\n",
+      "highlights": [
+        "UNIX, Tivoli, Shell, SQL, Excel, HTML, Perl, Java, Citrix"
+      ],
+      "location": "La Gaude, France",
+      "isCurrentRole": false,
+      "start": {
+        "year": 2012,
+        "month": 6
+      },
+      "end": {
+        "year": 2015,
+        "month": 3
+      },
+      "company": "IBM France",
+      "website": "https://www.linkedin.com/company/ibm/"
+    },
+    {
+      "name": "IBM France",
+      "position": "IT Security Specialist",
+      "url": "https://www.linkedin.com/company/ibm/",
+      "startDate": "2002-05-01",
+      "endDate": "2014-01-01",
+      "summary": "Missions d'ethical hacking sur clients internes et externes\nRevues de sécurité d'infrastructures réseau (pare-feux, routeurs, ...)\nSupport technique d'un logiciel de sécurité utilisé sur les clients infogérés en Europe\",\n",
+      "highlights": [
+        "UNIX, Linux, Windows, Shell, Perl, SQL"
+      ],
+      "location": "La Gaude",
+      "isCurrentRole": false,
+      "start": {
+        "year": 2002,
+        "month": 5
+      },
+      "end": {
+        "year": 2014,
+        "month": 1
+      },
+      "company": "IBM France",
+      "website": "https://www.linkedin.com/company/ibm/"
+    },
+    {
+      "name": "IBM France",
+      "position": "IT Specialist",
+      "url": "https://www.linkedin.com/company/ibm/",
+      "startDate": "1999-01-01",
+      "endDate": "2002-05-01",
+      "summary": "Participation à des projets de développement et maintenance applicative dans le pôle e-Commerce (Websphere Commerce Suite) et dans le domaine des télécommunications\nMise en production et support d’une centrale d’achat\nMissions ponctuelles chez le client en support du système informatique d'optimisation des stocks et de réapprovisionnement des magasins\n",
+      "highlights": [
+        "UNIX (SunOS), Pro*C, Oracle, TWS, HTML, Javascript, Korn-shell, SQL, C/C++\n"
+      ],
+      "location": "Région de Paris, France",
+      "isCurrentRole": false,
+      "start": {
+        "year": 1999,
+        "month": 1
+      },
+      "end": {
+        "year": 2002,
+        "month": 5
+      },
+      "company": "IBM France",
+      "website": "https://www.linkedin.com/company/ibm/"
+    },
+    {
+      "name": "Phénix Energy",
+      "position": "Ingénieur support production",
+      "url": "",
+      "startDate": "1998-06-01",
+      "endDate": "1998-12-01",
+      "summary": "Prestation chez IBM pour le client FNAC:\nSupport applicatif, ordonnancement des traitements et flux de l'application de réapprovisionnement des stocks et gestion fournisseurs.\nMise en production, gestion de la production (intranet de surveillance en C et Shell).\nFormation de l'équipe de pilotage.\nGestion documentaire.\n",
+      "highlights": [
+        "UNIX (SunOS), Pro*C, Oracle, TWS, HTML, Korn-shell, SQL, C"
+      ],
+      "location": "Région de Paris, France",
+      "isCurrentRole": false,
+      "start": {
+        "year": 1998,
+        "month": 6
+      },
+      "end": {
+        "year": 1998,
+        "month": 12
+      },
+      "company": "Phénix Energy",
+      "website": ""
+    },
+    {
+      "name": "Intershop Communications",
+      "position": "IT Pre-sales specialist on Intershop B2C e-Commerce application",
+      "url": "https://www.linkedin.com/company/intershop-communications/",
+      "startDate": "1997-07-01",
+      "endDate": "1997-09-01",
+      "summary": "Pre-sales activities:\nPrototype development\nTechnical Support to customers (remotely & on-site)\nEducation workshops on prestigious customers (France Telecom, OCDE).",
+      "highlights": [
+        "UNIX, Windows, Perl, Shell, HTML, Javascript, SQL"
+      ],
+      "location": "Paris, France",
+      "isCurrentRole": false,
+      "start": {
+        "year": 1997,
+        "month": 7
+      },
+      "end": {
+        "year": 1997,
+        "month": 9
+      },
+      "company": "Intershop Communications",
+      "website": "https://www.linkedin.com/company/intershop-communications/"
+    },
+    {
+      "name": "Education Nationale",
+      "position": "Enseignant",
+      "url": "https://www.linkedin.com/school/ministere-education-nationale-et-jeunesse/",
+      "startDate": "1994-09-01",
+      "endDate": "1996-08-01",
+      "summary": "Enseignant stagiaire en mathématiques",
+      "highlights": [],
+      "location": "Région de Paris, France",
+      "isCurrentRole": false,
+      "start": {
+        "year": 1994,
+        "month": 9
+      },
+      "end": {
+        "year": 1996,
+        "month": 8
+      },
+      "company": "Education Nationale",
+      "website": "https://www.linkedin.com/school/ministere-education-nationale-et-jeunesse/"
+    }
+  ],
+  "volunteer": [],
+  "education": [
+    {
+      "institution": "AFPA Nice",
+      "url": "",
+      "area": "Concepteur Développeur Informatique",
+      "studyType": "Titre professionnel niveau II",
+      "startDate": "2016-03-01",
+      "endDate": "2017-02-01",
+      "score": "",
+      "courses": [],
+      "description": "",
+      "activities": "",
+      "start": {
+        "year": 2016,
+        "month": 3
+      },
+      "end": {
+        "year": 2017,
+        "month": 2
+      },
+      "website": "",
+      "gpa": ""
+    },
+    {
+      "institution": "GRETA de Noisy-le-Grand",
+      "url": "",
+      "area": "Administration de sites internet et intranet / administrateur réseaux et systèmes",
+      "studyType": "",
+      "startDate": "1996-12-01",
+      "endDate": "1997-06-01",
+      "score": "",
+      "courses": [],
+      "description": "",
+      "activities": "",
+      "start": {
+        "year": 1996,
+        "month": 12
+      },
+      "end": {
+        "year": 1997,
+        "month": 6
+      },
+      "website": "",
+      "gpa": ""
+    },
+    {
+      "institution": "Université de Dijon",
+      "url": "",
+      "area": "Mathématiques",
+      "studyType": "CAPES",
+      "startDate": "1994-06-01",
+      "endDate": "1994-06-01",
+      "score": "",
+      "courses": [],
+      "description": "",
+      "activities": "",
+      "start": {
+        "year": 1994,
+        "month": 6
+      },
+      "end": {
+        "year": 1994,
+        "month": 6
+      },
+      "website": "",
+      "gpa": ""
+    },
+    {
+      "institution": "Université Bordeaux 1 Sciences Et Technologies",
+      "url": "",
+      "area": "Electronique, Electrotechnique et Automatique",
+      "studyType": "Master 1",
+      "startDate": "1991-09-01",
+      "endDate": "1992-09-01",
+      "score": "",
+      "courses": [],
+      "description": "",
+      "activities": "",
+      "start": {
+        "year": 1991,
+        "month": 9
+      },
+      "end": {
+        "year": 1992,
+        "month": 9
+      },
+      "website": "",
+      "gpa": ""
+    },
+    {
+      "institution": "Ecole nationale supérieure d'Electronique, Informatique et de Radiocommunications de Bordeaux",
+      "url": "",
+      "area": "",
+      "studyType": "",
+      "startDate": "1989-09-01",
+      "endDate": "1991-06-01",
+      "score": "",
+      "courses": [],
+      "description": "",
+      "activities": "",
+      "start": {
+        "year": 1989,
+        "month": 9
+      },
+      "end": {
+        "year": 1991,
+        "month": 6
+      },
+      "website": "",
+      "gpa": ""
+    },
+    {
+      "institution": "Classes préparatoires aux grandes écoles (Paris)",
+      "url": "",
+      "area": "Maths Sup/Spé P'",
+      "studyType": "Deug",
+      "startDate": "1987-09-01",
+      "endDate": "1989-06-01",
+      "score": "",
+      "courses": [],
+      "description": "",
+      "activities": "",
+      "start": {
+        "year": 1987,
+        "month": 9
+      },
+      "end": {
+        "year": 1989,
+        "month": 6
+      },
+      "website": "",
+      "gpa": ""
+    }
+  ],
+  "awards": [],
+  "certificates": [
+    {
+      "name": "GCIH - GIAC Certified Incident Handler",
+      "date": "2013-02-28",
+      "url": "http://www.giac.org/certified-professional/philippe-mourey/106888",
+      "issuer": "SANS GIAC",
+      "summary": "",
+      "fullDate": {
+        "year": 2013,
+        "month": 2,
+        "day": 28
+      },
+      "website": "http://www.giac.org/certified-professional/philippe-mourey/106888"
+    },
+    {
+      "name": "ISO/CEI 27005 - Gestion des risques dans les SMSI",
+      "date": "2010-06-01",
+      "url": "http://fr.wikipedia.org/wiki/ISO/CEI_27005",
+      "issuer": "Hervé Schauer Consultants",
+      "summary": "",
+      "fullDate": {
+        "year": 2010,
+        "month": 6,
+        "day": 1
+      },
+      "website": "http://fr.wikipedia.org/wiki/ISO/CEI_27005"
+    }
+  ],
+  "publications": [],
+  "skills": [
+    {
+      "name": "HTML/CSS",
+      "level": "Intermediate",
+      "keywords": [],
+      "rating": 3,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "PHP",
+      "level": "Intermediate",
+      "keywords": [],
+      "rating": 3,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "Cybersécurité",
+      "level": "Advanced",
+      "keywords": [],
+      "rating": 4,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "Javascript",
+      "level": "Intermediate",
+      "keywords": [],
+      "rating": 3,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "Bash",
+      "level": "Intermediate",
+      "keywords": [],
+      "rating": 3,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "UNIX/Linux",
+      "level": "Advanced",
+      "keywords": [],
+      "rating": 4,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "C++",
+      "level": "Intermediate",
+      "keywords": [],
+      "rating": 3,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "Flask",
+      "level": "Intermediate",
+      "keywords": [],
+      "rating": 3,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "Langage C",
+      "level": "Intermediate",
+      "keywords": [],
+      "rating": 3,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "C#",
+      "level": "Beginner",
+      "keywords": [],
+      "rating": 2,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "Java",
+      "level": "Beginner",
+      "keywords": [],
+      "rating": 2,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "Excel VBA",
+      "level": "Intermediate",
+      "keywords": [],
+      "rating": 3,
+      "yearsOfExperience": null
+    },
+    {
+      "name": "Python",
+      "level": "Advanced",
+      "keywords": [],
+      "rating": 4,
+      "yearsOfExperience": null
+    }
+  ],
+  "languages": [
+    {
+      "language": "French",
+      "fluency": "Fluent"
+    },
+    {
+      "language": "English",
+      "fluency": "Intermediate"
+    }
+  ],
+  "interests": [
+    {
+      "name": "Codingame",
+      "keywords": []
+    },
+    {
+      "name": "Tennis",
+      "keywords": []
+    }
+  ],
+  "references": [
+    {
+      "name": "Michel Casabona   (IT Security specialist chez IBM)",
+      "reference": "J'ai travaillé avec Philippe dans la durée sur des missions de tests d'intrusion et d'audits techniques dans un contexte international. Philippe a démontré de grandes capacités d'adaptation à des environnements et des technologies très divers, une curiosité et un ouverture d'esprit lui permettant de développer rapidement des techniques d'intrusion innovantes. La rigueur et le souci du détail de Philippe ont étés des atouts majeurs dans la production de prestations très appréciées de nos clients. Je recommande très vivement Philippe pour son professionnalisme, sa capacité à travailler en équipe et son enthousiasme."
+    },
+    {
+      "name": "Bennour Hatem  (Digital head of reporting ROW at Quadient)",
+      "reference": "J'ai eu l'occasion de travailler avec Philippe dans le cadre de l'infogérance du système d'information de la Fnac. \nJe recommande vivement Philippe pour son engagement, sa rigueur et ses compétences acquises dans un environnement de production très critique, notamment le scripting, monitoring et automatisation. "
+    },
+    {
+      "name": "Patrick Massi (manager direct chez IBM)",
+      "reference": "J'ai eu plaisir à collaborer avec Philippe en qualité de manager. Philippe a su faire preuve de compétences techniques très pointues, de rigueur, d'adaptabilité (gestion/changement des priorités). Les difficultés et les nouveautés ne le découragent pas. Il est très fiable quant à ses engagements (délais, qualité). De plus, il était apprécié, serviable et bien intégré à l'équipe (team building). C'est donc avec confiance que je pourrais le recommander."
+    }
+  ],
+  "projects": [
+    {
+      "name": "jobs",
+      "description": "",
+      "highlights": [],
+      "keywords": [],
+      "startDate": "",
+      "endDate": "",
+      "url": "https://github.com/pmourey/jobs",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application",
+      "displayName": "jobs",
+      "website": "",
+      "summary": "",
+      "primaryLanguage": "Python",
+      "languages": [
+        "Python",
+        "CSS",
+        "HTML",
+        "Shell"
+      ],
+      "libraries": [],
+      "githubUrl": "https://github.com/pmourey/jobs",
+      "repositoryUrl": "https://github.com/pmourey/jobs",
+      "start": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "images": {
+
+      },
+      "videos": {
+
+      }
+    },
+    {
+      "name": "tennis",
+      "description": "",
+      "highlights": [],
+      "keywords": [],
+      "startDate": "",
+      "endDate": "",
+      "url": "https://github.com/pmourey/tennis",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application",
+      "displayName": "tennis",
+      "website": "",
+      "summary": "",
+      "primaryLanguage": "Python",
+      "languages": [
+        "Shell",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Python"
+      ],
+      "libraries": [],
+      "githubUrl": "https://github.com/pmourey/tennis",
+      "repositoryUrl": "https://github.com/pmourey/tennis",
+      "start": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "images": {
+
+      },
+      "videos": {
+
+      }
+    },
+    {
+      "name": "DnD-5th-Edition-API",
+      "description": "",
+      "highlights": [],
+      "keywords": [],
+      "startDate": "",
+      "endDate": "",
+      "url": "https://github.com/codingame-team/DnD-5th-Edition-API",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application",
+      "displayName": "DnD-5th-Edition-API",
+      "website": "",
+      "summary": "",
+      "primaryLanguage": "Python",
+      "languages": [
+        "Batchfile",
+        "Python",
+        "HTML",
+        "Shell"
+      ],
+      "libraries": [],
+      "githubUrl": "https://github.com/codingame-team/DnD-5th-Edition-API",
+      "repositoryUrl": "https://github.com/codingame-team/DnD-5th-Edition-API",
+      "start": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "images": {
+
+      },
+      "videos": {
+
+      }
+    },
+    {
+      "name": "board-games-frontend",
+      "description": "",
+      "highlights": [],
+      "keywords": [],
+      "startDate": "",
+      "endDate": "",
+      "url": "https://github.com/pmourey/board-games-frontend",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application",
+      "displayName": "board-games-frontend",
+      "website": "",
+      "summary": "",
+      "primaryLanguage": "JavaScript",
+      "languages": [
+        "HTML",
+        "CSS",
+        "JavaScript"
+      ],
+      "libraries": [],
+      "githubUrl": "https://github.com/pmourey/board-games-frontend",
+      "repositoryUrl": "https://github.com/pmourey/board-games-frontend",
+      "start": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "images": {
+
+      },
+      "videos": {
+
+      }
+    },
+    {
+      "name": "board-games-backend",
+      "description": "Flask application for Tic Tac Toe React web app",
+      "highlights": [],
+      "keywords": [],
+      "startDate": "",
+      "endDate": "",
+      "url": "https://github.com/pmourey/board-games-backend",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application",
+      "displayName": "board-games-backend",
+      "website": "",
+      "summary": "Flask application for Tic Tac Toe React web app",
+      "primaryLanguage": "Python",
+      "languages": [
+        "Python"
+      ],
+      "libraries": [],
+      "githubUrl": "https://github.com/pmourey/board-games-backend",
+      "repositoryUrl": "https://github.com/pmourey/board-games-backend",
+      "start": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "images": {
+
+      },
+      "videos": {
+
+      }
+    },
+    {
+      "name": "laravel",
+      "description": "",
+      "highlights": [],
+      "keywords": [],
+      "startDate": "",
+      "endDate": "",
+      "url": "https://github.com/pmourey/laravel",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application",
+      "displayName": "laravel",
+      "website": "",
+      "summary": "",
+      "primaryLanguage": "PHP",
+      "languages": [
+        "PHP",
+        "JavaScript",
+        "CSS",
+        "HTML"
+      ],
+      "libraries": [],
+      "githubUrl": "https://github.com/pmourey/laravel",
+      "repositoryUrl": "https://github.com/pmourey/laravel",
+      "start": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "images": {
+
+      },
+      "videos": {
+
+      }
+    },
+    {
+      "name": "Fantastic-Bits",
+      "description": "",
+      "highlights": [],
+      "keywords": [],
+      "startDate": "",
+      "endDate": "",
+      "url": "https://github.com/codingame-team/Fantastic-Bits",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application",
+      "displayName": "Fantastic-Bits",
+      "website": "",
+      "summary": "",
+      "primaryLanguage": "Python",
+      "languages": [
+        "Python"
+      ],
+      "libraries": [],
+      "githubUrl": "https://github.com/codingame-team/Fantastic-Bits",
+      "repositoryUrl": "https://github.com/codingame-team/Fantastic-Bits",
+      "start": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "images": {
+
+      },
+      "videos": {
+
+      }
+    },
+    {
+      "name": "Delphi",
+      "description": "",
+      "highlights": [],
+      "keywords": [],
+      "startDate": "",
+      "endDate": "",
+      "url": "https://github.com/pmourey/Delphi",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application",
+      "displayName": "Delphi",
+      "website": "",
+      "summary": "",
+      "primaryLanguage": "Pascal",
+      "languages": [
+        "Pascal"
+      ],
+      "libraries": [],
+      "githubUrl": "https://github.com/pmourey/Delphi",
+      "repositoryUrl": "https://github.com/pmourey/Delphi",
+      "start": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "images": {
+
+      },
+      "videos": {
+
+      }
+    },
+    {
+      "name": "Flask",
+      "description": "",
+      "highlights": [],
+      "keywords": [],
+      "startDate": "",
+      "endDate": "",
+      "url": "https://github.com/codingame-team/Flask",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application",
+      "displayName": "Flask",
+      "website": "",
+      "summary": "",
+      "primaryLanguage": "Python",
+      "languages": [
+        "Python",
+        "HTML",
+        "CSS"
+      ],
+      "libraries": [],
+      "githubUrl": "https://github.com/codingame-team/Flask",
+      "repositoryUrl": "https://github.com/codingame-team/Flask",
+      "start": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "images": {
+
+      },
+      "videos": {
+
+      }
+    }
+  ],
+  "meta": {
+    "canonical": "https://gitconnected.com/api/v1/portfolio/pmourey",
+    "version": "v1.0.0",
+    "lastModified": "2026-05-26T18:24:08.107Z",
+    "theme": "elegant",
+    "note": "This is a combined version of the standard JSON Resume and gitconnected extensions for maximum compatibility."
+  }
+}
