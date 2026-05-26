@@ -37,6 +37,7 @@ from werkzeug.security import generate_password_hash#, check_password_hash
 from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email, send_confirmation_email, handle_file_upload, check_password_and_upgrade
 from Model import Job, User, db, Session
 from tools.document_tools import build_cover_letter_pdf_filename, generate_cover_letter_pdf_bytes, resolve_cover_letter_template_path
+from tools.cv_tools import load_cv_data, get_ai_cv_suggestions, generate_tailored_cv_pdf_bytes, build_cv_pdf_filename
 from tools.send_emails import send_email
 
 from flask import render_template, redirect, url_for, flash
@@ -552,6 +553,7 @@ def show_all():
 @app.route('/generate_cover_letter_pdf/<int:id>', endpoint='generate_cover_letter_pdf')
 @is_connected
 def generate_cover_letter_pdf(id):
+    # ...existing code...
     job = Job.query.get_or_404(id)
     try:
         template_path = resolve_cover_letter_template_path(app.static_folder)
@@ -570,6 +572,71 @@ def generate_cover_letter_pdf(id):
         mimetype='application/pdf',
         as_attachment=True,
         download_name=build_cover_letter_pdf_filename(job),
+    )
+
+
+@app.route('/preview_cv_data/<int:id>')
+@is_connected
+def preview_cv_data(id):
+    """Retourne les suggestions IA de personnalisation du CV au format JSON (pour l'aperçu modal)."""
+    job = Job.query.get_or_404(id)
+    github_token = app.config.get('GITHUB_TOKEN', '')
+    if not github_token:
+        return jsonify({'error': 'GITHUB_TOKEN non configuré. Ajoutez votre token GitHub dans config.py.'}), 503
+    try:
+        cv_data = load_cv_data(app.static_folder)
+        suggestions = get_ai_cv_suggestions(job=job, cv_data=cv_data, github_token=github_token)
+        # Enrichir avec des données lisibles pour l'affichage dans la modale
+        work_list = cv_data.get('work', [])
+        hl_indices = suggestions.get('highlighted_work_indices') or []
+        suggestions['highlighted_work_details'] = [
+            {
+                'position': work_list[i].get('position', ''),
+                'company':  work_list[i].get('name', ''),
+                'dates':    f"{(work_list[i].get('startDate') or '')[:7]} – {(work_list[i].get('endDate') or '')[:7] or 'présent'}",
+            }
+            for i in hl_indices if 0 <= i < len(work_list)
+        ]
+        return jsonify(suggestions)
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        app.logger.error(f'preview_cv_data error: {exc}')
+        return jsonify({'error': f'Erreur lors de l\'appel IA : {exc}'}), 500
+
+
+@app.route('/generate_cv_pdf/<int:id>', endpoint='generate_cv_pdf')
+@is_connected
+def generate_cv_pdf(id):
+    """Génère et télécharge le CV personnalisé au format PDF."""
+    job = Job.query.get_or_404(id)
+    github_token = app.config.get('GITHUB_TOKEN', '')
+    try:
+        cv_data = load_cv_data(app.static_folder)
+        if github_token:
+            suggestions = get_ai_cv_suggestions(job=job, cv_data=cv_data, github_token=github_token)
+        else:
+            # Fallback sans IA : utiliser le profil par défaut
+            suggestions = {
+                'cv_title':                cv_data.get('basics', {}).get('label', 'Développeur / Consultant IT'),
+                'summary':                 cv_data.get('basics', {}).get('summary', ''),
+                'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
+                'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
+            }
+        pdf_bytes = generate_tailored_cv_pdf_bytes(job=job, cv_data=cv_data, suggestions=suggestions)
+    except FileNotFoundError as exc:
+        flash(str(exc), 'error')
+        return redirect(url_for('show_all'))
+    except Exception as exc:
+        app.logger.error(f'generate_cv_pdf error: {exc}')
+        flash(f'Erreur lors de la génération du CV : {exc}', 'error')
+        return redirect(url_for('show_all'))
+
+    return send_file(
+        BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=build_cv_pdf_filename(job),
     )
 
 
