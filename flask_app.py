@@ -8,6 +8,7 @@ from __future__ import annotations
 import atexit
 from io import BytesIO
 import re
+from pathlib import Path
 from _socket import gethostbyname
 from functools import wraps
 from socket import socket
@@ -37,7 +38,7 @@ from werkzeug.security import generate_password_hash#, check_password_hash
 from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email, send_confirmation_email, handle_file_upload, check_password_and_upgrade
 from Model import Job, User, db, Session
 from tools.document_tools import build_cover_letter_pdf_filename, generate_cover_letter_pdf_bytes, resolve_cover_letter_template_path
-from tools.cv_tools import load_cv_data, get_ai_cv_suggestions, generate_tailored_cv_pdf_bytes, build_cv_pdf_filename
+from tools.cv_tools import load_cv_data, get_ai_cv_suggestions, generate_tailored_cv_pdf_bytes, build_cv_pdf_filename, get_ai_cover_letter_text
 from tools.send_emails import send_email
 
 from flask import render_template, redirect, url_for, flash
@@ -518,28 +519,15 @@ def show_closed_sessions():
 @is_connected
 def show_all():
     user_id = session['login_id']
-    # Faire quelque chose avec l'ID de l'utilisateur, par exemple, récupérer ses informations depuis la base de données
     app.logger.debug('This is a debug message.')
-    # Reverse order query - show all jobs including expired
-    # jobs = Job.query.order_by(desc(Job.applicationDate)).all()
-    # Order by the most recent date between relaunchDate and applicationDate
-    # If a relaunchDate exists, use it; otherwise fall back to applicationDate
-    # jobs = Job.query.order_by(desc(func.coalesce(Job.relaunchDate, Job.applicationDate))).all()
-    # Order by the most recent date between relaunchDate and applicationDate
-    # Use SQL MAX function which is supported by SQLite/Postgres/MySQL to pick the most recent (greatest) date
-    # recent_date = func.max(Job.relaunchDate, Job.applicationDate)
-    # jobs = Job.query.order_by(desc(recent_date)).all()
-    # Fetch all jobs and sort in Python by the most recent date between relaunchDate and applicationDate
     jobs = Job.query.all()
     def most_recent_date(job):
-        # return the most recent non-None date between relaunchDate and applicationDate
         dates = [d for d in (job.relaunchDate, job.applicationDate) if d]
         if not dates:
             return datetime.min
         return max(dates)
 
     jobs.sort(key=most_recent_date, reverse=True)
-    # Attach a stable numeric sort key (epoch seconds) so the template/JS can preserve the server order
     for j in jobs:
         rd = most_recent_date(j)
         try:
@@ -547,7 +535,66 @@ def show_all():
         except Exception:
             j.recent_ts = 0
     user = get_user_by_id(user_id)
-    return render_template('candidatures.html', jobs=jobs, user=user)
+    # Determine which jobs already have a saved CV PDF on disk
+    uploads_dir = Path(app.static_folder) / 'uploads'
+    cv_pdf_ids = {
+        int(p.stem.replace('cv_', ''))
+        for p in uploads_dir.glob('cv_*.pdf')
+        if p.stem.replace('cv_', '').isdigit()
+    } if uploads_dir.exists() else set()
+    # Charger formations et certifications pour les modales avancées
+    try:
+        _cvd = load_cv_data(app.static_folder)
+        cv_education = [
+            {
+                'idx': i,
+                'label': ' - '.join(p for p in [e.get('studyType', ''), e.get('area', '')] if p)
+                         or e.get('institution', ''),
+                'institution': e.get('institution', ''),
+                'year': (e.get('endDate') or '')[:4],
+            }
+            for i, e in enumerate(_cvd.get('education', []))
+        ]
+        cv_certificates = [
+            {
+                'name': c['name'],
+                'issuer': c.get('issuer', ''),
+                'year': (c.get('date') or '')[:4],
+            }
+            for c in _cvd.get('certificates', [])
+        ]
+        cv_skills = [
+            {
+                'name': s['name'],
+                'level': s.get('level', ''),
+                'rating': s.get('rating', 0),
+            }
+            for s in _cvd.get('skills', [])
+        ]
+        cv_references = [
+            {
+                'name': r['name'],
+                'excerpt': (r.get('reference') or '')[:120].rstrip(),
+            }
+            for r in _cvd.get('references', [])
+        ]
+        cv_projects = [
+            {
+                'name': p['name'],
+                'lang': p.get('primaryLanguage', ''),
+                'desc': (p.get('summary') or p.get('description') or '')[:80],
+            }
+            for p in _cvd.get('projects', [])
+        ]
+    except Exception:
+        cv_education = []
+        cv_certificates = []
+        cv_skills = []
+        cv_references = []
+        cv_projects = []
+    return render_template('candidatures.html', jobs=jobs, user=user, cv_pdf_ids=cv_pdf_ids,
+                           cv_education=cv_education, cv_certificates=cv_certificates,
+                           cv_skills=cv_skills, cv_references=cv_references, cv_projects=cv_projects)
 
 
 @app.route('/generate_cover_letter_pdf/<int:id>', endpoint='generate_cover_letter_pdf')
@@ -575,26 +622,55 @@ def generate_cover_letter_pdf(id):
     )
 
 
-@app.route('/preview_cv_data/<int:id>')
+@app.route('/preview_cv_data/<int:id>', methods=['POST'])
 @is_connected
 def preview_cv_data(id):
     """Retourne les suggestions IA de personnalisation du CV au format JSON (pour l'aperçu modal)."""
     job = Job.query.get_or_404(id)
     github_token = app.config.get('GITHUB_TOKEN', '')
+    payload = request.get_json(force=True) or {}
+    additional_prompt = payload.get('additional_prompt', '')
+    include_sections = payload.get('include_sections') or []
+    # Sélections individuelles formations / certifications
+    selected_education = payload.get('selected_education')
+    selected_certificates = payload.get('selected_certificates')
+    selected_skills = payload.get('selected_skills')
+    selected_references = payload.get('selected_references')
+    selected_projects = payload.get('selected_projects')
+
+    def _fallback(cv_data, warning=''):
+        sugg = {
+            'cv_title': cv_data.get('basics', {}).get('label', 'Développeur / Consultant IT'),
+            'summary': cv_data.get('basics', {}).get('summary', ''),
+            'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
+            'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
+            'warning': warning or 'GITHUB_TOKEN non configuré : aperçu généré sans IA.',
+            'source': 'fallback',
+        }
+        wl = cv_data.get('work', [])
+        sugg['highlighted_work_details'] = [
+            {
+                'position': wl[i].get('position', ''),
+                'company':  wl[i].get('name', ''),
+                'dates':    f"{(wl[i].get('startDate') or '')[:7]} – {(wl[i].get('endDate') or '')[:7] or 'présent'}",
+            }
+            for i in sugg['highlighted_work_indices'] if 0 <= i < len(wl)
+        ]
+        return sugg
+
     try:
         cv_data = load_cv_data(app.static_folder)
         if github_token:
-            suggestions = get_ai_cv_suggestions(job=job, cv_data=cv_data, github_token=github_token)
+            suggestions = get_ai_cv_suggestions(
+                job=job, cv_data=cv_data, github_token=github_token,
+                additional_prompt=additional_prompt, include_sections=include_sections,
+                selected_education=selected_education, selected_certificates=selected_certificates,
+                selected_skills=selected_skills, selected_references=selected_references,
+                selected_projects=selected_projects,
+            )
         else:
-            suggestions = {
-                'cv_title': cv_data.get('basics', {}).get('label', 'Développeur / Consultant IT'),
-                'summary': cv_data.get('basics', {}).get('summary', ''),
-                'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
-                'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
-                'warning': 'GITHUB_TOKEN non configuré : aperçu généré sans IA.',
-                'source': 'fallback',
-            }
-        # Enrichir avec des données lisibles pour l'affichage dans la modale
+            suggestions = _fallback(cv_data)
+            suggestions['_active_sections'] = include_sections
         work_list = cv_data.get('work', [])
         hl_indices = suggestions.get('highlighted_work_indices') or []
         suggestions['highlighted_work_details'] = [
@@ -605,6 +681,15 @@ def preview_cv_data(id):
             }
             for i in hl_indices if 0 <= i < len(work_list)
         ]
+        # Labels lisibles des sections actives pour affichage dans la modale
+        _section_labels = {
+            'education': '🎓 Formations', 'certificates': '🏅 Certifications',
+            'skills_rating': '⭐ Niveaux compétences', 'references': '💬 Références',
+            'github_projects': '🐙 Projets GitHub',
+        }
+        suggestions['active_section_labels'] = [
+            _section_labels[s] for s in (suggestions.get('_active_sections') or []) if s in _section_labels
+        ]
         return jsonify(suggestions)
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
@@ -612,34 +697,103 @@ def preview_cv_data(id):
         app.logger.error(f'preview_cv_data error: {exc}')
         try:
             cv_data = load_cv_data(app.static_folder)
-            suggestions = {
-                'cv_title': cv_data.get('basics', {}).get('label', 'Développeur / Consultant IT'),
-                'summary': cv_data.get('basics', {}).get('summary', ''),
-                'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
-                'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
-                'warning': f"Aperçu généré sans IA : {exc}",
-                'source': 'fallback',
-            }
-            work_list = cv_data.get('work', [])
-            hl_indices = suggestions.get('highlighted_work_indices') or []
-            suggestions['highlighted_work_details'] = [
-                {
-                    'position': work_list[i].get('position', ''),
-                    'company':  work_list[i].get('name', ''),
-                    'dates':    f"{(work_list[i].get('startDate') or '')[:7]} – {(work_list[i].get('endDate') or '')[:7] or 'présent'}",
-                }
-                for i in hl_indices if 0 <= i < len(work_list)
-            ]
-            return jsonify(suggestions), 200
+            return jsonify(_fallback(cv_data, warning=f"Aperçu généré sans IA : {exc}")), 200
         except Exception:
-            return jsonify({'error': f'Erreur lors de l\'appel IA : {exc}'}), 500
+            return jsonify({'error': f"Erreur lors de l'appel IA : {exc}"}), 500
+
+
+@app.route('/save_cv_pdf/<int:id>', methods=['POST'], endpoint='save_cv_pdf')
+@is_connected
+def save_cv_pdf(id):
+    """Génère le CV personnalisé IA, le sauvegarde sur disque et retourne l'URL de téléchargement."""
+    job = Job.query.get_or_404(id)
+    github_token = app.config.get('GITHUB_TOKEN', '')
+    payload = request.get_json(force=True) or {}
+    additional_prompt = payload.get('additional_prompt', '')
+    include_sections = payload.get('include_sections') or []
+    selected_education = payload.get('selected_education')
+    selected_certificates = payload.get('selected_certificates')
+    selected_skills = payload.get('selected_skills')
+    selected_references = payload.get('selected_references')
+    selected_projects = payload.get('selected_projects')
+
+    def _fallback_suggestions(cv_data, warning=''):
+        return {
+            'cv_title': cv_data.get('basics', {}).get('label', 'Développeur / Consultant IT'),
+            'summary': cv_data.get('basics', {}).get('summary', ''),
+            'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
+            'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
+            'warning': warning or 'GITHUB_TOKEN non configuré.',
+            'source': 'fallback',
+        }
+
+    try:
+        cv_data = load_cv_data(app.static_folder)
+        if github_token:
+            suggestions = get_ai_cv_suggestions(
+                job=job, cv_data=cv_data, github_token=github_token,
+                additional_prompt=additional_prompt, include_sections=include_sections,
+                selected_education=selected_education, selected_certificates=selected_certificates,
+                selected_skills=selected_skills, selected_references=selected_references,
+                selected_projects=selected_projects,
+            )
+        else:
+            suggestions = _fallback_suggestions(cv_data)
+        pdf_bytes = generate_tailored_cv_pdf_bytes(
+            job=job, cv_data=cv_data, suggestions=suggestions,
+            include_sections=include_sections,
+            selected_education=selected_education,
+            selected_certificates=selected_certificates,
+            selected_skills=selected_skills,
+            selected_references=selected_references,
+            selected_projects=selected_projects,
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        app.logger.error(f'save_cv_pdf error: {exc}')
+        try:
+            cv_data = load_cv_data(app.static_folder)
+            suggestions = _fallback_suggestions(cv_data, warning=str(exc))
+            pdf_bytes = generate_tailored_cv_pdf_bytes(
+                job=job, cv_data=cv_data, suggestions=suggestions,
+                include_sections=include_sections,
+                selected_education=selected_education,
+                selected_certificates=selected_certificates,
+                selected_skills=selected_skills,
+                selected_references=selected_references,
+                selected_projects=selected_projects,
+            )
+        except Exception as exc2:
+            return jsonify({'error': f'Génération PDF échouée : {exc2}'}), 500
+
+    # Sauvegarder sur disque dans static/uploads/
+    uploads_dir = Path(app.static_folder) / 'uploads'
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    cv_filename = f'cv_{id}.pdf'
+    cv_path = uploads_dir / cv_filename
+    cv_path.write_bytes(pdf_bytes)
+
+    download_url = url_for('static', filename=f'uploads/{cv_filename}')
+    pdf_name = build_cv_pdf_filename(job)
+    return jsonify({'url': download_url, 'filename': pdf_name})
 
 
 @app.route('/generate_cv_pdf/<int:id>', endpoint='generate_cv_pdf')
 @is_connected
 def generate_cv_pdf(id):
-    """Génère et télécharge le CV personnalisé au format PDF."""
+    """Télécharge directement le CV PDF sauvegardé sur disque, ou génère à la volée si absent."""
     job = Job.query.get_or_404(id)
+    uploads_dir = Path(app.static_folder) / 'uploads'
+    cv_path = uploads_dir / f'cv_{id}.pdf'
+    if cv_path.exists():
+        return send_file(
+            str(cv_path),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=build_cv_pdf_filename(job),
+        )
+    # Fallback : génération à la volée
     github_token = app.config.get('GITHUB_TOKEN', '')
     try:
         cv_data = load_cv_data(app.static_folder)
@@ -651,29 +805,13 @@ def generate_cv_pdf(id):
                 'summary': cv_data.get('basics', {}).get('summary', ''),
                 'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
                 'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
-                'warning': 'GITHUB_TOKEN non configuré : PDF généré sans IA.',
                 'source': 'fallback',
             }
         pdf_bytes = generate_tailored_cv_pdf_bytes(job=job, cv_data=cv_data, suggestions=suggestions)
-    except FileNotFoundError as exc:
-        flash(str(exc), 'error')
-        return redirect(url_for('show_all'))
     except Exception as exc:
-        app.logger.error(f'generate_cv_pdf error: {exc}')
-        try:
-            cv_data = load_cv_data(app.static_folder)
-            suggestions = {
-                'cv_title': cv_data.get('basics', {}).get('label', 'Développeur / Consultant IT'),
-                'summary': cv_data.get('basics', {}).get('summary', ''),
-                'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
-                'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
-                'warning': f'PDF généré sans IA : {exc}',
-                'source': 'fallback',
-            }
-            pdf_bytes = generate_tailored_cv_pdf_bytes(job=job, cv_data=cv_data, suggestions=suggestions)
-        except Exception:
-            flash(f'Erreur lors de la génération du CV : {exc}', 'error')
-            return redirect(url_for('show_all'))
+        app.logger.error(f'generate_cv_pdf fallback error: {exc}')
+        flash(f'Erreur lors de la génération du CV : {exc}', 'error')
+        return redirect(url_for('show_all'))
 
     return send_file(
         BytesIO(pdf_bytes),
@@ -681,6 +819,69 @@ def generate_cv_pdf(id):
         as_attachment=True,
         download_name=build_cv_pdf_filename(job),
     )
+
+
+@app.route('/preview_lm_ai/<int:id>', methods=['POST'])
+@is_connected
+def preview_lm_ai(id):
+    """Génère une lettre de motivation par IA et retourne le texte au format JSON."""
+    job = Job.query.get_or_404(id)
+    github_token = app.config.get('GITHUB_TOKEN', '')
+    payload = request.get_json(force=True) or {}
+    additional_prompt = payload.get('additional_prompt', '')
+    include_sections = payload.get('include_sections') or []
+    selected_education = payload.get('selected_education')
+    selected_certificates = payload.get('selected_certificates')
+    selected_skills = payload.get('selected_skills')
+    selected_references = payload.get('selected_references')
+    selected_projects = payload.get('selected_projects')
+    selected_premium_modules = payload.get('selected_premium_modules') or []
+    _section_labels = {
+        'education': '🎓 Formations', 'certificates': '🏅 Certifications',
+        'skills_rating': '⭐ Niveaux compétences', 'references': '💬 Références',
+        'github_projects': '🐙 Projets GitHub',
+    }
+    _premium_labels = {
+        'profiles': '🔗 Profils en ligne',
+        'languages': '🗣️ Langues',
+        'volunteer': '🤝 Bénévolat',
+        'awards': '🏆 Distinctions',
+        'publications': '📚 Publications',
+    }
+    try:
+        text = get_ai_cover_letter_text(
+            job=job, github_token=github_token,
+            additional_prompt=additional_prompt, include_sections=include_sections,
+            selected_education=selected_education,
+            selected_certificates=selected_certificates,
+            selected_skills=selected_skills,
+            selected_references=selected_references,
+            selected_projects=selected_projects,
+            selected_premium_modules=selected_premium_modules,
+        )
+        return jsonify({
+            'text': text,
+            'active_section_labels': [_section_labels[s] for s in include_sections if s in _section_labels],
+            'active_premium_labels': [_premium_labels[s] for s in selected_premium_modules if s in _premium_labels],
+        })
+    except Exception as exc:
+        app.logger.error(f'preview_lm_ai error: {exc}')
+        status_code = 429 if ('429' in str(exc) or 'Too Many Requests' in str(exc)) else 500
+        return jsonify({'error': str(exc)}), status_code
+
+
+@app.route('/save_lm_text/<int:id>', methods=['POST'])
+@is_connected
+def save_lm_text(id):
+    """Enregistre le texte de LM généré par IA dans la fiche candidature."""
+    job = Job.query.get_or_404(id)
+    payload = request.get_json(force=True) or {}
+    text = payload.get('text', '').strip()
+    if not text:
+        return jsonify({'error': 'Texte vide'}), 400
+    job.cover_letter_text = text
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @app.route('/new/', methods=['GET', 'POST'])

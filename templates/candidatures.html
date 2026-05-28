@@ -9,6 +9,12 @@
     let currentCvPreviewJobId = null;
     let currentCvPreviewJobName = '';
     let currentCvPreviewCompany = '';
+    let currentCvSavedUrl = null;
+    let currentCvSavedFilename = null;
+    let currentCvAutoSkillSuggestionsApplied = false;
+
+    let currentLmAiJobId = null;
+    let currentLmAiText = '';
 
     function toggleExpired(jobId) {
         fetch('/toggle_expired/' + jobId, {
@@ -39,12 +45,156 @@
         }
     }
 
+    function _getCheckedSections(prefix) {
+      /* Retourne la liste des sections activées (et uniquement elles) */
+      const boxes = document.querySelectorAll('input[data-section-prefix="' + prefix + '"][data-selection-role="section"]:checked');
+        return Array.from(boxes).map(b => b.value);
+    }
+
+    function _getCheckedValues(selector) {
+      return Array.from(document.querySelectorAll(selector + ':checked')).map(b => b.value);
+    }
+
+    function _getSelectedEducation(prefix = 'cv') {
+        /* Indices (int) des formations cochées pour le CV */
+      return Array.from(document.querySelectorAll('.' + prefix + '-education-check:checked'))
+            .map(b => parseInt(b.value));
+    }
+
+    function _getSelectedCertificates(prefix = 'cv') {
+        /* Noms des certifications cochées pour le CV */
+      return Array.from(document.querySelectorAll('.' + prefix + '-cert-check:checked'))
+            .map(b => b.value);
+    }
+
+    function _getSelectedSkills(prefix) {
+      return _getCheckedValues('.' + prefix + '-skill-check');
+    }
+
+    function _getSelectedReferences(prefix) {
+      return _getCheckedValues('.' + prefix + '-ref-check');
+    }
+
+    function _getSelectedProjects(prefix) {
+      return _getCheckedValues('.' + prefix + '-project-check');
+    }
+
+    function _setGroupChecked(itemSelector, sectionCheckboxId, checked) {
+      document.querySelectorAll(itemSelector).forEach(cb => {
+        cb.checked = checked;
+      });
+      if (sectionCheckboxId) {
+        const sec = document.getElementById(sectionCheckboxId);
+        if (sec) sec.checked = checked;
+      }
+    }
+
+    function _syncSectionFromItems(itemSelector, sectionCheckboxId) {
+      if (!sectionCheckboxId) return;
+      const sec = document.getElementById(sectionCheckboxId);
+      if (!sec) return;
+      const boxes = document.querySelectorAll(itemSelector);
+      const anyChecked = Array.from(boxes).some(cb => cb.checked);
+      sec.checked = anyChecked;
+    }
+
+    function _applySuggestedSkillSelections(prefix, skillNames) {
+      const wanted = new Set(skillNames || []);
+      if (!wanted.size) return false;
+      const boxes = document.querySelectorAll('.' + prefix + '-skill-check');
+      let changed = false;
+      boxes.forEach(cb => {
+        if (wanted.has(cb.value) && !cb.checked) {
+          cb.checked = true;
+          changed = true;
+        }
+      });
+      if (changed) {
+        _syncSectionFromItems('.' + prefix + '-skill-check', prefix + '-sec-skills-rating');
+      }
+      return changed;
+    }
+
+    function _applyDefaultEducationAndCertSelections(prefix) {
+      const educationSelector = '.' + prefix + '-education-check';
+      const certSelector = '.' + prefix + '-cert-check';
+      const educationBoxes = Array.from(document.querySelectorAll(educationSelector));
+      const certBoxes = Array.from(document.querySelectorAll(certSelector));
+      let changed = false;
+
+      if (educationBoxes.length > 0 && !educationBoxes.some(cb => cb.checked)) {
+        educationBoxes.forEach(cb => { cb.checked = true; });
+        changed = true;
+        _syncSectionFromItems(educationSelector, prefix + '-sec-education');
+      }
+      if (certBoxes.length > 0 && !certBoxes.some(cb => cb.checked)) {
+        certBoxes.forEach(cb => { cb.checked = true; });
+        changed = true;
+        _syncSectionFromItems(certSelector, prefix + '-sec-certificates');
+      }
+
+      return changed;
+    }
+
+    function toggleAdvancedSections(prefix, checked) {
+      const sectionSelector = 'input[data-section-prefix="' + prefix + '"][data-selection-role="section"]';
+      document.querySelectorAll(sectionSelector).forEach(cb => {
+        cb.checked = checked;
+      });
+
+      if (prefix === 'cv') {
+        _setGroupChecked('.cv-education-check', null, checked);
+        _setGroupChecked('.cv-cert-check', null, checked);
+        _setGroupChecked('.cv-skill-check', null, checked);
+        _setGroupChecked('.cv-ref-check', null, checked);
+        _setGroupChecked('.cv-project-check', null, checked);
+      }
+      if (prefix === 'lm') {
+        _setGroupChecked('.lm-education-check', null, checked);
+        _setGroupChecked('.lm-cert-check', null, checked);
+        _setGroupChecked('.lm-skill-check', null, checked);
+        _setGroupChecked('.lm-ref-check', null, checked);
+        _setGroupChecked('.lm-project-check', null, checked);
+      }
+    }
+
+    function initAdvancedSelectionSync() {
+      const groupLinks = [
+        {item: '.cv-education-check', sectionId: 'cv-sec-education'},
+        {item: '.cv-cert-check', sectionId: 'cv-sec-certificates'},
+        {item: '.cv-skill-check', sectionId: 'cv-sec-skills-rating'},
+        {item: '.cv-ref-check', sectionId: 'cv-sec-references'},
+        {item: '.cv-project-check', sectionId: 'cv-sec-github'},
+        {item: '.lm-education-check', sectionId: 'lm-sec-education'},
+        {item: '.lm-cert-check', sectionId: 'lm-sec-certificates'},
+        {item: '.lm-skill-check', sectionId: 'lm-sec-skills-rating'},
+        {item: '.lm-ref-check', sectionId: 'lm-sec-references'},
+        {item: '.lm-project-check', sectionId: 'lm-sec-github'},
+      ];
+
+      groupLinks.forEach(link => {
+        document.querySelectorAll(link.item).forEach(cb => {
+          cb.addEventListener('change', () => _syncSectionFromItems(link.item, link.sectionId));
+        });
+        _syncSectionFromItems(link.item, link.sectionId);
+      });
+    }
+
     function openCvModal(jobId, jobName, company) {
         currentCvPreviewJobId = jobId;
         currentCvPreviewJobName = jobName || '';
         currentCvPreviewCompany = company || '';
+        currentCvSavedUrl = null;
+        currentCvSavedFilename = null;
+      currentCvAutoSkillSuggestionsApplied = false;
         document.getElementById('cvModalTitle').textContent = 'Génération du CV pour ' + (currentCvPreviewJobName || 'cette offre');
         document.getElementById('cvRetryBtn').classList.remove('d-none');
+        document.getElementById('cvInsertBtn').classList.add('d-none');
+        document.getElementById('cvInsertBtn').disabled = false;
+        document.getElementById('cvInsertBtn').textContent = '📥 Insérer CV';
+        document.getElementById('cvDownloadBtn').classList.add('d-none');
+        document.getElementById('cvAdditionalPrompt').value = '';
+        // Ne pas réinitialiser les checkboxes avancées : l'utilisateur garde ses choix d'une ouverture à l'autre
         loadCvPreview(jobId);
         var modal = new bootstrap.Modal(document.getElementById('cvModal'));
         modal.show();
@@ -53,15 +203,30 @@
     async function loadCvPreview(jobId) {
         const body = document.getElementById('cvModalBody');
         const retryBtn = document.getElementById('cvRetryBtn');
+        const insertBtn = document.getElementById('cvInsertBtn');
         const dlBtn = document.getElementById('cvDownloadBtn');
+        const additionalPrompt = document.getElementById('cvAdditionalPrompt').value;
         body.innerHTML =
             '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div>' +
             '<p class="mt-3 text-muted">Analyse IA de l\'offre en cours…</p></div>';
+        insertBtn.classList.add('d-none');
         dlBtn.classList.add('d-none');
         retryBtn.disabled = true;
 
         try {
-            const resp = await fetch('/preview_cv_data/' + jobId);
+            const resp = await fetch('/preview_cv_data/' + jobId, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    additional_prompt: additionalPrompt,
+                    include_sections: _getCheckedSections('cv'),
+                    selected_education: _getSelectedEducation('cv'),
+                    selected_certificates: _getSelectedCertificates('cv'),
+                    selected_skills: _getSelectedSkills('cv'),
+                    selected_references: _getSelectedReferences('cv'),
+                    selected_projects: _getSelectedProjects('cv'),
+                }),
+            });
             const data = await resp.json();
             if (!resp.ok) {
                 body.innerHTML =
@@ -70,7 +235,24 @@
                 return;
             }
 
+            if (!currentCvAutoSkillSuggestionsApplied) {
+              const currentSkillSelections = _getSelectedSkills('cv');
+              let applied = false;
+              if ((!currentSkillSelections || currentSkillSelections.length === 0) && data.highlighted_skill_names && data.highlighted_skill_names.length > 0) {
+                applied = _applySuggestedSkillSelections('cv', data.highlighted_skill_names) || applied;
+              }
+              applied = _applyDefaultEducationAndCertSelections('cv') || applied;
+              if (applied) {
+                currentCvAutoSkillSuggestionsApplied = true;
+                await loadCvPreview(jobId);
+                return;
+              }
+            }
+
             let html = '';
+            if (_getCheckedSections('cv').length || _getSelectedEducation('cv').length || _getSelectedCertificates('cv').length || _getSelectedSkills('cv').length || _getSelectedReferences('cv').length || _getSelectedProjects('cv').length) {
+              html += '<div class="alert alert-light border py-2 small mb-2">Sélections manuelles prises en compte pour adapter le CV.</div>';
+            }
             if (data.cv_title) {
                 html += '<h6 class="text-primary fw-bold">' + escapeHtml(data.cv_title) + '</h6>';
             }
@@ -96,8 +278,11 @@
                 html += '</div>';
             }
             body.innerHTML = html;
-            dlBtn.href = '/generate_cv_pdf/' + jobId;
-            dlBtn.classList.remove('d-none');
+            insertBtn.classList.remove('d-none');
+            // Si un CV a déjà été inséré pour cette session, ré-afficher le bouton télécharger
+            if (currentCvSavedUrl) {
+                _showCvDownloadButton(currentCvSavedUrl, currentCvSavedFilename);
+            }
         } catch (err) {
             body.innerHTML = '<div class="alert alert-danger"><strong>Erreur réseau :</strong> ' + escapeHtml(err.message) + '</div>';
         } finally {
@@ -112,6 +297,160 @@
     function retryCvPreview() {
         if (currentCvPreviewJobId !== null) {
             loadCvPreview(currentCvPreviewJobId);
+        }
+    }
+
+    function resetCvPrompt() {
+        document.getElementById('cvAdditionalPrompt').value = '';
+    }
+
+    function _showCvDownloadButton(url, filename) {
+        const dlBtn = document.getElementById('cvDownloadBtn');
+        dlBtn.href = url;
+        dlBtn.download = filename || 'CV.pdf';
+        dlBtn.classList.remove('d-none');
+    }
+
+    async function insertCvPdf() {
+        if (!currentCvPreviewJobId) return;
+        const insertBtn = document.getElementById('cvInsertBtn');
+        const additionalPrompt = document.getElementById('cvAdditionalPrompt').value;
+        insertBtn.disabled = true;
+        insertBtn.textContent = '⏳ Génération…';
+        try {
+            const resp = await fetch('/save_cv_pdf/' + currentCvPreviewJobId, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    additional_prompt: additionalPrompt,
+                    include_sections: _getCheckedSections('cv'),
+                    selected_education: _getSelectedEducation('cv'),
+                    selected_certificates: _getSelectedCertificates('cv'),
+                    selected_skills: _getSelectedSkills('cv'),
+                    selected_references: _getSelectedReferences('cv'),
+                    selected_projects: _getSelectedProjects('cv'),
+                }),
+            });
+            const data = await resp.json();
+            if (resp.ok) {
+                currentCvSavedUrl = data.url;
+                currentCvSavedFilename = data.filename || 'CV.pdf';
+                insertBtn.textContent = '✅ CV inséré !';
+                _showCvDownloadButton(currentCvSavedUrl, currentCvSavedFilename);
+                setTimeout(() => location.reload(), 1800);
+            } else {
+                alert('Erreur lors de l\'insertion du CV : ' + (data.error || 'inconnue'));
+                insertBtn.disabled = false;
+                insertBtn.textContent = '📥 Insérer CV';
+            }
+        } catch (err) {
+            alert('Erreur réseau : ' + err.message);
+            insertBtn.disabled = false;
+            insertBtn.textContent = '📥 Insérer CV';
+        }
+    }
+
+    /* ── LM IA ─────────────────────────────────────────────────────── */
+
+    function openLmAiModal(jobId, jobName, company) {
+        currentLmAiJobId = jobId;
+        currentLmAiText = '';
+        document.getElementById('lmAiModalTitle').textContent =
+            '🤖 Génération LM pour ' + (jobName || 'cette offre');
+        document.getElementById('lmAiInsertBtn').classList.add('d-none');
+        document.getElementById('lmAiAdditionalPrompt').value = '';
+        loadLmAiPreview(jobId);
+        var modal = new bootstrap.Modal(document.getElementById('lmAiModal'));
+        modal.show();
+    }
+
+    async function loadLmAiPreview(jobId) {
+        const body = document.getElementById('lmAiModalBody');
+        const retryBtn = document.getElementById('lmAiRetryBtn');
+        const insertBtn = document.getElementById('lmAiInsertBtn');
+        const additionalPrompt = document.getElementById('lmAiAdditionalPrompt').value;
+
+        body.innerHTML =
+            '<div class="text-center py-4"><div class="spinner-border text-success" role="status"></div>' +
+            '<p class="mt-3 text-muted">Génération de la lettre de motivation en cours…</p></div>';
+        insertBtn.classList.add('d-none');
+        retryBtn.disabled = true;
+
+        try {
+            const resp = await fetch('/preview_lm_ai/' + jobId, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    additional_prompt: additionalPrompt,
+                    include_sections: _getCheckedSections('lm'),
+                    selected_education: _getSelectedEducation('lm'),
+                    selected_certificates: _getSelectedCertificates('lm'),
+                    selected_skills: _getSelectedSkills('lm'),
+                    selected_references: _getSelectedReferences('lm'),
+                    selected_projects: _getSelectedProjects('lm'),
+                    selected_premium_modules: _getCheckedValues('.lm-premium-check'),
+                }),
+            });
+            const data = await resp.json();
+            if (!resp.ok) {
+                body.innerHTML =
+                    '<div class="alert alert-danger"><strong>Erreur :</strong> ' +
+                    (data.error || resp.statusText) + '</div>';
+                retryBtn.disabled = false;
+                return;
+            }
+            currentLmAiText = data.text || '';
+            let lmHtml = '';
+            if (_getCheckedSections('lm').length || _getSelectedEducation('lm').length || _getSelectedCertificates('lm').length || _getSelectedSkills('lm').length || _getSelectedReferences('lm').length || _getSelectedProjects('lm').length || _getCheckedValues('.lm-premium-check').length) {
+              lmHtml += '<div class="alert alert-light border py-2 small mb-2">Sélections manuelles prises en compte pour adapter la lettre.</div>';
+            }
+            lmHtml += '<div style="white-space:pre-wrap">' + escapeHtml(currentLmAiText) + '</div>';
+            body.innerHTML = lmHtml;
+            insertBtn.classList.remove('d-none');
+        } catch (err) {
+            body.innerHTML =
+                '<div class="alert alert-danger"><strong>Erreur réseau :</strong> ' +
+                escapeHtml(err.message) + '</div>';
+        } finally {
+            retryBtn.disabled = false;
+        }
+    }
+
+    function retryLmAiPreview() {
+        if (currentLmAiJobId !== null) {
+            loadLmAiPreview(currentLmAiJobId);
+        }
+    }
+
+    function resetLmAiPrompt() {
+        document.getElementById('lmAiAdditionalPrompt').value = '';
+    }
+
+    async function insertLmText() {
+        if (!currentLmAiJobId || !currentLmAiText) return;
+        const insertBtn = document.getElementById('lmAiInsertBtn');
+        insertBtn.disabled = true;
+        try {
+            const resp = await fetch('/save_lm_text/' + currentLmAiJobId, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: currentLmAiText}),
+            });
+            const data = await resp.json();
+            if (resp.ok) {
+                insertBtn.textContent = '✅ LM insérée !';
+                setTimeout(() => {
+                    var modal = bootstrap.Modal.getInstance(document.getElementById('lmAiModal'));
+                    if (modal) modal.hide();
+                    location.reload();
+                }, 1200);
+            } else {
+                alert('Erreur lors de l\'insertion : ' + (data.error || 'inconnue'));
+                insertBtn.disabled = false;
+            }
+        } catch (err) {
+            alert('Erreur réseau : ' + err.message);
+            insertBtn.disabled = false;
         }
     }
 
@@ -165,6 +504,7 @@
             cb.checked = false;
         }
         applyClosedFilter();
+        initAdvancedSelectionSync();
     });
 </script>
 <div class="mb-3">
@@ -210,13 +550,22 @@
                             <span class="text-muted">—</span>
                         {% endif %}
                         <a href="{{ url_for('generate_cover_letter_pdf', id=job.id) }}" class="btn btn-sm btn-outline-secondary" title="Générer la lettre de motivation en PDF">PDF</a>
+                        <button type="button" class="btn btn-sm btn-outline-success" title="Générer LM par IA"
+                            onclick="openLmAiModal({{ job.id }}, '{{ job.name|e }}', '{{ job.company|e }}')">
+                            🤖 LM
+                        </button>
                     </div>
                 </td>
                 <td>
-                    <button type="button" class="btn btn-sm btn-outline-primary" title="Générer CV personnalisé IA"
-                        onclick="showCVPreview({{ job.id }}, '{{ job.name|e }}', '{{ job.company|e }}')">
-                        🤖 CV
-                    </button>
+                    <div class="d-flex align-items-center gap-1 flex-wrap">
+                        <button type="button" class="btn btn-sm btn-outline-primary" title="Générer CV personnalisé IA"
+                            onclick="showCVPreview({{ job.id }}, '{{ job.name|e }}', '{{ job.company|e }}')">
+                            🤖 CV
+                        </button>
+                        {% if job.id in cv_pdf_ids %}
+                        <a href="{{ url_for('generate_cv_pdf', id=job.id) }}" class="btn btn-sm btn-success" title="Télécharger CV PDF">⬇️ PDF</a>
+                        {% endif %}
+                    </div>
                 </td>
                 <td>{{ job.zipCode }}</td><td>{{ job.company }}</td><td>{{ job.contact }}</td>
                 <td class="{% if not job.email %}bg-warning{% endif %}">{{ job.email }}</td>
@@ -263,9 +612,15 @@
                     <div>
                         {% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a href="{{ url_for('static', filename=capture) }}" target="_blank" class="btn btn-sm btn-outline-success py-0">PDF</a>{% endif %}
                         <a href="{{ url_for('generate_cover_letter_pdf', id=job.id) }}" class="btn btn-sm btn-outline-secondary py-0 ms-1" title="Générer la lettre de motivation en PDF">LM PDF</a>
+                        <button type="button" class="btn btn-sm btn-outline-success py-0 ms-1"
+                            onclick="openLmAiModal({{ job.id }}, '{{ job.name|e }}', '{{ job.company|e }}')"
+                            title="Générer LM par IA">🤖 LM</button>
                         <button type="button" class="btn btn-sm btn-outline-primary py-0 ms-1"
                             onclick="showCVPreview({{ job.id }}, '{{ job.name|e }}', '{{ job.company|e }}')"
                             title="Générer CV personnalisé IA">🤖 CV</button>
+                        {% if job.id in cv_pdf_ids %}
+                        <a href="{{ url_for('generate_cv_pdf', id=job.id) }}" class="btn btn-sm btn-success py-0 ms-1" title="Télécharger CV PDF">⬇️ PDF</a>
+                        {% endif %}
                         {% if job.cover_letter_text %}
                             <span class="ms-1 small text-truncate" style="max-width:120px">{{ job.cover_letter_text }}</span>
                             <button type="button" class="btn btn-sm btn-link p-0 ms-2" onclick="showLM({{ job.id }})">Aperçu</button>
@@ -321,14 +676,424 @@
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body" id="cvModalBody"></div>
+      <div class="modal-body">
+        <div id="cvModalBody"></div>
+        <hr class="my-3">
+        <label for="cvAdditionalPrompt" class="form-label small fw-bold">
+          Prompt additionnel (corrections / instructions) :
+        </label>
+        <div class="input-group mb-3">
+          <textarea id="cvAdditionalPrompt" class="form-control form-control-sm" rows="3"
+            placeholder="Ex : Mets en avant mon expérience Cloud, adapte le titre pour un poste senior…"></textarea>
+          <button type="button" class="btn btn-outline-secondary" onclick="resetCvPrompt()" title="Effacer le prompt additionnel">✕</button>
+        </div>
+        <!-- Mode avancé -->
+        <div class="border rounded p-2 bg-light">
+          <button class="btn btn-link btn-sm p-0 text-decoration-none fw-bold text-primary"
+            type="button" data-bs-toggle="collapse" data-bs-target="#cvAdvancedPanel" aria-expanded="false">
+            ⚙️ Mode avancé — données supplémentaires à inclure dans le prompt
+          </button>
+          <div class="collapse mt-2" id="cvAdvancedPanel">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+              <p class="small text-muted mb-0">Cochez les éléments à transmettre à l'IA et à inclure dans le PDF :</p>
+              <div class="btn-group btn-group-sm" role="group" aria-label="Sélection globale CV">
+                <button type="button" class="btn btn-outline-primary" onclick="toggleAdvancedSections('cv', true)">Tout cocher</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="toggleAdvancedSections('cv', false)">Tout décocher</button>
+              </div>
+            </div>
+
+            <div class="border rounded p-2 bg-white mb-2">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <div class="form-check form-check-sm mb-0">
+                  <input class="form-check-input" type="checkbox" id="cv-sec-education" value="education" data-section-prefix="cv" data-selection-role="section">
+                  <label class="form-check-label small fw-bold" for="cv-sec-education">🎓 Formations</label>
+                </div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Sélection formations CV">
+                  <button type="button" class="btn btn-outline-primary" onclick="_setGroupChecked('.cv-education-check', 'cv-sec-education', true)">Tout</button>
+                  <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.cv-education-check', 'cv-sec-education', false)">Aucun</button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th style="width:48px;">Inclure</th>
+                      <th>Formation</th>
+                      <th>Établissement</th>
+                      <th style="width:80px;">Année</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for edu in cv_education %}
+                    <tr>
+                      <td>
+                        <input class="form-check-input cv-education-check" type="checkbox" id="cv-edu-{{ edu.idx }}" value="{{ edu.idx }}">
+                      </td>
+                      <td><label class="small mb-0" for="cv-edu-{{ edu.idx }}">{{ edu.label }}</label></td>
+                      <td class="small text-muted">{{ edu.institution }}</td>
+                      <td class="small text-muted">{{ edu.year }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="border rounded p-2 bg-white mb-2">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <div class="form-check form-check-sm mb-0">
+                  <input class="form-check-input" type="checkbox" id="cv-sec-certificates" value="certificates" data-section-prefix="cv" data-selection-role="section">
+                  <label class="form-check-label small fw-bold" for="cv-sec-certificates">🏅 Certifications</label>
+                </div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Sélection certifications CV">
+                  <button type="button" class="btn btn-outline-primary" onclick="_setGroupChecked('.cv-cert-check', 'cv-sec-certificates', true)">Tout</button>
+                  <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.cv-cert-check', 'cv-sec-certificates', false)">Aucun</button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th style="width:48px;">Inclure</th>
+                      <th>Certification</th>
+                      <th>Organisme</th>
+                      <th style="width:80px;">Année</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for cert in cv_certificates %}
+                    <tr>
+                      <td>
+                        <input class="form-check-input cv-cert-check" type="checkbox" id="cv-cert-{{ loop.index0 }}" value="{{ cert.name }}">
+                      </td>
+                      <td><label class="small mb-0" for="cv-cert-{{ loop.index0 }}">{{ cert.name }}</label></td>
+                      <td class="small text-muted">{{ cert.issuer }}</td>
+                      <td class="small text-muted">{{ cert.year }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="border rounded p-2 bg-white mb-2">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <div class="form-check form-check-sm mb-0">
+                  <input class="form-check-input" type="checkbox" id="cv-sec-skills-rating" value="skills_rating" data-section-prefix="cv" data-selection-role="section">
+                  <label class="form-check-label small fw-bold" for="cv-sec-skills-rating">⭐ Compétences avec niveau</label>
+                </div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Sélection compétences CV">
+                  <button type="button" class="btn btn-outline-primary" onclick="_setGroupChecked('.cv-skill-check', 'cv-sec-skills-rating', true)">Tout</button>
+                  <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.cv-skill-check', 'cv-sec-skills-rating', false)">Aucun</button>
+                </div>
+              </div>
+              <div class="row row-cols-1 row-cols-md-2 g-1">
+                {% for skill in cv_skills %}
+                <div class="col">
+                  <div class="form-check form-check-sm">
+                    <input class="form-check-input cv-skill-check" type="checkbox" id="cv-skill-{{ loop.index0 }}" value="{{ skill.name }}">
+                    <label class="form-check-label small" for="cv-skill-{{ loop.index0 }}">{{ skill.name }} <span class="text-muted">({{ skill.level }}{% if skill.rating %} - {{ skill.rating }}/4{% endif %})</span></label>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+
+            <div class="border rounded p-2 bg-white mb-2">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <div class="form-check form-check-sm mb-0">
+                  <input class="form-check-input" type="checkbox" id="cv-sec-references" value="references" data-section-prefix="cv" data-selection-role="section">
+                  <label class="form-check-label small fw-bold" for="cv-sec-references">💬 Références professionnelles</label>
+                </div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Sélection références CV">
+                  <button type="button" class="btn btn-outline-primary" onclick="_setGroupChecked('.cv-ref-check', 'cv-sec-references', true)">Tout</button>
+                  <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.cv-ref-check', 'cv-sec-references', false)">Aucun</button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th style="width:48px;">Inclure</th>
+                      <th>Référence</th>
+                      <th>Témoignage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for ref in cv_references %}
+                    <tr>
+                      <td>
+                        <input class="form-check-input cv-ref-check" type="checkbox" id="cv-ref-{{ loop.index0 }}" value="{{ ref.name }}">
+                      </td>
+                      <td><label class="small mb-0" for="cv-ref-{{ loop.index0 }}"><strong>{{ ref.name }}</strong></label></td>
+                      <td class="small text-muted" style="max-width:520px; word-break:break-word;">{{ ref.excerpt }}{% if ref.excerpt %}...{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="border rounded p-2 bg-white">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <div class="form-check form-check-sm mb-0">
+                  <input class="form-check-input" type="checkbox" id="cv-sec-github" value="github_projects" data-section-prefix="cv" data-selection-role="section">
+                  <label class="form-check-label small fw-bold" for="cv-sec-github">🐙 Projets GitHub</label>
+                </div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Sélection projets CV">
+                  <button type="button" class="btn btn-outline-primary" onclick="_setGroupChecked('.cv-project-check', 'cv-sec-github', true)">Tout</button>
+                  <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.cv-project-check', 'cv-sec-github', false)">Aucun</button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th style="width:48px;">Inclure</th>
+                      <th>Projet</th>
+                      <th style="width:120px;">Langage</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for project in cv_projects %}
+                    <tr>
+                      <td>
+                        <input class="form-check-input cv-project-check" type="checkbox" id="cv-project-{{ loop.index0 }}" value="{{ project.name }}">
+                      </td>
+                      <td><label class="small mb-0" for="cv-project-{{ loop.index0 }}"><strong>{{ project.name }}</strong></label></td>
+                      <td class="small text-muted">{{ project.lang }}</td>
+                      <td class="small text-muted">{{ project.desc }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="modal-footer">
         <button id="cvRetryBtn" type="button" class="btn btn-outline-primary d-none" onclick="retryCvPreview()">
           ↻ Réessayer
         </button>
+        <button id="cvInsertBtn" type="button" class="btn btn-primary d-none" onclick="insertCvPdf()">
+          📥 Insérer CV
+        </button>
         <a id="cvDownloadBtn" href="#" class="btn btn-success d-none" download>
           ⬇️ Télécharger le CV (PDF)
         </a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for AI Cover Letter generation -->
+<div class="modal fade" id="lmAiModal" tabindex="-1" aria-labelledby="lmAiModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-success bg-opacity-10">
+        <h5 class="modal-title text-success" id="lmAiModalLabel">
+          <span id="lmAiModalTitle">🤖 Génération LM par IA</span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="lmAiModalBody" style="min-height:100px;"></div>
+        <hr class="my-3">
+        <label for="lmAiAdditionalPrompt" class="form-label small fw-bold">
+          Prompt additionnel (corrections / instructions) :
+        </label>
+        <div class="input-group mb-3">
+          <textarea id="lmAiAdditionalPrompt" class="form-control form-control-sm" rows="3"
+            placeholder="Ex : Mets l'accent sur mon expérience Python, sois plus formel, raccourcis le texte…"></textarea>
+          <button type="button" class="btn btn-outline-secondary" onclick="resetLmAiPrompt()" title="Effacer le prompt additionnel">✕</button>
+        </div>
+        <div class="alert alert-success py-2 small mb-0">
+          La lettre de motivation s'adapte aux éléments que vous sélectionnez manuellement.
+        </div>
+        <div class="border rounded p-2 bg-white mt-3">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div>
+              <div class="small fw-bold text-success">Sélection manuelle du profil</div>
+              <div class="small text-muted">Choisissez les éléments à exploiter pour cette lettre.</div>
+            </div>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Sélection globale LM">
+              <button type="button" class="btn btn-outline-success" onclick="toggleAdvancedSections('lm', true)">Tout cocher</button>
+              <button type="button" class="btn btn-outline-secondary" onclick="toggleAdvancedSections('lm', false)">Tout décocher</button>
+            </div>
+          </div>
+
+          <div class="border rounded p-2 bg-light mb-2">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+              <div class="form-check form-check-sm mb-0">
+                <input class="form-check-input" type="checkbox" id="lm-sec-education" value="education" data-section-prefix="lm" data-selection-role="section">
+                <label class="form-check-label small fw-bold" for="lm-sec-education">🎓 Formations</label>
+              </div>
+              <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-success" onclick="_setGroupChecked('.lm-education-check', 'lm-sec-education', true)">Tout</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.lm-education-check', 'lm-sec-education', false)">Aucun</button>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th style="width:48px;">Inclure</th>
+                    <th>Formation</th>
+                    <th>Établissement</th>
+                    <th style="width:80px;">Année</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for edu in cv_education %}
+                  <tr>
+                    <td><input class="form-check-input lm-education-check" type="checkbox" id="lm-edu-{{ edu.idx }}" value="{{ edu.idx }}"></td>
+                    <td><label class="small mb-0" for="lm-edu-{{ edu.idx }}">{{ edu.label }}</label></td>
+                    <td class="small text-muted">{{ edu.institution }}</td>
+                    <td class="small text-muted">{{ edu.year }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="border rounded p-2 bg-light mb-2">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+              <div class="form-check form-check-sm mb-0">
+                <input class="form-check-input" type="checkbox" id="lm-sec-certificates" value="certificates" data-section-prefix="lm" data-selection-role="section">
+                <label class="form-check-label small fw-bold" for="lm-sec-certificates">🏅 Certifications</label>
+              </div>
+              <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-success" onclick="_setGroupChecked('.lm-cert-check', 'lm-sec-certificates', true)">Tout</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.lm-cert-check', 'lm-sec-certificates', false)">Aucun</button>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th style="width:48px;">Inclure</th>
+                    <th>Certification</th>
+                    <th>Organisme</th>
+                    <th style="width:80px;">Année</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for cert in cv_certificates %}
+                  <tr>
+                    <td><input class="form-check-input lm-cert-check" type="checkbox" id="lm-cert-{{ loop.index0 }}" value="{{ cert.name }}"></td>
+                    <td><label class="small mb-0" for="lm-cert-{{ loop.index0 }}">{{ cert.name }}</label></td>
+                    <td class="small text-muted">{{ cert.issuer }}</td>
+                    <td class="small text-muted">{{ cert.year }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="border rounded p-2 bg-light mb-2">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+              <div class="form-check form-check-sm mb-0">
+                <input class="form-check-input" type="checkbox" id="lm-sec-skills-rating" value="skills_rating" data-section-prefix="lm" data-selection-role="section">
+                <label class="form-check-label small fw-bold" for="lm-sec-skills-rating">⭐ Compétences avec niveau</label>
+              </div>
+              <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-success" onclick="_setGroupChecked('.lm-skill-check', 'lm-sec-skills-rating', true)">Tout</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.lm-skill-check', 'lm-sec-skills-rating', false)">Aucun</button>
+              </div>
+            </div>
+            <div class="row row-cols-1 row-cols-md-2 g-1">
+              {% for skill in cv_skills %}
+              <div class="col">
+                <div class="form-check form-check-sm">
+                  <input class="form-check-input lm-skill-check" type="checkbox" id="lm-skill-{{ loop.index0 }}" value="{{ skill.name }}">
+                  <label class="form-check-label small" for="lm-skill-{{ loop.index0 }}">{{ skill.name }} <span class="text-muted">({{ skill.level }}{% if skill.rating %} - {{ skill.rating }}/4{% endif %})</span></label>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="border rounded p-2 bg-light mb-2">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+              <div class="form-check form-check-sm mb-0">
+                <input class="form-check-input" type="checkbox" id="lm-sec-references" value="references" data-section-prefix="lm" data-selection-role="section">
+                <label class="form-check-label small fw-bold" for="lm-sec-references">💬 Références professionnelles</label>
+              </div>
+              <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-success" onclick="_setGroupChecked('.lm-ref-check', 'lm-sec-references', true)">Tout</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.lm-ref-check', 'lm-sec-references', false)">Aucun</button>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th style="width:48px;">Inclure</th>
+                    <th>Référence</th>
+                    <th>Témoignage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for ref in cv_references %}
+                  <tr>
+                    <td><input class="form-check-input lm-ref-check" type="checkbox" id="lm-ref-{{ loop.index0 }}" value="{{ ref.name }}"></td>
+                    <td><label class="small mb-0" for="lm-ref-{{ loop.index0 }}"><strong>{{ ref.name }}</strong></label></td>
+                    <td class="small text-muted">{{ ref.excerpt }}{% if ref.excerpt %}...{% endif %}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="border rounded p-2 bg-light">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+              <div class="form-check form-check-sm mb-0">
+                <input class="form-check-input" type="checkbox" id="lm-sec-github" value="github_projects" data-section-prefix="lm" data-selection-role="section">
+                <label class="form-check-label small fw-bold" for="lm-sec-github">🐙 Projets GitHub</label>
+              </div>
+              <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-outline-success" onclick="_setGroupChecked('.lm-project-check', 'lm-sec-github', true)">Tout</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="_setGroupChecked('.lm-project-check', 'lm-sec-github', false)">Aucun</button>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th style="width:48px;">Inclure</th>
+                    <th>Projet</th>
+                    <th style="width:120px;">Langage</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for project in cv_projects %}
+                  <tr>
+                    <td><input class="form-check-input lm-project-check" type="checkbox" id="lm-project-{{ loop.index0 }}" value="{{ project.name }}"></td>
+                    <td><label class="small mb-0" for="lm-project-{{ loop.index0 }}"><strong>{{ project.name }}</strong></label></td>
+                    <td class="small text-muted">{{ project.lang }}</td>
+                    <td class="small text-muted">{{ project.desc }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="lmAiRetryBtn" type="button" class="btn btn-outline-success" onclick="retryLmAiPreview()">
+          ↻ Réessayer
+        </button>
+        <button id="lmAiInsertBtn" type="button" class="btn btn-success d-none" onclick="insertLmText()">
+          📥 Insérer LM
+        </button>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
       </div>
     </div>
