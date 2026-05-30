@@ -15,7 +15,7 @@ class Config:
     CV_RESUME = 'https://www.linkedin.com/in/pmourey/<br>https://github.com/pmourey/jobs<br>https://pmourey.github.io/portfolio/'
     GITHUB_TOKEN = ''
     GITHUB_MODELS_BASE_URL = 'https://models.github.ai/inference'
-    GITHUB_MODELS_MODEL = 'openai/gpt-4o-mini'
+    GITHUB_MODELS_MODEL = 'openai/gpt-4.1'
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24
     # SCHEDULER_INTERVAL = 10
