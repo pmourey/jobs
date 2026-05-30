@@ -1,100 +1,137 @@
 # Suivi de Candidatures
 
-Application Flask de suivi des candidatures d'emploi avec envoi automatique de relances par email.
+Application Flask de suivi de candidatures avec authentification, gestion des rôles, génération de documents (LM/CV) et assistants IA pour personnaliser les candidatures.
 
-## 🌐 Démo en ligne
-[http://pmourey.pythonanywhere.com](https://pmourey.pythonanywhere.com/)
+## Démo
 
-## 📋 Fonctionnalités
+[https://pmourey.pythonanywhere.com/](https://pmourey.pythonanywhere.com/)
 
-- **Gestion des candidatures** : Ajout, modification, suppression des offres d'emploi
-- **Upload de captures PDF** : Sauvegarde des captures d'écran des offres (max 2Mo)
-- **Relances automatiques** : Envoi d'emails de relance mensuels via scheduler
-- **Authentification** : Système de comptes utilisateurs avec rôles (Admin/Éditeur/Lecteur)
-- **Suivi des sessions** : Historique des connexions utilisateurs
-- **Validation email** : Confirmation d'inscription par email
+## Fonctionnalités principales
 
-## 🛠️ Installation
+- Gestion des candidatures : création, modification, suppression, archivage (actif/clos), suivi des dates et du texte de lettre.
+- Authentification complète : inscription, validation e-mail, connexion/déconnexion, changement et récupération de mot de passe.
+- Gestion des rôles : Administrateur, Éditeur, Lecteur avec restrictions d'accès par route.
+- Administration des comptes et sessions : sessions actives, sessions fermées, fermeture/suppression unitaire ou en lot.
+- Génération de lettre de motivation PDF côté serveur via ReportLab (sans Word ni LibreOffice en production).
+- Personnalisation IA du CV : aperçu des suggestions, sélection fine des sections, génération et sauvegarde d'un CV PDF.
+- Génération IA de lettre de motivation : prévisualisation, ajustement via prompt complémentaire, sauvegarde dans la candidature.
+- Upload de capture de candidature (PDF) avec validation côté serveur.
 
-### Prérequis
-- Python 3.10+ ([Télécharger](https://www.python.org/downloads/))
-- Compte Gmail avec mot de passe d'application
-- LibreOffice uniquement si vous voulez convertir localement des documents Word legacy (`.dot`) ; la génération PDF serveur fonctionne maintenant en pur Python
+## Nouveautés récentes
 
-### Configuration
+- Ajout de l'endpoint de génération LM PDF : /generate_cover_letter_pdf/<id>
+- Ajout du flux CV IA :
+  - /preview_cv_data/<id> (aperçu JSON)
+  - /save_cv_pdf/<id> (génération + sauvegarde dans static/uploads)
+  - /generate_cv_pdf/<id> (téléchargement du CV sauvegardé ou fallback dynamique)
+- Ajout du flux LM IA :
+  - /preview_lm_ai/<id> (génération de texte)
+  - /save_lm_text/<id> (persistance en base)
+- Ajout de la suppression/fermeture de sessions en lot : /delete_sessions (POST JSON)
+- Messages de validation formulaire renforcés sur /new/ (champs requis, e-mail invalide, conservation des valeurs saisies)
 
-1. **Cloner le projet**
-   ```bash
-   git clone <repository-url>
-   cd jobs
-   ```
+## Prérequis
 
-2. **Installer les dépendances**
-   ```bash
-   pip install -r requirements.txt
-   ```
-   *En cas d'erreur, mettre à jour pip :*
-   ```bash
-   python -m pip install --upgrade pip
-   ```
+- Python 3.10+
+- Pip
+- Compte Gmail + mot de passe d'application (si envoi d'e-mails activé)
+- Optionnel : token GitHub Models pour les fonctionnalités IA
 
-   **Optionnel – pour convertir localement un template Word legacy `.dot` :**
-   - macOS : installer LibreOffice puis vérifier la présence de `soffice`
-   - exemple avec Homebrew :
-   ```bash
-   brew install --cask libreoffice
-   /Applications/LibreOffice.app/Contents/MacOS/soffice --version
-   ```
+LibreOffice est optionnel et utile surtout pour des conversions locales de templates legacy .dot. Le rendu PDF principal est géré en Python.
 
-3. **Configuration**
-   ```bash
-   # Copier le template de configuration
-   cp config_template.py config.py
-   ```
-   
-   **Configuration Gmail :**
-   - Activer l'authentification à 2 facteurs sur votre compte Google
-   - Aller dans Paramètres Google > Sécurité > Mots de passe d'application
-   - Générer un mot de passe d'application pour "Mail"
-   - Modifier `config.py` avec vos identifiants :
-   ```python
-   GMAIL_USER = 'votre.email@gmail.com'
-   GMAIL_APP_PWD = 'votre_mot_de_passe_application'
-   ```
+## Installation
 
-## 🚀 Utilisation
+1. Cloner le dépôt
 
-La lettre de motivation PDF est générée côté serveur en **pur Python** via `reportlab`, ce qui est compatible avec des hébergeurs comme **PythonAnywhere** sans installation de LibreOffice ni ouverture de Microsoft Word.
+```bash
+git clone <repository-url>
+cd jobs
+```
 
-### Lancement de l'application
+2. Installer les dépendances
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+3. Créer la configuration locale
+
+```bash
+cp config_template.py config.py
+```
+
+4. Renseigner les variables dans config.py
+
+- SMTP_SERVER, SMTP_PORT, GMAIL_USER, GMAIL_APP_PWD
+- SECRET_KEY
+- SQLALCHEMY_DATABASE_URI
+- GITHUB_TOKEN (optionnel, recommandé pour IA)
+- GITHUB_MODELS_BASE_URL, GITHUB_MODELS_MODEL
+
+## Données et fichiers attendus
+
+- static/cv.json : base CV utilisée pour la personnalisation IA.
+- static/Cover_letter.dot ou static/Cover_letter.dotx : template de lettre.
+- static/uploads/ : PDFs générés (créé automatiquement si absent).
+- static/images/ : captures de candidature et ressources associées.
+
+## Lancer l'application
+
 ```bash
 python flask_app.py
 ```
 
-### Configuration du scheduler (optionnel)
-```python
-# Dans config.py
-app.config['SCHEDULER'] = True
-app.config['SCHEDULER_INTERVAL'] = 3600 * 24  # 24h
+Puis ouvrir le navigateur sur l'URL Flask affichée en console.
+
+## Endpoints utiles
+
+- /suivi : liste des candidatures
+- /new/ : création d'une candidature
+- /update/<id> : édition d'une candidature
+- /toggle_expired/<id> : bascule actif/clos
+- /generate_cover_letter_pdf/<id> : téléchargement LM PDF
+- /preview_cv_data/<id> : aperçu des recommandations IA CV (POST)
+- /save_cv_pdf/<id> : génération + sauvegarde CV PDF (POST)
+- /generate_cv_pdf/<id> : téléchargement CV PDF
+- /preview_lm_ai/<id> : génération IA LM (POST)
+- /save_lm_text/<id> : sauvegarde texte LM (POST)
+- /sessions, /closed_sessions : suivi des sessions
+- /delete_sessions : fermeture/suppression de sessions en lot (POST JSON)
+
+## Tests
+
+Des scripts de test sont disponibles dans test/, notamment :
+
+- test/test_generate_cover_letter_pdf.py
+- test/test_delete_sessions.py
+- test/test_new_route.py
+- test/test_empty_form.py
+
+Exemple :
+
+```bash
+python test/test_generate_cover_letter_pdf.py
 ```
 
-## 📁 Structure du projet
+## Sécurité et validation
 
-- `flask_app.py` - Application principale Flask
-- `Model.py` - Modèles de données SQLAlchemy
-- `Controller.py` - Logique métier et envoi d'emails
-- `templates/` - Templates HTML
-- `static/` - Fichiers CSS, JS et uploads
-- `tools/` - Utilitaires (envoi emails, tâches programmées)
+- Contrôles d'accès par rôle sur les routes sensibles.
+- Validation des entrées formulaire (obligatoires, format e-mail).
+- Gestion de session côté serveur avec invalidation automatique si session fermée par admin.
+- Gestion des erreurs/fallback en cas d'indisponibilité IA (aperçus et génération dégradés).
 
-## 🔒 Sécurité
+## Structure du projet
 
-- Validation des fichiers PDF (en-tête + taille)
-- Authentification par sessions
-- Protection CSRF
-- Validation des emails
+- flask_app.py : routes Flask et orchestration métier.
+- Model.py : modèles SQLAlchemy.
+- Controller.py : services applicatifs (auth, e-mail, upload).
+- tools/document_tools.py : génération et utilitaires LM/PDF.
+- tools/cv_tools.py : IA CV/LM et génération CV PDF.
+- templates/ : vues Jinja2.
+- static/ : assets, templates documents, uploads.
 
-## 📧 Contact
+## Contact
 
-Pour tout problème : contacter l'auteur
+Pour toute question ou incident, contacter l'auteur du projet.
 
