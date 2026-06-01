@@ -10,6 +10,13 @@ import atexit
 import locale
 import logging
 import os
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+
+# Ensure NO_PROXY is set (some environments use lowercase 'no_proxy') so requests bypasses
+# the corporate proxy for France Travail domains when the variable was exported locally.
+if not os.environ.get('NO_PROXY') and os.environ.get('no_proxy'):
+    os.environ['NO_PROXY'] = os.environ.get('no_proxy')
+os.environ.setdefault('NO_PROXY', 'entreprise.francetravail.fr,api.francetravail.io')
 import re
 from datetime import datetime, timedelta
 from functools import wraps
