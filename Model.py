@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json as _json
 import logging
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Match
+from typing import Match, Optional
 
 from dateutil.relativedelta import relativedelta
 from flask_sqlalchemy import SQLAlchemy
@@ -136,6 +137,7 @@ class Job(db.Model):
     refusalDate = db.Column(db.DateTime)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     cover_letter_text = db.Column(db.Text)
+    ft_offer_id = db.Column(db.String(30), nullable=True, index=True)
 
     # Relation avec la table Utilisateur
     # utilisateur = relationship('user', backref='job')
@@ -190,3 +192,80 @@ class Job(db.Model):
         path = os.path.dirname(__file__)
         file_name: str = f'capture_{self.id}.pdf'
         return os.path.isfile(f'{path}/static/images/{file_name}')
+
+
+class AppSetting(db.Model):
+    """Table de configuration applicative clé/valeur.
+
+    Utilisée notamment pour mémoriser la date de la dernière extraction
+    automatique France Travail (clé : 'ft_last_extraction').
+    """
+    __tablename__ = 'app_setting'
+    id    = db.Column(db.Integer, primary_key=True)
+    key   = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.String(500))
+
+    @staticmethod
+    def get(key: str, default: Optional[str] = None) -> Optional[str]:
+        """Retourne la valeur associée à la clé, ou default si absente."""
+        s = AppSetting.query.filter_by(key=key).first()
+        return s.value if s else default
+
+    @staticmethod
+    def set(key: str, value: str) -> None:
+        """Crée ou met à jour la clé et commite la session."""
+        s = AppSetting.query.filter_by(key=key).first()
+        if s:
+            s.value = value
+        else:
+            s = AppSetting(key=key, value=value)
+            db.session.add(s)
+        db.session.commit()
+
+
+class FtSearch(db.Model):
+    """Sauvegarde persistante des résultats de recherche France Travail.
+
+    Permet de consulter les résultats ultérieurement et de les réactualiser.
+    """
+    __tablename__ = 'ft_search'
+    id                  = db.Column(db.Integer, primary_key=True)
+    created_at          = db.Column(db.DateTime, nullable=False)
+    search_info         = db.Column(db.String(300))
+    offers_json         = db.Column(db.Text)          # liste JSON des offres normalisées
+    unavailable_ids     = db.Column(db.Text, default='[]')  # IDs FT marqués "indisponible"
+    search_params_json  = db.Column(db.Text)          # paramètres pour la réactualisation
+    user_id             = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    def __init__(self, user_id: int, search_info: str, offers: list, search_params: dict):
+        self.user_id            = user_id
+        self.created_at         = datetime.utcnow()
+        self.search_info        = search_info
+        self.offers_json        = _json.dumps(offers, ensure_ascii=False)
+        self.unavailable_ids    = '[]'
+        self.search_params_json = _json.dumps(search_params, ensure_ascii=False)
+
+    @property
+    def offers(self) -> list:
+        return _json.loads(self.offers_json or '[]')
+
+    @offers.setter
+    def offers(self, value: list) -> None:
+        self.offers_json = _json.dumps(value, ensure_ascii=False)
+
+    @property
+    def params(self) -> dict:
+        return _json.loads(self.search_params_json or '{}')
+
+    @property
+    def unavailable(self) -> set:
+        return set(_json.loads(self.unavailable_ids or '[]'))
+
+    def toggle_unavailable(self, ft_id: str) -> None:
+        """Bascule l'état indisponible d'une offre (ajoute si absent, retire si présent)."""
+        ids = _json.loads(self.unavailable_ids or '[]')
+        if ft_id in ids:
+            ids.remove(ft_id)
+        else:
+            ids.append(ft_id)
+        self.unavailable_ids = _json.dumps(ids)

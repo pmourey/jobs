@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+
+{% block main %}
+{% include 'partials/_menu.html' %}
+
+<div class="container-fluid mt-4">
+	<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+		<h1 class="h3">📋 Mes recherches France Travail</h1>
+		<a href="{{ url_for('france_travail') }}" class="btn btn-primary btn-sm">+ Nouvelle recherche</a>
+	</div>
+
+	{% if not searches %}
+	<div class="alert alert-info">
+		Aucune recherche sauvegardée. <a href="{{ url_for('france_travail') }}">Lancez votre première recherche</a>.
+	</div>
+	{% else %}
+	<div class="table-responsive">
+		<table class="table table-hover align-middle">
+			<thead class="table-dark">
+				<tr>
+					<th>Date</th>
+					<th>Description</th>
+					<th class="text-center">Nb offres</th>
+					<th class="text-center">Actions</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for s in searches %}
+				<tr>
+					<td class="text-nowrap small">{{ s.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+					<td>{{ s.search_info }}</td>
+					<td class="text-center">
+						<span class="badge bg-secondary">{{ s.offers | length }}</span>
+					</td>
+					<td class="text-center text-nowrap">
+						<a href="{{ url_for('ft_search_view', search_id=s.id) }}"
+							class="btn btn-sm btn-outline-primary me-1">
+							🔍 Consulter
+						</a>
+						<form method="post" action="{{ url_for('ft_search_delete', search_id=s.id) }}" class="d-inline"
+							onsubmit="return confirm('Supprimer cette recherche ?')">
+							<button type="submit" class="btn btn-sm btn-outline-danger">🗑</button>
+						</form>
+					</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% endif %}
+</div>
+
+{% endblock main %}

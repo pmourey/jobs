@@ -477,3 +477,4 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
     return buffer.getvalue()
 
 
+# ── CV personnalisé ────────────────────────────────────────────────────────

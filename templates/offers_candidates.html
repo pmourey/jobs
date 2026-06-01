@@ -1,0 +1,180 @@
+{% extends 'base.html' %}
+
+{% block main %}
+{% include 'partials/_menu.html' %}
+
+<div class="container-fluid mt-4">
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h1 class="h3 mb-1">🇫🇷 Offres France Travail</h1>
+      <p class="text-muted mb-0">
+        {{ search_info }}
+        {% if search %}
+        <span class="text-muted small ms-2">&mdash; g&eacute;n&eacute;r&eacute; le {{ search.created_at.strftime('%d/%m/%Y &agrave; %H:%M') }}</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      {% if search_id %}
+      <form method="post" action="{{ url_for('ft_search_refresh', search_id=search_id) }}">
+        <button type="submit" class="btn btn-outline-primary btn-sm">🔄 Rafraîchir</button>
+      </form>
+      {% endif %}
+      <a href="{{ url_for('ft_searches') }}" class="btn btn-outline-secondary btn-sm">📋 Mes recherches</a>
+      <a href="{{ url_for('france_travail') }}" class="btn btn-outline-secondary btn-sm">&larr; Nouvelle recherche</a>
+    </div>
+  </div>
+
+  {% if not offers %}
+  <div class="alert alert-info">Aucune offre trouv&eacute;e pour ces crit&egrave;res.</div>
+  {% else %}
+
+  <div class="d-flex gap-3 mb-3 small text-muted flex-wrap">
+    <span><span class="badge bg-success">✓ Ajoutée</span> candidature déjà dans le suivi</span>
+    <span><span class="badge bg-warning text-dark">⚠ Indisponible</span> offre signalée comme expirée</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>Date</th>
+          <th>Intitulé</th>
+          <th>Entreprise</th>
+          <th>Lieu</th>
+          <th>Contrat</th>
+          <th>Mode</th>
+          <th>Salaire</th>
+          <th class="text-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for offer in offers %}
+        {% set is_added   = offer.id in added_ids %}
+        {% set is_unavail = offer.id in unavailable_ids %}
+        <tr class="{% if is_unavail %}table-secondary{% elif is_added %}table-light{% endif %}">
+          <td class="text-nowrap small">{{ offer.dateCreation }}</td>
+          <td>
+            <strong>{{ offer.intitule }}</strong>
+            {% if offer.entrepriseAdaptee %}
+            <span class="badge bg-info text-dark ms-1" title="Entreprise adaptée">♿</span>
+            {% endif %}
+            {% if is_added %}<span class="badge bg-success ms-1">✓ Ajoutée</span>{% endif %}
+            {% if is_unavail %}<span class="badge bg-warning text-dark ms-1">⚠ Indisponible</span>{% endif %}
+          </td>
+          <td>{{ offer.entreprise or '–' }}</td>
+          <td class="small">{{ offer.lieu or '–' }}</td>
+          <td><span class="badge bg-secondary">{{ offer.typeContrat or '–' }}</span></td>
+          <td class="small">{{ offer.modeTravail or '–' }}</td>
+          <td class="small">{{ offer.salaire or '–' }}</td>
+          <td class="text-center text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-primary me-1"
+                    onclick="openOfferModal({{ loop.index0 }})" title="Voir le détail">
+              🔍 Détail
+            </button>
+            {% if not user.is_reader and search_id %}
+            {% if is_added %}
+            <button type="button" class="btn btn-sm btn-success me-1" disabled>✓</button>
+            {% else %}
+            <form method="post"
+                  action="{{ url_for('ft_add_candidature', search_id=search_id) }}"
+                  class="d-inline">
+              <input type="hidden" name="offer_id"  value="{{ offer.id }}">
+              <input type="hidden" name="title"     value="{{ offer.intitule }}">
+              <input type="hidden" name="url"       value="{{ offer.url }}">
+              <input type="hidden" name="company"   value="{{ offer.entreprise }}">
+              <input type="hidden" name="location"  value="{{ offer.lieu }}">
+              <button type="submit" class="btn btn-sm btn-success me-1"
+                      title="Ajouter dans le suivi">➕</button>
+            </form>
+            {% endif %}
+            <form method="post"
+                  action="{{ url_for('ft_toggle_unavailable', search_id=search_id) }}"
+                  class="d-inline">
+              <input type="hidden" name="offer_id" value="{{ offer.id }}">
+              <button type="submit"
+                      class="btn btn-sm {% if is_unavail %}btn-warning{% else %}btn-outline-warning{% endif %}"
+                      title="{% if is_unavail %}Marquer disponible{% else %}Signaler indisponible{% endif %}">⚠</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<div class="modal fade" id="offerModal" tabindex="-1" aria-labelledby="offerModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="offerModalLabel">Détail de l'offre</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="offerModalBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        {% if not user.is_reader and search_id %}
+        <form method="post"
+              action="{{ url_for('ft_add_candidature', search_id=search_id) }}"
+              id="offerModalAddForm">
+          <input type="hidden" name="offer_id"  id="modal_offer_id">
+          <input type="hidden" name="title"     id="modal_title">
+          <input type="hidden" name="url"       id="modal_url">
+          <input type="hidden" name="company"   id="modal_company">
+          <input type="hidden" name="location"  id="modal_location">
+          <button type="submit" id="modalAddBtn" class="btn btn-success">➕ Ajouter la candidature</button>
+        </form>
+        {% endif %}
+        <a id="offerModalExtLink" href="#" target="_blank" rel="noopener noreferrer"
+           class="btn btn-outline-primary">🔗 Voir sur France Travail</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const FT_OFFERS      = {{ offers | tojson | safe }};
+const FT_ADDED_IDS   = {{ added_ids | list | tojson | safe }};
+const FT_UNAVAIL_IDS = {{ unavailable_ids | list | tojson | safe }};
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function openOfferModal(idx) {
+  const o = FT_OFFERS[idx]; if (!o) return;
+  document.getElementById('offerModalLabel').textContent = o.intitule || "D\u00e9tail de l'offre";
+  let b = '';
+  b += '<div class="row mb-3">';
+  b += '<div class="col-md-6"><strong>Entreprise :</strong> ' + (escHtml(o.entreprise)||'\u2013');
+  if (o.entrepriseAdaptee) b += ' <span class="badge bg-info text-dark ms-1">\u267f</span>';
+  b += '</div>';
+  b += '<div class="col-md-3"><strong>Lieu :</strong> ' + (escHtml(o.lieu)||'\u2013') + '</div>';
+  b += '<div class="col-md-3"><strong>Date :</strong> ' + (escHtml(o.dateCreation)||'\u2013') + '</div>';
+  b += '</div><div class="row mb-3">';
+  b += '<div class="col-md-4"><strong>Contrat :</strong> <span class="badge bg-secondary">' + (escHtml(o.typeContratLibelle||o.typeContrat)||'\u2013') + '</span></div>';
+  b += '<div class="col-md-4"><strong>Mode :</strong> ' + (escHtml(o.modeTravail)||'\u2013') + '</div>';
+  b += '<div class="col-md-4"><strong>Salaire :</strong> ' + (escHtml(o.salaire)||'\u2013') + '</div>';
+  b += '</div>';
+  if (o.experienceLibelle) b += '<p><strong>Exp\u00e9rience :</strong> ' + escHtml(o.experienceLibelle) + '</p>';
+  if (o.qualites && o.qualites.length) b += '<p><strong>Qualit\u00e9s :</strong> ' + o.qualites.map(q => '<span class="badge bg-light text-dark border me-1">' + escHtml(q) + '</span>').join('') + '</p>';
+  if (o.description) b += '<hr><h6>Description</h6><div class="small" style="white-space:pre-wrap">' + escHtml(o.description).replace(/\n/g,'<br>') + '</div>';
+  document.getElementById('offerModalBody').innerHTML = b;
+
+  const sv = (id, v) => { const e = document.getElementById(id); if (e) e.value = v || ''; };
+  sv('modal_offer_id', o.id); sv('modal_title', o.intitule);
+  sv('modal_url', o.url); sv('modal_company', o.entreprise); sv('modal_location', o.lieu);
+
+  const ab = document.getElementById('modalAddBtn');
+  if (ab) { const a = FT_ADDED_IDS.includes(o.id); ab.disabled = a; ab.textContent = a ? '\u2713 D\u00e9j\u00e0 ajout\u00e9e' : '\u2795 Ajouter la candidature'; }
+  const el = document.getElementById('offerModalExtLink');
+  if (el) { el.href = o.url || '#'; el.style.display = o.url ? '' : 'none'; }
+  new bootstrap.Modal(document.getElementById('offerModal')).show();
+}
+</script>
+
+{% endblock main %}

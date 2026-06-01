@@ -5,44 +5,55 @@ This script provides CRUD features inside a Flask application for job's research
 
 """
 from __future__ import annotations
+
 import atexit
-from io import BytesIO
+import locale
+import logging
+import os
 import re
-from pathlib import Path
-from _socket import gethostbyname
+from datetime import datetime, timedelta
 from functools import wraps
+from io import BytesIO
+from logging import DEBUG, basicConfig
+from pathlib import Path
 from socket import socket
 from time import sleep
 from typing import Match, Optional
-from logging import basicConfig, DEBUG
-import locale
-import os
-from datetime import datetime, timedelta
 
 import pytz
+from _socket import gethostbyname
+from apscheduler.schedulers.background import BackgroundScheduler
 from dateutil.relativedelta import relativedelta
+from flask import (Flask, flash, jsonify, redirect, render_template, request,
+                   send_file, session, url_for)
+from flask_debugtoolbar import DebugToolbarExtension
+from flask_login import (LoginManager, current_user, login_required,
+                         login_user, logout_user)
+from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import Serializer, URLSafeSerializer
 from pytz import timezone
-from flask import Flask, request, flash, url_for, redirect, render_template, session, send_file, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from flask_debugtoolbar import DebugToolbarExtension
-from sqlalchemy import DateTime, desc, func, case
+from sqlalchemy import DateTime, case, desc, func
 from user_agents import parse
 from user_agents.parsers import UserAgent
 from validators import url
-from apscheduler.schedulers.background import BackgroundScheduler
-import logging
+from werkzeug.security import generate_password_hash  # , check_password_hash
 
-from werkzeug.security import generate_password_hash#, check_password_hash
-
-from Controller import check, get_user_by_id, get_session_by_login, send_password_recovery_email, send_confirmation_email, handle_file_upload, check_password_and_upgrade
-from Model import Job, User, db, Session
-from tools.document_tools import build_cover_letter_pdf_filename, generate_cover_letter_pdf_bytes, resolve_cover_letter_template_path
-from tools.cv_tools import load_cv_data, get_ai_cv_suggestions, generate_tailored_cv_pdf_bytes, build_cv_pdf_filename, get_ai_cover_letter_text
+from Controller import (check, check_password_and_upgrade,
+                        get_session_by_login, get_user_by_id,
+                        handle_file_upload, send_confirmation_email,
+                        send_password_recovery_email)
+from Model import AppSetting, FtSearch, Job, Session, User, db
+from tools.cv_tools import (build_cv_pdf_filename,
+                            generate_tailored_cv_pdf_bytes,
+                            get_ai_cover_letter_text, get_ai_cv_suggestions,
+                            load_cv_data)
+from tools.document_tools import (build_cover_letter_pdf_filename,
+                                  generate_cover_letter_pdf_bytes,
+                                  resolve_cover_letter_template_path)
+from tools.france_travail import (ATS_KEYWORDS_PROFILE, CONTRACT_TYPES,
+                                  DEPARTMENTS, WORK_MODES, search_auto_from_cv,
+                                  search_offers)
 from tools.send_emails import send_email
-
-from flask import render_template, redirect, url_for, flash
-from flask_login import LoginManager, login_user, current_user, logout_user, login_required
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
 # Set the environment (development, production, etc.)
@@ -630,6 +641,9 @@ def preview_cv_data(id):
     github_token = app.config.get('GITHUB_TOKEN', '')
     payload = request.get_json(force=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
+    ats_mode = bool(payload.get('ats_mode', False))
+    if ats_mode:
+        additional_prompt = _ft_ats_prefix(True) + additional_prompt
     include_sections = payload.get('include_sections') or []
     # Sélections individuelles formations / certifications
     selected_education = payload.get('selected_education')
@@ -710,6 +724,9 @@ def save_cv_pdf(id):
     github_token = app.config.get('GITHUB_TOKEN', '')
     payload = request.get_json(force=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
+    ats_mode = bool(payload.get('ats_mode', False))
+    if ats_mode:
+        additional_prompt = _ft_ats_prefix(True) + additional_prompt
     include_sections = payload.get('include_sections') or []
     selected_education = payload.get('selected_education')
     selected_certificates = payload.get('selected_certificates')
@@ -829,6 +846,9 @@ def preview_lm_ai(id):
     github_token = app.config.get('GITHUB_TOKEN', '')
     payload = request.get_json(force=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
+    ats_mode = bool(payload.get('ats_mode', False))
+    if ats_mode:
+        additional_prompt = _ft_ats_prefix(True) + additional_prompt
     include_sections = payload.get('include_sections') or []
     selected_education = payload.get('selected_education')
     selected_certificates = payload.get('selected_certificates')
@@ -1065,6 +1085,13 @@ def update(id):
 @app.before_request
 def create_tables():
     db.create_all()
+    # Migration douce : ajoute les colonnes ajoutées post-création si elles n'existent pas encore
+    from sqlalchemy import text as _text
+    with db.engine.connect() as _conn:
+        _cols = [row[1] for row in _conn.execute(_text("PRAGMA table_info(job)"))]
+        if 'ft_offer_id' not in _cols:
+            _conn.execute(_text("ALTER TABLE job ADD COLUMN ft_offer_id VARCHAR(30)"))
+            _conn.commit()
 
 
 @app.before_request
@@ -1120,6 +1147,281 @@ def upload_file():
 @app.route('/download/<filename>')
 def download_file(filename):
     return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename), as_attachment=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# France Travail – Recherche d'offres
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ft_ats_prefix(ats_mode: bool) -> str:
+    """Retourne le préfixe ATS à injecter dans le prompt IA si le mode est activé."""
+    if not ats_mode:
+        return ''
+    return (
+        "MODE ATS ACTIVÉ – Optimise ce document pour être correctement traité par les systèmes "
+        "ATS (Applicant Tracking System) des recruteurs. Règles strictes : "
+        "(1) Utilise EXACTEMENT les mots-clés et formulations de l'offre d'emploi. "
+        "(2) Structure le contenu avec des sections et sous-sections claires (pas de colonnes multiples). "
+        "(3) Chaque point d'expérience doit commencer par un verbe d'action fort "
+        "(Développé, Conçu, Déployé, Optimisé, Géré, Mis en place, Piloté…). "
+        "(4) Évite les tableaux complexes, graphiques et icônes dans le contenu textuel. "
+        "(5) Le titre doit correspondre mot pour mot à l'intitulé du poste visé.\n\n"
+    )
+
+
+@app.route('/france_travail')
+@is_connected
+def france_travail():
+    user = get_user_by_id(session['login_id'])
+    last_extraction = AppSetting.get('ft_last_extraction')
+    return render_template(
+        'france_travail.html',
+        user=user,
+        contract_types=CONTRACT_TYPES,
+        work_modes=WORK_MODES,
+        departments=DEPARTMENTS,
+        ats_keywords=ATS_KEYWORDS_PROFILE,
+        last_extraction=last_extraction,
+        default_dept=app.config.get('FT_DEFAULT_DEPT', '06'),
+    )
+
+
+@app.route('/france_travail/search', methods=['POST'])
+@is_connected
+def france_travail_search():
+    user = get_user_by_id(session['login_id'])
+    client_id     = app.config.get('FT_CLIENT_ID', '')
+    client_secret = app.config.get('FT_CLIENT_SECRET', '')
+
+    if not client_id or not client_secret:
+        flash(
+            'Les identifiants France Travail ne sont pas configurés. '
+            'Renseignez FT_CLIENT_ID et FT_CLIENT_SECRET dans config.py.',
+            'error',
+        )
+        return redirect(url_for('france_travail'))
+
+    mode       = request.form.get('mode', 'manual')
+    departement = request.form.get('departement', '') or None
+
+    try:
+        if mode == 'auto':
+            cv_data = load_cv_data(app.static_folder)
+            min_creation_date = None
+            reset_flag = request.form.get('reset_flag') == 'on'
+            if not reset_flag:
+                last_str = AppSetting.get('ft_last_extraction')
+                if last_str:
+                    try:
+                        min_creation_date = datetime.fromisoformat(last_str)
+                    except Exception:
+                        pass
+            offers = search_auto_from_cv(
+                client_id=client_id,
+                client_secret=client_secret,
+                cv_data=cv_data,
+                departement=departement,
+                min_creation_date=min_creation_date,
+            )
+            # Mémoriser la date d'extraction automatique
+            AppSetting.set('ft_last_extraction', datetime.utcnow().isoformat())
+            depuis = f" depuis le {min_creation_date.strftime('%d/%m/%Y')}" if min_creation_date else ""
+            search_info = f"Mode automatique{depuis} – {len(offers)} offre(s) trouvée(s)"
+            search_params = {'mode': 'auto', 'departement': departement}
+        else:
+            mots_cles          = request.form.get('mots_cles', '').strip() or None
+            types_contrat      = request.form.getlist('types_contrat') or None
+            mode_travail       = request.form.get('mode_travail', '') or None
+            entreprises_adapt  = request.form.get('entreprises_adaptees') == 'on'
+            offers = search_offers(
+                client_id=client_id,
+                client_secret=client_secret,
+                mots_cles=mots_cles,
+                types_contrat=types_contrat,
+                departement=departement,
+                mode_travail=mode_travail,
+                entreprises_adaptees=entreprises_adapt,
+            )
+            kw   = mots_cles or '(tous)'
+            dept = DEPARTMENTS.get(departement or '', departement or 'Toute la France')
+            ct   = ', '.join(types_contrat) if types_contrat else 'Tous'
+            mt   = mode_travail or 'Tous'
+            parts = [f"Mots-clés : \u00ab{kw}\u00bb", f"D\u00e9partement : {dept}",
+                     f"Contrats : {ct}", f"Mode : {mt}"]
+            if entreprises_adapt:
+                parts.append("Handi-engag\u00e9s uniquement")
+            search_info = "Mode manuel – " + " | ".join(parts) + f" – {len(offers)} offre(s)"
+            search_params = {
+                'mode': 'manual', 'mots_cles': mots_cles, 'types_contrat': types_contrat,
+                'departement': departement, 'mode_travail': mode_travail,
+                'entreprises_adaptees': entreprises_adapt,
+            }
+
+    except Exception as exc:
+        app.logger.error(f'France Travail search error: {exc}')
+        flash(f'Erreur lors de la recherche France Travail : {exc}', 'error')
+        return redirect(url_for('france_travail'))
+
+    # Sauvegarde persistante du résultat pour consultation ultérieure
+    ft_search = FtSearch(
+        user_id=session['login_id'],
+        search_info=search_info,
+        offers=offers,
+        search_params=search_params,
+    )
+    db.session.add(ft_search)
+    db.session.commit()
+    return redirect(url_for('ft_search_view', search_id=ft_search.id))
+
+
+@app.route('/france_travail/searches')
+@is_connected
+def ft_searches():
+    """Liste de toutes les recherches sauvegardées de l'utilisateur."""
+    user = get_user_by_id(session['login_id'])
+    searches = (
+        FtSearch.query
+        .filter_by(user_id=session['login_id'])
+        .order_by(FtSearch.created_at.desc())
+        .all()
+    )
+    return render_template('ft_searches.html', user=user, searches=searches)
+
+
+def _ft_added_ids() -> set[str]:
+    """Retourne l'ensemble des ft_offer_id déjà présents dans la table job."""
+    rows = db.session.query(Job.ft_offer_id).filter(Job.ft_offer_id.isnot(None)).all()
+    return {r[0] for r in rows}
+
+
+@app.route('/france_travail/search/<int:search_id>')
+@is_connected
+def ft_search_view(search_id):
+    """Affiche les résultats d'une recherche sauvegardée."""
+    user = get_user_by_id(session['login_id'])
+    ft_search = FtSearch.query.get_or_404(search_id)
+    return render_template(
+        'offers_candidates.html',
+        user=user,
+        search=ft_search,
+        offers=ft_search.offers,
+        search_info=ft_search.search_info,
+        search_id=search_id,
+        added_ids=_ft_added_ids(),
+        unavailable_ids=ft_search.unavailable,
+    )
+
+
+@app.route('/france_travail/search/<int:search_id>/refresh', methods=['POST'])
+@is_connected
+def ft_search_refresh(search_id):
+    """Réactualise une recherche sauvegardée en réexécutant les mêmes paramètres."""
+    ft_search = FtSearch.query.get_or_404(search_id)
+    client_id     = app.config.get('FT_CLIENT_ID', '')
+    client_secret = app.config.get('FT_CLIENT_SECRET', '')
+    if not client_id or not client_secret:
+        flash('Identifiants France Travail non configurés.', 'error')
+        return redirect(url_for('ft_search_view', search_id=search_id))
+
+    p = ft_search.params
+    try:
+        if p.get('mode') == 'auto':
+            cv_data = load_cv_data(app.static_folder)
+            offers = search_auto_from_cv(
+                client_id=client_id, client_secret=client_secret,
+                cv_data=cv_data, departement=p.get('departement'),
+            )
+            search_info = f"Mode automatique (actualisé) – {len(offers)} offre(s)"
+        else:
+            offers = search_offers(
+                client_id=client_id, client_secret=client_secret,
+                mots_cles=p.get('mots_cles'), types_contrat=p.get('types_contrat'),
+                departement=p.get('departement'), mode_travail=p.get('mode_travail'),
+                entreprises_adaptees=bool(p.get('entreprises_adaptees', False)),
+            )
+            kw = p.get('mots_cles') or '(tous)'
+            search_info = f"Mode manuel – Mots-clés : «{kw}» – {len(offers)} offre(s) (actualisé)"
+    except Exception as exc:
+        app.logger.error(f'FT refresh error: {exc}')
+        flash(f'Erreur lors de la réactualisation : {exc}', 'error')
+        return redirect(url_for('ft_search_view', search_id=search_id))
+
+    ft_search.offers      = offers
+    ft_search.search_info = search_info
+    ft_search.created_at  = datetime.utcnow()
+    ft_search.unavailable_ids = '[]'
+    db.session.commit()
+    flash(f'Résultats actualisés – {len(offers)} offre(s) trouvée(s).', 'success')
+    return redirect(url_for('ft_search_view', search_id=search_id))
+
+
+@app.route('/france_travail/search/<int:search_id>/toggle_unavailable', methods=['POST'])
+@is_connected
+def ft_toggle_unavailable(search_id):
+    """Bascule le statut 'indisponible' d'une offre dans une recherche sauvegardée."""
+    ft_search = FtSearch.query.get_or_404(search_id)
+    offer_id = request.form.get('offer_id', '').strip()
+    if offer_id:
+        ft_search.toggle_unavailable(offer_id)
+        db.session.commit()
+    return redirect(url_for('ft_search_view', search_id=search_id))
+
+
+@app.route('/france_travail/search/<int:search_id>/add_candidature', methods=['POST'])
+@is_connected
+@is_editor_or_admin
+def ft_add_candidature(search_id):
+    """Ajoute une offre France Travail comme candidature et reste sur la page de résultats."""
+    import re as _re
+    offer_id  = request.form.get('offer_id', '').strip()
+    title     = request.form.get('title', '').strip()
+    url_offer = request.form.get('url', '').strip()
+    company   = request.form.get('company', '').strip()
+    location  = request.form.get('location', '').strip()
+
+    # Déduplication par identifiant FT (plus fiable que l'URL)
+    if offer_id:
+        existing = Job.query.filter_by(ft_offer_id=offer_id).first()
+        if existing:
+            flash(f'La candidature « {title} » ({company}) a déjà été ajoutée !', 'warning')
+            return redirect(url_for('ft_search_view', search_id=search_id))
+
+    zip_code = ''
+    if location:
+        m = _re.search(r'\b(\d{5})\b', location)
+        if m:
+            zip_code = m.group(1)
+        else:
+            m2 = _re.search(r'\b(\d{2})\b', location)
+            if m2:
+                zip_code = m2.group(1)
+
+    job = Job(
+        name=title, url=url_offer, zipCode=zip_code, company=company,
+        contact='', date=datetime.now(), email='', user_id=session['login_id'],
+    )
+    job.ft_offer_id = offer_id or None
+    db.session.add(job)
+    db.session.commit()
+    flash(f'Candidature « {title} » ({company}) ajoutée avec succès !', 'success')
+    return redirect(url_for('ft_search_view', search_id=search_id))
+
+
+@app.route('/france_travail/search/<int:search_id>/delete', methods=['POST'])
+@is_connected
+def ft_search_delete(search_id):
+    """Supprime une recherche sauvegardée."""
+    ft_search = FtSearch.query.get_or_404(search_id)
+    if ft_search.user_id != session['login_id']:
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('ft_searches'))
+    db.session.delete(ft_search)
+    db.session.commit()
+    flash('Recherche supprimée.', 'success')
+    return redirect(url_for('ft_searches'))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.template_filter('format_paris_time')
 def format_paris_time(utc_dt):

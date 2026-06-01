@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+
+{% block main %}
+{% include 'partials/_menu.html' %}
+
+<div class="container-fluid mt-4">
+	<div class="d-flex align-items-center gap-3 mb-4">
+		<h1 class="h3 mb-0">🇫🇷 France Travail – Recherche d'offres</h1>
+		{% if last_extraction %}
+		<span class="badge bg-secondary">
+			Dernière extraction automatique : {{ last_extraction[:10] }}
+		</span>
+		{% endif %}
+	</div>
+
+	{# ── Onglets Mode auto / Mode manuel ─────────────────────────────────── #}
+	<ul class="nav nav-tabs mb-4" id="ftTabs" role="tablist">
+		<li class="nav-item" role="presentation">
+			<button class="nav-link active" id="tab-auto-btn" data-bs-toggle="tab" data-bs-target="#tab-auto"
+				type="button" role="tab">
+				⚙️ Mode automatique
+			</button>
+		</li>
+		<li class="nav-item" role="presentation">
+			<button class="nav-link" id="tab-manual-btn" data-bs-toggle="tab" data-bs-target="#tab-manual" type="button"
+				role="tab">
+				🔍 Mode manuel
+			</button>
+		</li>
+	</ul>
+
+	<div class="tab-content">
+
+		{# ════════════════════════════════════════════════════════════════════
+		TAB MODE AUTO
+		════════════════════════════════════════════════════════════════════ #}
+		<div class="tab-pane fade show active" id="tab-auto" role="tabpanel">
+			<div class="card shadow-sm">
+				<div class="card-header bg-primary text-white">
+					<strong>⚙️ Extraction automatique depuis votre profil CV</strong>
+				</div>
+				<div class="card-body">
+
+					<p class="text-muted small">
+						Cette recherche utilise les mots-clés ATS de votre profil pour interroger
+						automatiquement l'API France Travail. Seules les offres publiées <em>depuis la
+							dernière extraction</em> sont retournées (sauf si vous cochez « Tout réimporter »).
+					</p>
+
+					{# Badges mots-clés ATS #}
+					<div class="mb-3">
+						<label class="form-label fw-semibold">Mots-clés ATS de votre profil :</label>
+						<div class="d-flex flex-wrap gap-1">
+							{% for kw in ats_keywords %}
+							<span class="badge bg-info text-dark">{{ kw }}</span>
+							{% endfor %}
+						</div>
+					</div>
+
+					<form method="post" action="{{ url_for('france_travail_search') }}">
+						<input type="hidden" name="mode" value="auto">
+
+						<div class="row g-3 align-items-end">
+							<div class="col-md-4">
+								<label for="auto-dept" class="form-label">Département</label>
+								<select class="form-select" id="auto-dept" name="departement">
+									{% for code, label in departments.items() %}
+									<option value="{{ code }}" {% if code==default_dept %}selected{% endif %}>
+										{{ label }}
+									</option>
+									{% endfor %}
+								</select>
+							</div>
+
+							<div class="col-md-4 d-flex align-items-end gap-3 pb-1">
+								<div class="form-check">
+									<input class="form-check-input" type="checkbox" name="reset_flag" id="reset_flag">
+									<label class="form-check-label" for="reset_flag">
+										Tout réimporter <small class="text-muted">(ignorer la date de dernière
+											extraction)</small>
+									</label>
+								</div>
+							</div>
+
+							<div class="col-md-4">
+								<button type="submit" class="btn btn-primary w-100">
+									🔄 Lancer l'extraction automatique
+								</button>
+							</div>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+
+		{# ════════════════════════════════════════════════════════════════════
+		TAB MODE MANUEL
+		════════════════════════════════════════════════════════════════════ #}
+		<div class="tab-pane fade" id="tab-manual" role="tabpanel">
+			<div class="card shadow-sm">
+				<div class="card-header bg-success text-white">
+					<strong>🔍 Recherche manuelle</strong>
+				</div>
+				<div class="card-body">
+					<form method="post" action="{{ url_for('france_travail_search') }}">
+						<input type="hidden" name="mode" value="manual">
+
+						<div class="row g-3">
+
+							{# Mots-clés #}
+							<div class="col-md-6">
+								<label for="mots_cles" class="form-label">Mots-clés</label>
+								<input type="text" class="form-control" id="mots_cles" name="mots_cles"
+									placeholder="ex : Python DevOps Linux…">
+								<div class="form-text">Laissez vide pour ne pas filtrer par mot-clé.</div>
+							</div>
+
+							{# Département #}
+							<div class="col-md-3">
+								<label for="man-dept" class="form-label">Département</label>
+								<select class="form-select" id="man-dept" name="departement">
+									{% for code, label in departments.items() %}
+									<option value="{{ code }}" {% if code==default_dept %}selected{% endif %}>
+										{{ label }}
+									</option>
+									{% endfor %}
+								</select>
+							</div>
+
+							{# Mode de travail #}
+							<div class="col-md-3">
+								<label for="mode_travail" class="form-label">Mode de travail</label>
+								<select class="form-select" id="mode_travail" name="mode_travail">
+									{% for key, label in work_modes.items() %}
+									<option value="{{ key }}">{{ label }}</option>
+									{% endfor %}
+								</select>
+							</div>
+
+							{# Types de contrat #}
+							<div class="col-12">
+								<label class="form-label fw-semibold">Types de contrat</label>
+								<div class="form-text text-muted mb-1">Sélectionnez jusqu'à 3 types (au-delà, le filtre est ignoré et tous les types sont retournés).</div>
+								<div class="d-flex flex-wrap gap-2">
+									{% for code, label in contract_types.items() %}
+									<div class="form-check form-check-inline">
+										<input class="form-check-input" type="checkbox" name="types_contrat"
+											id="ct_{{ code }}" value="{{ code }}" {% if code=='CDI' %}checked{% endif
+											%}>
+										<label class="form-check-label" for="ct_{{ code }}">{{ label }}</label>
+									</div>
+									{% endfor %}
+								</div>
+							</div>
+
+							{# Handi-engagés #}
+							<div class="col-12">
+								<div class="form-check">
+									<input class="form-check-input" type="checkbox" name="entreprises_adaptees"
+										id="entreprises_adaptees">
+									<label class="form-check-label" for="entreprises_adaptees">
+										Handi-engagés / Entreprises adaptées uniquement
+									</label>
+								</div>
+							</div>
+
+							<div class="col-12">
+								<button type="submit" class="btn btn-success">
+									🔍 Rechercher les offres
+								</button>
+							</div>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+
+	</div>{# /tab-content #}
+</div>
+
+{% endblock main %}
