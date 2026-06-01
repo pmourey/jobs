@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Optional
 
 import requests
+from requests.exceptions import ProxyError, RequestException
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +81,31 @@ ATS_KEYWORDS_PROFILE: list[str] = [
 
 def _get_access_token(client_id: str, client_secret: str) -> str:
     """Récupère un token OAuth2 France Travail (grant type client_credentials)."""
-    resp = requests.post(
-        FT_TOKEN_URL,
-        data={
-            "grant_type": "client_credentials",
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "scope": FT_SCOPE,
-        },
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+    try:
+        resp = requests.post(
+            FT_TOKEN_URL,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "scope": FT_SCOPE,
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+    except ProxyError as e:
+        logger.error("ProxyError while fetching FT token: %s", e)
+        raise
+    except RequestException as e:
+        logger.error("RequestException while fetching FT token: %s", e)
+        raise
+
+    try:
+        return resp.json()["access_token"]
+    except ValueError:
+        logger.error("Invalid JSON when fetching FT token (status=%s). Response text: %s",
+                     resp.status_code, resp.text[:400])
+        raise
 
 
 def _normalize_offer(o: dict) -> dict:
