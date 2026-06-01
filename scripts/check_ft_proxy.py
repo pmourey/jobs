@@ -10,6 +10,10 @@ print('ENV PROXY vars:')
 for k in ('HTTP_PROXY','http_proxy','HTTPS_PROXY','https_proxy','NO_PROXY','no_proxy'):
     print(f'  {k}={os.environ.get(k)!r}')
 
+# Mirror lowercase no_proxy to NO_PROXY so tests reflect runtime behavior
+if not os.environ.get('NO_PROXY') and os.environ.get('no_proxy'):
+    os.environ['NO_PROXY'] = os.environ.get('no_proxy')
+
 try:
     cfg = import_module('config')
     cid = getattr(cfg, 'FT_CLIENT_ID', None)
