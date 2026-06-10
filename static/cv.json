@@ -203,7 +203,7 @@
       "name": "IBM France",
       "position": "IT Specialist",
       "url": "https://www.linkedin.com/company/ibm/",
-      "startDate": "1999-01-01",
+      "startDate": "2000-06-01",
       "endDate": "2002-05-01",
       "summary": "Participation à des projets de développement et maintenance applicative dans le pôle e-Commerce (Websphere Commerce Suite) et dans le domaine des télécommunications\nMise en production et support d’une centrale d’achat\nMissions ponctuelles chez le client en support du système informatique d'optimisation des stocks et de réapprovisionnement des magasins\n",
       "highlights": [
@@ -212,8 +212,8 @@
       "location": "Région de Paris, France",
       "isCurrentRole": false,
       "start": {
-        "year": 1999,
-        "month": 1
+        "year": 2000,
+        "month": 6
       },
       "end": {
         "year": 2002,
@@ -223,12 +223,12 @@
       "website": "https://www.linkedin.com/company/ibm/"
     },
     {
-      "name": "Phénix Energy",
+      "name": "Phénix Energy (6 mois) puis IBM France",
       "position": "Ingénieur support production",
       "url": "",
       "startDate": "1998-06-01",
-      "endDate": "1998-12-01",
-      "summary": "Prestation chez IBM pour le client FNAC:\nSupport applicatif, ordonnancement des traitements et flux de l'application de réapprovisionnement des stocks et gestion fournisseurs.\nMise en production, gestion de la production (intranet de surveillance en C et Shell).\nFormation de l'équipe de pilotage.\nGestion documentaire.\n",
+      "endDate": "2000-05-30",
+      "summary": "Support applicatif, ordonnancement des traitements et flux de l'application de réapprovisionnement des stocks et gestion fournisseurs.\nMise en production, gestion de la production (intranet de surveillance en C et Shell).\nFormation de l'équipe de pilotage.\nGestion documentaire.\n",
       "highlights": [
         "UNIX (SunOS), Pro*C, Oracle, TWS, HTML, Korn-shell, SQL, C"
       ],
@@ -239,10 +239,10 @@
         "month": 6
       },
       "end": {
-        "year": 1998,
-        "month": 12
+        "year": 2000,
+        "month": 5
       },
-      "company": "Phénix Energy",
+      "company": "Phénix Energy & IBM France",
       "website": ""
     },
     {
