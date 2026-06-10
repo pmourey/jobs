@@ -3,8 +3,9 @@ Usage: python3 scripts/check_ft_proxy.py
 It prints relevant proxy env vars and attempts a token request using values from config.py.
 """
 import os
-import requests
 from importlib import import_module
+
+import requests
 
 # Mirror lowercase no_proxy to NO_PROXY so tests reflect runtime behavior
 if not os.environ.get('NO_PROXY') and os.environ.get('no_proxy'):
@@ -28,6 +29,7 @@ if not cid or not csec:
     raise SystemExit(0)
 
 from tools.france_travail import FT_TOKEN_URL
+
 print('\nTesting token endpoint:', FT_TOKEN_URL)
 try:
     r = requests.post(FT_TOKEN_URL, data={

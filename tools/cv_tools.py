@@ -211,7 +211,7 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
                           selected_references: list | None = None,
                           selected_projects: list | None = None) -> dict:
     """Appelle l'API GitHub Models pour obtenir des suggestions de personnalisation du CV."""
-    from openai import OpenAI
+    from tools.github_models_client import chat_completion
     try:
         from flask import current_app
         base_url = current_app.config.get('GITHUB_MODELS_BASE_URL', 'https://models.github.ai/inference')
@@ -304,41 +304,24 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
     # Augmenter max_tokens si des sections avancées sont incluses
     max_tokens = 1200 if inc else 900
 
-    client = OpenAI(base_url=base_url, api_key=github_token)
-
-    raw = None
     try:
-        response = client.chat.completions.create(
+        raw = chat_completion(
+            messages=[{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}],
             model=model_name,
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_prompt},
-            ],
+            base_url=base_url,
+            api_key=github_token,
             response_format={'type': 'json_object'},
             temperature=0.3,
             max_tokens=max_tokens,
+            cache_ttl=45,
         )
-        raw = response.choices[0].message.content
-    except Exception:
-        try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_prompt},
-                ],
-                temperature=0.3,
-                max_tokens=max_tokens,
-            )
-            raw = response.choices[0].message.content
-        except Exception as exc:
-            fallback = _default_cv_suggestions(cv_data)
-            fallback['warning'] = (
-                'Trop de requêtes vers GitHub Models. '
-                'Réessayez dans une minute.' if _is_rate_limit_error(exc)
-                else f"Aperçu généré sans IA : {exc}"
-            )
-            return fallback
+    except Exception as exc:
+        fallback = _default_cv_suggestions(cv_data)
+        fallback['warning'] = (
+            'Trop de requêtes vers GitHub Models. Réessayez dans une minute.' if _is_rate_limit_error(exc)
+            else f"Aperçu généré sans IA : {exc}"
+        )
+        return fallback
 
     if raw:
         raw = raw.strip()
@@ -415,10 +398,12 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
 
     system_prompt = (
         "Tu es un expert en ressources humaines et en rédaction de lettres de motivation. "
-        "Génère une lettre de motivation professionnelle et personnalisée en français, "
-        "structurée en 3-4 paragraphes. "
-        "Réponds uniquement avec le corps de la lettre (sans en-tête, sans formule d'adresse, "
-        "sans signature — juste le contenu des paragraphes)."
+        "Rédige une lettre de motivation professionnelle et personnalisée en français, "
+        "structurée en 3 à 4 paragraphes complets. Utilise la première personne du singulier (je/j'), "
+        "emploie des phrases complètes et un style soutenu mais naturel. Évite les fragments et les listes à puces. "
+        "Corrige les accords et verbes — écris des phrases bien conjuguées (ex. 'J'ai développé', 'J'ai conçu').\n\n"
+        # "Inclue en fin de texte une formule de politesse courante et une signature courte (prénom et nom de l'auteur). "
+        # "Réponds uniquement avec le corps de la lettre, comprenant la formule de politesse et la signature (pas d'en-tête ni de salutation initiale)."
     )
 
     # Renforcer le system prompt si des sections avancées sont incluses
@@ -494,26 +479,25 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
             "je suis convaincu de pouvoir apporter une réelle valeur ajoutée à votre équipe.\n\n"
             "Je reste à votre disposition pour un entretien afin de vous présenter "
             "plus en détail mon parcours et mes motivations.\n\n"
+            # "Je vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.\n\n"
+            # f"{author_name}\n\n"
             "[GITHUB_TOKEN non configuré : texte généré sans IA]"
         )
 
-    client = OpenAI(base_url=base_url, api_key=github_token)
     try:
-        response = client.chat.completions.create(
+        raw = chat_completion(
+            messages=[{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}],
             model=model_name,
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_prompt},
-            ],
+            base_url=base_url,
+            api_key=github_token,
             temperature=0.5,
             max_tokens=max_tokens,
+            cache_ttl=45,
         )
-        return response.choices[0].message.content.strip()
+        return raw.strip()
     except Exception as exc:
         if _is_rate_limit_error(exc):
-            raise RuntimeError(
-                'Trop de requêtes vers GitHub Models. Réessayez dans une minute.'
-            ) from exc
+            raise RuntimeError('Trop de requêtes vers GitHub Models. Réessayez dans une minute.') from exc
         raise RuntimeError(f"Erreur API IA lors de la génération de la LM : {exc}") from exc
 
 
@@ -525,14 +509,14 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
                                    selected_references: list | None = None,
                                    selected_projects: list | None = None) -> bytes:
     """Genere le PDF du CV personnalise avec ReportLab."""
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import cm
     from reportlab.lib import colors as rl_colors
+    from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT
+    from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_JUSTIFY
-    from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image,
-    )
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (HRFlowable, Image, Paragraph,
+                                    SimpleDocTemplate, Spacer, Table,
+                                    TableStyle)
 
     try:
         from flask import current_app

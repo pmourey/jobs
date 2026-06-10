@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from io import BytesIO
 import re
 import shutil
 import subprocess
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterator
@@ -285,14 +285,14 @@ def _draw_paragraph(pdf, text: str, left: float, y: float, max_width: float, fon
 
 
 def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_date: datetime) -> bytes:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import cm
     from reportlab.lib import colors
+    from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT, TA_RIGHT
+    from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_JUSTIFY
-    from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image, PageTemplate, Frame
-    )
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (Frame, HRFlowable, Image, PageTemplate,
+                                    Paragraph, SimpleDocTemplate, Spacer,
+                                    Table, TableStyle)
 
     try:
         from flask import current_app
@@ -424,19 +424,49 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
     main_story.append(Spacer(1, 14))
 
     # Corps
-    for para_text in _build_cover_letter_pdf_paragraphs(job):
+    paras = _build_cover_letter_pdf_paragraphs(job)
+    # Préfixer la salutation d'ouverture uniquement si l'IA ne l'a pas déjà incluse
+    if paras and not re.match(r'\s*Madame[,\s]|\s*Monsieur[,\s]', paras[0], re.IGNORECASE):
+        main_story.append(Paragraph('Madame, Monsieur,', st_body))
+        main_story.append(Spacer(1, 8))
+
+    for para_text in paras:
+        # éviter double salutation
+        if re.match(r'\s*Madame[,\s]|\s*Monsieur[,\s]', para_text, re.IGNORECASE):
+            para_text = re.sub(r'^(\s*Madame[,\s]*|\s*Monsieur[,\s]*)+', '', para_text, flags=re.IGNORECASE).strip()
         main_story.append(Paragraph(para_text, st_body))
 
-    # Formule de politesse
-    main_story.append(Spacer(1, 12))
-    main_story.append(Paragraph(
-        'Veuillez agréer, Madame, Monsieur, l\u2019expression de mes salutations distinguées.',
-        st_signoff))
-    main_story.append(Spacer(1, 14))
+    # Phrase de remerciement demandée par l'utilisateur
+    # main_story.append(Spacer(1, 12))
+    # main_story.append(Paragraph(
+    #     "Je vous remercie par avance pour l’attention portée à ma candidature et reste à votre disposition pour un entretien.",
+    #     st_body))
+    # main_story.append(Spacer(1, 10))
+    # # Formule de politesse finale
+    # main_story.append(Paragraph(
+    #     'Veuillez agréer, Madame, Monsieur, l\u2019expression de mes salutations distinguées.',
+    #     st_signoff))
+    # main_story.append(Spacer(1, 14))
     main_story.append(Paragraph('Cordialement,', st_signoff))
-    if author:
-        main_story.append(Spacer(1, 10))
-        main_story.append(Paragraph(author, st_author))
+    # Signature finale (afficher 'Philippe Mourey' en gras)
+    # Signature finale : prioriser l'auteur configuré, sinon tenter de lire static/cv.json
+    author_display = author
+    if not author_display:
+        try:
+            cv_path = Path(static_folder) / 'cv.json'
+            if cv_path.exists():
+                import json
+                with open(cv_path, 'r', encoding='utf-8') as fh:
+                    cv = json.load(fh)
+                    author_display = cv.get('basics', {}).get('name')
+        except Exception:
+            author_display = None
+
+    if not author_display:
+        author_display = 'Philippe Mourey'
+
+    # main_story.append(Spacer(1, 10))
+    main_story.append(Paragraph(author_display, st_author))
 
     # ── Mesurer les hauteurs ───────────────────────────────────────────────────
     header_h = 0.0

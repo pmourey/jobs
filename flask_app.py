@@ -10,7 +10,9 @@ import atexit
 import locale
 import logging
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+
+from flask import (Flask, flash, redirect, render_template, request, session,
+                   url_for)
 
 # Ensure NO_PROXY is set (some environments use lowercase 'no_proxy') so requests bypasses
 # the corporate proxy for France Travail domains when the variable was exported locally.
@@ -105,6 +107,49 @@ def is_connected(func):
         return func(*args, **kwargs)
 
     return wrapper
+
+
+def _get_github_rate_info(token: str) -> dict | None:
+    """Interroge l'endpoint /rate_limit de GitHub et retourne un dict simple
+    {'remaining': int, 'limit': int, 'reset': int} ou None en cas d'erreur.
+    Utilisé uniquement pour afficher des messages utilisateur plus précis.
+    """
+    if not token:
+        return None
+    try:
+        import requests
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        r = requests.get('https://api.github.com/rate_limit', headers=headers, timeout=2)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        core = data.get('resources', {}).get('core') or data.get('rate') or {}
+        return {
+            'remaining': int(core.get('remaining', 0)),
+            'limit': int(core.get('limit', 0)),
+            'reset': int(core.get('reset', 0)),
+        }
+    except Exception:
+        return None
+
+
+def _format_github_rate_warning(token: str, default_missing_msg: str) -> str:
+    """Retourne un message d'avertissement adapté selon la présence du token et du rate info."""
+    if not token:
+        return default_missing_msg
+    info = _get_github_rate_info(token)
+    if not info:
+        return 'GITHUB_TOKEN configuré mais impossible de vérifier le quota — aperçu généré sans IA.'
+    # Calculer temps restant jusqu'au reset
+    try:
+        reset_ts = int(info.get('reset', 0))
+        reset_dt = datetime.utcfromtimestamp(reset_ts)
+        minutes = max(0, int((reset_dt - datetime.utcnow()).total_seconds() / 60))
+    except Exception:
+        minutes = None
+    if minutes is None:
+        return f"Quota restant: {info.get('remaining')}/{info.get('limit')} — aperçu généré sans IA."
+    return f"Quota GitHub remaining: {info.get('remaining')}/{info.get('limit')} (reset dans ~{minutes} min) — aperçu généré sans IA."
 
 def is_admin(func):
     @wraps(func)
@@ -665,7 +710,7 @@ def preview_cv_data(id):
             'summary': cv_data.get('basics', {}).get('summary', ''),
             'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
             'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
-            'warning': warning or 'GITHUB_TOKEN non configuré : aperçu généré sans IA.',
+            'warning': warning or _format_github_rate_warning(github_token, 'GITHUB_TOKEN non configuré : aperçu généré sans IA.'),
             'source': 'fallback',
         }
         wl = cv_data.get('work', [])
@@ -747,7 +792,7 @@ def save_cv_pdf(id):
             'summary': cv_data.get('basics', {}).get('summary', ''),
             'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
             'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
-            'warning': warning or 'GITHUB_TOKEN non configuré.',
+            'warning': warning or _format_github_rate_warning(github_token, 'GITHUB_TOKEN non configuré.'),
             'source': 'fallback',
         }
 
@@ -1316,6 +1361,140 @@ def ft_search_view(search_id):
         added_ids=_ft_added_ids(),
         unavailable_ids=ft_search.unavailable,
     )
+
+
+@app.route('/france_travail/search/<int:search_id>/export', endpoint='ft_search_export')
+@is_connected
+def ft_search_export(search_id):
+    """Export table of offers for a saved France Travail search.
+    Query param `format` can be 'pdf' (default) or 'csv'. Returns a downloadable file.
+    """
+    ft_search = FtSearch.query.get_or_404(search_id)
+    offers = ft_search.offers or []
+    fmt = (request.args.get('format') or 'pdf').lower()
+    # search_info can contain characters unsuitable for filenames; build a safe slug
+    def _safe_slug(s: str, maxlen: int = 60) -> str:
+        import re
+        if not s:
+            return ''
+        slug = re.sub(r'\s+', '_', s)
+        slug = re.sub(r'[^A-Za-z0-9_\-]', '', slug)
+        return slug[:maxlen]
+    search_label = _safe_slug(ft_search.search_info or f'search_{search_id}')
+
+    if fmt in ('csv', 'xlsx'):
+        # Build rows in memory first
+        import csv
+        from io import StringIO, BytesIO as _BytesIO
+        rows = []
+        # header: added URL column
+        header = ['Date', 'Intitulé', 'Entreprise', 'Lieu', 'Contrat', 'Salaire', 'URL']
+        rows.append(header)
+        for o in offers:
+            date = o.get('dateCreation') or o.get('date') or ''
+            title = o.get('intitule') or o.get('title') or o.get('name') or ''
+            company = o.get('entreprise') or o.get('company') or ''
+            location = o.get('lieu') or o.get('location') or ''
+            contract = o.get('typeContrat') or o.get('typeContratLibelle') or o.get('contract') or ''
+            salary = o.get('salaire') or o.get('salary') or ''
+            url = o.get('url') or o.get('link') or o.get('source_url') or ''
+            rows.append([date, title, company, location, contract, salary, url])
+
+        filename_base = f'ft_search_{search_id}_{search_label}' if search_label else f'ft_search_{search_id}'
+
+        if fmt == 'csv':
+            sio = StringIO()
+            writer = csv.writer(sio)
+            for r in rows:
+                writer.writerow(r)
+            sio.seek(0)
+            filename = f'{filename_base}.csv'
+            return send_file(BytesIO(sio.getvalue().encode('utf-8')), mimetype='text/csv', as_attachment=True,
+                             download_name=filename)
+
+        # fmt == 'xlsx'
+        try:
+            from openpyxl import Workbook
+            from openpyxl.utils import get_column_letter
+        except Exception:
+            flash('L\'export Excel nécessite la bibliothèque openpyxl. Installez-la (pip install openpyxl).', 'error')
+            return redirect(url_for('ft_search_view', search_id=search_id))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Offres'
+        from openpyxl.styles import Font
+        link_font = Font(color='0000EE', underline='single')
+        for r_idx, r in enumerate(rows, start=1):
+            for c_idx, val in enumerate(r, start=1):
+                cell = ws.cell(row=r_idx, column=c_idx, value=val)
+                # If this is the header row, keep default styling
+                if r_idx == 1:
+                    continue
+                # Make the title (column 2) a hyperlink to the offer URL if available (column 7)
+                if c_idx == 2:
+                    url_val = r[6] if len(r) > 6 else ''
+                    if url_val:
+                        cell.hyperlink = url_val
+                        cell.font = link_font
+                # Also make the URL column itself a clickable hyperlink
+                if c_idx == 7 and val:
+                    cell.hyperlink = val
+                    cell.font = link_font
+        # Auto-width for a few columns
+        for i, _ in enumerate(rows[0], start=1):
+            col = get_column_letter(i)
+            ws.column_dimensions[col].width = 20
+
+        bio = _BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+        filename = f'{filename_base}.xlsx'
+        return send_file(bio, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                         as_attachment=True, download_name=filename)
+
+    # default: PDF
+    try:
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.pagesizes import A4
+    except Exception:
+        flash('La génération PDF nécessite la bibliothèque reportlab.', 'error')
+        return redirect(url_for('ft_search_view', search_id=search_id))
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+    # Include search criteria in PDF title for clarity
+    pdf_title = f"France Travail — Recherche #{search_id}"
+    if ft_search.search_info:
+        pdf_title += f" — {ft_search.search_info}"
+    story.append(Paragraph(pdf_title, styles['Title']))
+    story.append(Spacer(1, 12))
+    for i, o in enumerate(offers, start=1):
+        title = o.get('intitule') or o.get('title') or o.get('name') or '—'
+        company = o.get('entreprise') or o.get('company') or ''
+        location = o.get('lieu') or o.get('location') or ''
+        contract = o.get('typeContrat') or o.get('typeContratLibelle') or ''
+        salary = o.get('salaire') or o.get('salary') or ''
+        url_offer = o.get('url') or o.get('link') or o.get('source_url') or ''
+        # Make the title itself a clickable link in the PDF when URL is present
+        if url_offer:
+            title_html = f'<link href="{url_offer}"><b>{title}</b></link>'
+        else:
+            title_html = f'<b>{title}</b>'
+        p_text = f"{i}. {title_html} — {company} — {location} — {contract} — {salary}"
+        story.append(Paragraph(p_text, styles['Normal']))
+        # also include the raw URL below for clarity (kept as before)
+        if url_offer:
+            link_p = Paragraph(f'<link href="{url_offer}">{url_offer}</link>', styles['Normal'])
+            story.append(link_p)
+        story.append(Spacer(1, 8))
+
+    doc.build(story)
+    buffer.seek(0)
+    return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=f'ft_search_{search_id}.pdf')
 
 
 @app.route('/france_travail/search/<int:search_id>/refresh', methods=['POST'])
