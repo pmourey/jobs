@@ -16,13 +16,13 @@
 	{# ── Onglets Mode auto / Mode manuel ─────────────────────────────────── #}
 	<ul class="nav nav-tabs mb-4" id="ftTabs" role="tablist">
 		<li class="nav-item" role="presentation">
-			<button class="nav-link active" id="tab-auto-btn" data-bs-toggle="tab" data-bs-target="#tab-auto"
+			<button class="nav-link {% if prefill_mode == 'auto' %}active{% endif %}" id="tab-auto-btn" data-bs-toggle="tab" data-bs-target="#tab-auto"
 				type="button" role="tab">
 				⚙️ Mode automatique
 			</button>
 		</li>
 		<li class="nav-item" role="presentation">
-			<button class="nav-link" id="tab-manual-btn" data-bs-toggle="tab" data-bs-target="#tab-manual" type="button"
+			<button class="nav-link {% if prefill_mode != 'auto' %}active{% endif %}" id="tab-manual-btn" data-bs-toggle="tab" data-bs-target="#tab-manual" type="button"
 				role="tab">
 				🔍 Mode manuel
 			</button>
@@ -34,7 +34,7 @@
 		{# ════════════════════════════════════════════════════════════════════
 		TAB MODE AUTO
 		════════════════════════════════════════════════════════════════════ #}
-		<div class="tab-pane fade show active" id="tab-auto" role="tabpanel">
+		<div class="tab-pane fade {% if prefill_mode == 'auto' %}show active{% endif %}" id="tab-auto" role="tabpanel">
 			<div class="card shadow-sm">
 				<div class="card-header bg-primary text-white">
 					<strong>⚙️ Extraction automatique depuis votre profil CV</strong>
@@ -57,7 +57,7 @@
 						</div>
 					</div>
 
-					<form method="post" action="{{ url_for('france_travail_search') }}">
+					<form method="post" action="{% if edit_search_id %}{{ url_for('ft_search_edit', search_id=edit_search_id) }}{% else %}{{ url_for('france_travail_search') }}{% endif %}">
 						<input type="hidden" name="mode" value="auto">
 
 						<div class="row g-3 align-items-end">
@@ -65,7 +65,7 @@
 								<label for="auto-dept" class="form-label">Département</label>
 								<select class="form-select" id="auto-dept" name="departement">
 									{% for code, label in departments.items() %}
-									<option value="{{ code }}" {% if code==default_dept %}selected{% endif %}>
+									<option value="{{ code }}" {% if (prefill_departement or default_dept) == code %}selected{% endif %}>
 										{{ label }}
 									</option>
 									{% endfor %}
@@ -96,13 +96,13 @@
 		{# ════════════════════════════════════════════════════════════════════
 		TAB MODE MANUEL
 		════════════════════════════════════════════════════════════════════ #}
-		<div class="tab-pane fade" id="tab-manual" role="tabpanel">
+		<div class="tab-pane fade {% if prefill_mode != 'auto' %}show active{% endif %}" id="tab-manual" role="tabpanel">
 			<div class="card shadow-sm">
 				<div class="card-header bg-success text-white">
 					<strong>🔍 Recherche manuelle</strong>
 				</div>
 				<div class="card-body">
-					<form method="post" action="{{ url_for('france_travail_search') }}">
+					<form method="post" action="{% if edit_search_id %}{{ url_for('ft_search_edit', search_id=edit_search_id) }}{% else %}{{ url_for('france_travail_search') }}{% endif %}">
 						<input type="hidden" name="mode" value="manual">
 
 						<div class="row g-3">
@@ -111,7 +111,7 @@
 							<div class="col-md-6">
 								<label for="mots_cles" class="form-label">Mots-clés</label>
 								<input type="text" class="form-control" id="mots_cles" name="mots_cles"
-									placeholder="ex : Python DevOps Linux…">
+									placeholder="ex : Python DevOps Linux…" value="{{ prefill_mots_cles or '' }}">
 								<div class="form-text">Laissez vide pour ne pas filtrer par mot-clé.</div>
 							</div>
 
@@ -120,7 +120,7 @@
 								<label for="man-dept" class="form-label">Département</label>
 								<select class="form-select" id="man-dept" name="departement">
 									{% for code, label in departments.items() %}
-									<option value="{{ code }}" {% if code==default_dept %}selected{% endif %}>
+									<option value="{{ code }}" {% if (prefill_departement or default_dept) == code %}selected{% endif %}>
 										{{ label }}
 									</option>
 									{% endfor %}
@@ -146,8 +146,7 @@
 									{% for code, label in contract_types.items() %}
 									<div class="form-check form-check-inline">
 										<input class="form-check-input" type="checkbox" name="types_contrat"
-											id="ct_{{ code }}" value="{{ code }}" {% if code=='CDI' %}checked{% endif
-											%}>
+											id="ct_{{ code }}" value="{{ code }}" {% if (prefill_types_contrat and code in prefill_types_contrat) or (not prefill_types_contrat and code=='CDI') %}checked{% endif %}>
 										<label class="form-check-label" for="ct_{{ code }}">{{ label }}</label>
 									</div>
 									{% endfor %}
@@ -165,8 +164,19 @@
 								</div>
 							</div>
 
-							<div class="col-12">
-								<button type="submit" class="btn btn-success">
+							<div class="col-md-6">
+								<label for="provider" class="form-label">Source / Fournisseur</label>
+								<select class="form-select" id="provider" name="provider">
+									<option value="france_travail" selected>France Travail (par défaut)</option>
+									<option value="greenhouse">Greenhouse</option>
+									<option value="lever">Lever</option>
+									<option value="ashby">Ashby</option>
+									<option value="teamtailor">Teamtailor</option>
+								</select>
+								<div class="form-text">Choisissez une source externe pour tester d'autres flux d'offres.</div>
+							</div>
+							<div class="col-md-6 d-flex align-items-end">
+								<button type="submit" class="btn btn-success w-100">
 									🔍 Rechercher les offres
 								</button>
 							</div>

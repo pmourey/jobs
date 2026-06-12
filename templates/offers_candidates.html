@@ -25,6 +25,9 @@
 			<a href="{{ url_for('france_travail') }}" class="btn btn-outline-secondary btn-sm">&larr; Nouvelle
 				recherche</a>
 			{% if search_id %}
+			<a href="{{ url_for('france_travail_edit_page', search_id=search_id) }}" class="btn btn-outline-secondary btn-sm">✏️ Éditer</a>
+			{% endif %}
+			{% if search_id %}
 			<!-- Export buttons -->
 			<a href="{{ url_for('ft_search_export', search_id=search_id) }}" class="btn btn-outline-success btn-sm">📄 Export PDF</a>
 			<a href="{{ url_for('ft_search_export', search_id=search_id) }}?format=csv" class="btn btn-outline-success btn-sm">📥 Export CSV</a>

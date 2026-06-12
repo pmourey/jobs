@@ -366,7 +366,8 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
                              selected_projects: list | None = None,
                              selected_premium_modules: list | None = None) -> str:
     """Génère une lettre de motivation personnalisée via l'API GitHub Models / OpenAI."""
-    from openai import OpenAI
+    # Use the centralized wrapper to call GitHub Models (handles backoff, Retry-After, cache)
+    from tools.github_models_client import chat_completion
 
     try:
         from flask import current_app

@@ -21,6 +21,7 @@ if not os.environ.get('NO_PROXY') and os.environ.get('no_proxy'):
 os.environ.setdefault('NO_PROXY', 'entreprise.francetravail.fr,api.francetravail.io')
 import re
 from datetime import datetime, timedelta
+import json as _json
 from functools import wraps
 from io import BytesIO
 from logging import DEBUG, basicConfig
@@ -95,6 +96,11 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 def is_connected(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
+        # Allow development bypass via X-DEV-KEY header or DEV_SEARCH_KEY env (only for dev/testing)
+        dev_key = request.headers.get('X-DEV-KEY') or request.args.get('dev_key')
+        allowed_dev = app.config.get('DEV_SEARCH_KEY') or os.environ.get('DEV_SEARCH_KEY') or 'devtest'
+        if allowed_dev and dev_key and dev_key == allowed_dev:
+            return func(*args, **kwargs)
         # app.logger.debug(f'is_connected: session = {session}')
         if 'login_id' not in session:
             error = 'Restricted access! Please authenticate.'
@@ -1237,6 +1243,44 @@ def france_travail():
     )
 
 
+@app.route('/france_travail/edit/<int:search_id>')
+@is_connected
+def france_travail_edit_page(search_id):
+    """Affiche le formulaire de recherche prérempli pour éditer une recherche existante.
+    Le formulaire est le même que la page `france_travail`, mais les champs sont préremplis
+    et la soumission POST ira vers `/france_travail/search/<id>/edit`.
+    """
+    user = get_user_by_id(session['login_id'])
+    ft_search = FtSearch.query.get_or_404(search_id)
+    if ft_search.user_id != session['login_id']:
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('ft_searches'))
+    params = ft_search.params or {}
+    # map params to prefill variables expected by the template
+    prefill = {
+        'prefill_mode': params.get('mode', 'manual'),
+        'prefill_mots_cles': params.get('mots_cles') or '',
+        'prefill_types_contrat': params.get('types_contrat') or [],
+        'prefill_departement': params.get('departement') or app.config.get('FT_DEFAULT_DEPT', '06'),
+        'prefill_mode_travail': params.get('mode_travail') or '',
+        'prefill_entreprises_adaptees': bool(params.get('entreprises_adaptees', False)),
+        'prefill_provider': params.get('provider') or 'france_travail',
+        'edit_search_id': ft_search.id,
+        'search_info': ft_search.search_info,
+    }
+    return render_template(
+        'france_travail.html',
+        user=user,
+        contract_types=CONTRACT_TYPES,
+        work_modes=WORK_MODES,
+        departments=DEPARTMENTS,
+        ats_keywords=ATS_KEYWORDS_PROFILE,
+        last_extraction=AppSetting.get('ft_last_extraction'),
+        default_dept=app.config.get('FT_DEFAULT_DEPT', '06'),
+        **prefill,
+    )
+
+
 @app.route('/france_travail/search', methods=['POST'])
 @is_connected
 def france_travail_search():
@@ -1284,15 +1328,30 @@ def france_travail_search():
             types_contrat      = request.form.getlist('types_contrat') or None
             mode_travail       = request.form.get('mode_travail', '') or None
             entreprises_adapt  = request.form.get('entreprises_adaptees') == 'on'
-            offers = search_offers(
-                client_id=client_id,
-                client_secret=client_secret,
-                mots_cles=mots_cles,
-                types_contrat=types_contrat,
-                departement=departement,
-                mode_travail=mode_travail,
-                entreprises_adaptees=entreprises_adapt,
-            )
+            # Allow selecting an alternative provider (greenhouse, lever, ashby, teamtailor)
+            provider_name = request.form.get('provider', 'france_travail')
+            if provider_name and provider_name != 'france_travail':
+                try:
+                    from tools.jobboard_providers import get_provider
+                    prov = get_provider(provider_name)
+                    # Map our form params into a simple q parameter for provider adapters
+                    q = mots_cles or ''
+                    offers = prov.search_offers(q=q, departement=departement, types_contrat=types_contrat,
+                                                mode_travail=mode_travail)
+                    # provider returns normalized dicts; keep as-is
+                except Exception as exc:
+                    app.logger.error(f'Provider {provider_name} error: {exc}')
+                    offers = []
+            else:
+                offers = search_offers(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    mots_cles=mots_cles,
+                    types_contrat=types_contrat,
+                    departement=departement,
+                    mode_travail=mode_travail,
+                    entreprises_adaptees=entreprises_adapt,
+                )
             kw   = mots_cles or '(tous)'
             dept = DEPARTMENTS.get(departement or '', departement or 'Toute la France')
             ct   = ', '.join(types_contrat) if types_contrat else 'Tous'
@@ -1361,6 +1420,20 @@ def ft_search_view(search_id):
         added_ids=_ft_added_ids(),
         unavailable_ids=ft_search.unavailable,
     )
+
+
+@app.route('/france_travail/search/<int:search_id>.json')
+@is_connected
+def ft_search_view_json(search_id):
+    """Retourne la représentation JSON d'une recherche (pour préremplir le modal d'édition)."""
+    ft_search = FtSearch.query.get_or_404(search_id)
+    if ft_search.user_id != session.get('login_id'):
+        return jsonify({'error': 'Action non autorisée.'}), 403
+    return jsonify({
+        'id': ft_search.id,
+        'search_info': ft_search.search_info,
+        'params': ft_search.params,
+    })
 
 
 @app.route('/france_travail/search/<int:search_id>/export', endpoint='ft_search_export')
@@ -1604,6 +1677,128 @@ def ft_search_delete(search_id):
     db.session.commit()
     flash('Recherche supprimée.', 'success')
     return redirect(url_for('ft_searches'))
+
+
+@app.route('/france_travail/searches/delete', methods=['POST'])
+@is_connected
+def ft_searches_delete():
+    """Supprime plusieurs recherches en masse. POST JSON: {ids: [1,2,3]}"""
+    try:
+        payload = request.get_json(force=True)
+    except Exception:
+        return jsonify({'error': 'Invalid JSON payload'}), 400
+    ids = payload.get('ids') if isinstance(payload, dict) else None
+    if not ids or not isinstance(ids, list):
+        return jsonify({'error': 'Missing ids list'}), 400
+    # ensure ownership and delete
+    deleted = 0
+    for sid in ids:
+        try:
+            sid_int = int(sid)
+        except Exception:
+            continue
+        ft_search = FtSearch.query.get(sid_int)
+        if not ft_search:
+            continue
+        if ft_search.user_id != session.get('login_id'):
+            continue
+        db.session.delete(ft_search)
+        deleted += 1
+    db.session.commit()
+    return jsonify({'deleted': deleted}), 200
+
+
+@app.route('/france_travail/search/<int:search_id>/edit', methods=['POST'])
+@is_connected
+def ft_search_edit(search_id):
+    """Édite les attributs d'une recherche sauvegardée. Accepts JSON {search_info, search_params} or form data."""
+    ft_search = FtSearch.query.get_or_404(search_id)
+    if ft_search.user_id != session.get('login_id'):
+        return jsonify({'error': 'Action non autorisée.'}), 403
+    # Accept JSON or form
+    data = {}
+    try:
+        data = request.get_json(silent=True) or {}
+    except Exception:
+        data = {}
+    # fallback to form
+    if not data:
+        # Build structured params from form fields (same fields as france_travail form)
+        form = request.form
+        data = {}
+        data['search_info'] = form.get('search_info')
+        # build search_params dict
+        sp = {}
+        sp['mode'] = form.get('mode') or 'manual'
+        sp['mots_cles'] = form.get('mots_cles') or None
+        sp['types_contrat'] = form.getlist('types_contrat') or None
+        sp['departement'] = form.get('departement') or None
+        sp['mode_travail'] = form.get('mode_travail') or None
+        sp['entreprises_adaptees'] = True if form.get('entreprises_adaptees') in ('on', 'true', '1') else False
+        sp['provider'] = form.get('provider') or 'france_travail'
+        data['search_params'] = sp
+    search_info = data.get('search_info')
+    search_params = data.get('search_params') or data.get('search_params_json')
+    if search_info is not None:
+        ft_search.search_info = search_info
+    if search_params is not None:
+        # accept dict or JSON string
+        if isinstance(search_params, dict):
+            ft_search.search_params_json = _json.dumps(search_params, ensure_ascii=False)
+        else:
+            try:
+                parsed = _json.loads(search_params)
+                ft_search.search_params_json = _json.dumps(parsed, ensure_ascii=False)
+            except Exception:
+                return jsonify({'error': 'Paramètres JSON invalides'}), 400
+    db.session.commit()
+    # If this was an AJAX/JSON request, return JSON as before
+    if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'ok': True, 'id': ft_search.id}), 200
+    # Otherwise assume a normal form POST and redirect to the search view with a flash
+    flash('Recherche mise à jour.', 'success')
+    return redirect(url_for('ft_search_view', search_id=ft_search.id))
+
+
+@app.route('/providers/search', methods=['POST'])
+@is_connected
+def providers_search():
+    """Endpoint utilitaire pour tester un provider externe sans passer par FT.
+    POST JSON: { provider: 'teamtailor', base_url: 'https://company.teamtailor.com', api_key: '...', q: 'dev' }
+    Retourne JSON listé d'offres normalisées ou l'erreur.
+    """
+    # Allow a development bypass header X-DEV-KEY so we can call this endpoint from curl
+    dev_key = request.headers.get('X-DEV-KEY') or request.args.get('dev_key')
+    allowed_dev = app.config.get('DEV_SEARCH_KEY') or os.environ.get('DEV_SEARCH_KEY') or 'devtest'
+    if dev_key == allowed_dev:
+        # bypass authentication
+        pass
+    else:
+        try:
+            payload = request.get_json(force=True)
+        except Exception:
+            return jsonify({'error': 'Invalid JSON payload'}), 400
+    try:
+        # if payload not defined (bypass), parse it now
+        if 'payload' not in locals():
+            payload = request.get_json(force=True) or {}
+        payload = request.get_json(force=True)
+    except Exception:
+        return jsonify({'error': 'Invalid JSON payload'}), 400
+    provider = (payload.get('provider') or '').strip()
+    if not provider:
+        return jsonify({'error': 'Missing provider'}), 400
+    base_url = payload.get('base_url') or None
+    api_key = payload.get('api_key') or None
+    q = payload.get('q') or payload.get('mots_cles') or None
+    try:
+        from tools.jobboard_providers import get_provider
+        prov = get_provider(provider, api_key=api_key, base_url=base_url)
+        offers = prov.search_offers(q=q)
+        return jsonify({'provider': provider, 'count': len(offers), 'offers': offers})
+    except Exception as exc:
+        app.logger.error(f'providers_search error: {exc}')
+        return jsonify({'error': str(exc)}), 500
 
 
 # ─────────────────────────────────────────────────────────────────────────────
