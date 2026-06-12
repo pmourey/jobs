@@ -84,7 +84,7 @@
 							onclick="openOfferModal({{ loop.index0 }})" title="Voir le détail">
 							🔍 Détail
 						</button>
-						{% if not user.is_reader and search_id %}
+						{% if (user.is_admin or user.is_user) and search_id %}
 						{% if is_added %}
 						<button type="button" class="btn btn-sm btn-success me-1" disabled>✓</button>
 						{% else %}
@@ -126,7 +126,7 @@
 			<div class="modal-body" id="offerModalBody"></div>
 			<div class="modal-footer">
 				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
-				{% if not user.is_reader and search_id %}
+				{% if (user.is_admin or user.is_user) and search_id %}
 				<form method="post" action="{{ url_for('ft_add_candidature', search_id=search_id) }}"
 					id="offerModalAddForm">
 					<input type="hidden" name="offer_id" id="modal_offer_id">

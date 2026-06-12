@@ -175,7 +175,9 @@ def is_editor_or_admin(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         user = get_user_by_id(session['login_id'])
-        if not (user.is_editor or user.is_admin):
+        # Nouveau : rôle 'Utilisateur' remplace l'ancien 'Editeur'. Autorise donc
+        # les appels si l'utilisateur est admin ou 'user'.
+        if not (user.is_user or user.is_admin):
             error = 'Insufficient privileges for this operation! Please contact administrator...'
             return render_template('login.html', error=error)
         return func(*args, **kwargs)
@@ -589,7 +591,23 @@ def show_closed_sessions():
 def show_all():
     user_id = session['login_id']
     app.logger.debug('This is a debug message.')
-    jobs = Job.query.all()
+    # Allow selecting to view another user's offers via query param 'view_user'
+    view_user = request.args.get('view_user')
+    from sqlalchemy import or_
+    if view_user:
+        try:
+            target_id = int(view_user)
+        except Exception:
+            target_id = None
+        # authorize viewing: either target is current user or target allowed sharing
+        if target_id and (target_id == user_id or (User.query.get(target_id) and User.query.get(target_id).allow_view_offers)):
+            jobs = Job.query.filter(Job.user_id == target_id).all()
+        else:
+            flash('Action non autorisée : cet utilisateur ne partage pas ses offres.', 'error')
+            return redirect(url_for('show_all'))
+    else:
+        # default: show only the connected user's jobs
+        jobs = Job.query.filter(Job.user_id == user_id).all()
     def most_recent_date(job):
         dates = [d for d in (job.relaunchDate, job.applicationDate) if d]
         if not dates:
@@ -606,11 +624,35 @@ def show_all():
     user = get_user_by_id(user_id)
     # Determine which jobs already have a saved CV PDF on disk
     uploads_dir = Path(app.static_folder) / 'uploads'
-    cv_pdf_ids = {
-        int(p.stem.replace('cv_', ''))
-        for p in uploads_dir.glob('cv_*.pdf')
-        if p.stem.replace('cv_', '').isdigit()
-    } if uploads_dir.exists() else set()
+    cv_pdf_urls = {}
+    # check per-user generated dir first
+    if uploads_dir.exists():
+        # old global files cv_{id}.pdf
+        for p in uploads_dir.glob('cv_*.pdf'):
+            stem = p.stem.replace('cv_', '')
+            if stem.isdigit():
+                try:
+                    jid = int(stem)
+                    rel = f'uploads/{p.name}'
+                    cv_pdf_urls[jid] = url_for('static', filename=rel)
+                except Exception:
+                    continue
+    # per-user generated files
+    users_dir = uploads_dir / 'users'
+    if users_dir.exists():
+        for user_dir in users_dir.iterdir():
+            gen_dir = user_dir / 'generated'
+            if not gen_dir.exists():
+                continue
+            for p in gen_dir.glob('cv_*.pdf'):
+                stem = p.stem.replace('cv_', '')
+                if stem.isdigit():
+                    try:
+                        jid = int(stem)
+                        rel = f'uploads/users/{user_dir.name}/generated/{p.name}'
+                        cv_pdf_urls[jid] = url_for('static', filename=rel)
+                    except Exception:
+                        continue
     # Charger formations et certifications pour les modales avancées
     try:
         _cvd = load_cv_data(app.static_folder)
@@ -661,7 +703,9 @@ def show_all():
         cv_skills = []
         cv_references = []
         cv_projects = []
-    return render_template('candidatures.html', jobs=jobs, user=user, cv_pdf_ids=cv_pdf_ids,
+    # Prepare list of users for the selector: include current user and users who opted-in
+    users_list = User.query.filter((User.id == user_id) | (User.allow_view_offers == True)).order_by(User.username).all()
+    return render_template('candidatures.html', jobs=jobs, user=user, users=users_list, cv_pdf_urls=cv_pdf_urls,
                            cv_education=cv_education, cv_certificates=cv_certificates,
                            cv_skills=cv_skills, cv_references=cv_references, cv_projects=cv_projects)
 
@@ -842,14 +886,17 @@ def save_cv_pdf(id):
         except Exception as exc2:
             return jsonify({'error': f'Génération PDF échouée : {exc2}'}), 500
 
-    # Sauvegarder sur disque dans static/uploads/
-    uploads_dir = Path(app.static_folder) / 'uploads'
-    uploads_dir.mkdir(parents=True, exist_ok=True)
+    # Sauvegarder sur disque dans static/uploads/users/{user_id}/generated/
+    owner_id = job.user_id
+    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(owner_id) / 'generated'
+    user_dir.mkdir(parents=True, exist_ok=True)
     cv_filename = f'cv_{id}.pdf'
-    cv_path = uploads_dir / cv_filename
+    cv_path = user_dir / cv_filename
     cv_path.write_bytes(pdf_bytes)
 
-    download_url = url_for('static', filename=f'uploads/{cv_filename}')
+    # URL relative pour téléchargement
+    rel_path = f'uploads/users/{owner_id}/generated/{cv_filename}'
+    download_url = url_for('static', filename=rel_path)
     pdf_name = build_cv_pdf_filename(job)
     return jsonify({'url': download_url, 'filename': pdf_name})
 
@@ -859,6 +906,17 @@ def save_cv_pdf(id):
 def generate_cv_pdf(id):
     """Télécharge directement le CV PDF sauvegardé sur disque, ou génère à la volée si absent."""
     job = Job.query.get_or_404(id)
+    # First check per-user generated directory
+    owner_id = job.user_id
+    user_generated = Path(app.static_folder) / 'uploads' / 'users' / str(owner_id) / 'generated' / f'cv_{id}.pdf'
+    if user_generated.exists():
+        return send_file(
+            str(user_generated),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=build_cv_pdf_filename(job),
+        )
+    # Fallback: older location
     uploads_dir = Path(app.static_folder) / 'uploads'
     cv_path = uploads_dir / f'cv_{id}.pdf'
     if cv_path.exists():
@@ -1050,18 +1108,69 @@ def delete_account(id):
 
 @app.route('/update_account/<int:id>', methods=['GET', 'POST'])
 @is_connected
-@is_admin
 def update_account(id):
+    """Permet à un administrateur de changer le rôle d'un utilisateur,
+    et à un utilisateur propriétaire de modifier ses propres options (allow_view_offers)
+    et d'uploader son CV JSON. Les administrateurs NE PEUVENT PAS modifier
+    l'option de partage `allow_view_offers` pour d'autres comptes.
+    """
     user: User = User.query.get_or_404(id)
-    # app.logger.debug(f'User debug: {user}')
+    current = get_user_by_id(session['login_id'])
+
+    # autorisation : soit admin, soit le propriétaire du compte
+    if not (current.is_admin or current.id == user.id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('show_accounts'))
+
     if request.method == 'POST':
-        roles = ['Administrateur', 'Editeur', 'Lecteur']
-        user.role = roles.index(request.form.get('role'))
+        # Rôle : uniquement modifiable par un administrateur
+        if current.is_admin:
+            roles = ['Administrateur', 'Utilisateur']
+            selected = request.form.get('role')
+            # map role label to enum value (ADMIN=0, USER=1)
+            if selected == 'Administrateur':
+                user.role = 0
+            else:
+                user.role = 1
+
+        # L'option allow_view_offers ne peut être changée que par le propriétaire
+        if current.id == user.id:
+            user.allow_view_offers = True if request.form.get('allow_view_offers') in ('on', 'true', '1') else False
+
+        # Handle CV JSON upload (file input name 'cv_json') - only owner can upload
+        if current.id == user.id and 'cv_json' in request.files and request.files['cv_json'].filename:
+            f = request.files['cv_json']
+            # accept only JSON mime/extension
+            if not f.filename.lower().endswith('.json'):
+                flash('Veuillez fournir un fichier JSON avec l’extension .json.', 'error')
+                return redirect(url_for('update_account', id=user.id))
+            # Read and validate JSON content before saving
+            try:
+                raw = f.read()
+                import json as _json
+                parsed = _json.loads(raw)
+            except Exception as exc:
+                app.logger.debug(f'Invalid CV JSON upload for user {user.id}: {exc}')
+                flash('Fichier JSON invalide. Vérifiez le contenu et réessayez.', 'error')
+                return redirect(url_for('update_account', id=user.id))
+            # Persist pretty-printed JSON into user's directory
+            user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id)
+            user_dir.mkdir(parents=True, exist_ok=True)
+            orig_path = user_dir / 'cv_original.json'
+            with open(orig_path, 'w', encoding='utf-8') as fh:
+                fh.write(_json.dumps(parsed, ensure_ascii=False, indent=2))
+
+        db.session.add(user)
         db.session.commit()
         flash('Record was successfully updated')
-        return redirect(url_for('show_accounts'))
+        # redirect to accounts for admins, to profile for owner
+        if current.is_admin and current.id != user.id:
+            return redirect(url_for('show_accounts'))
+        return redirect(url_for('welcome'))
+
     else:
-        return render_template('update_account.html', user=user)
+        # Pass current user id so template can hide/share controls
+        return render_template('update_account.html', user=user, current_user_id=current.id)
 
 
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
@@ -1150,6 +1259,19 @@ def create_tables():
         if 'ft_offer_id' not in _cols:
             _conn.execute(_text("ALTER TABLE job ADD COLUMN ft_offer_id VARCHAR(30)"))
             _conn.commit()
+        # Ajouter la nouvelle colonne opt-in allow_view_offers sur la table user si absent
+        _user_cols = [row[1] for row in _conn.execute(_text("PRAGMA table_info(user)"))]
+        if 'allow_view_offers' not in _user_cols:
+            try:
+                _conn.execute(_text("ALTER TABLE user ADD COLUMN allow_view_offers BOOLEAN DEFAULT 0"))
+                _conn.commit()
+            except Exception:
+                # Certaines versions SQLite n'acceptent pas BOOLEAN, retomber sur INTEGER
+                try:
+                    _conn.execute(_text("ALTER TABLE user ADD COLUMN allow_view_offers INTEGER DEFAULT 0"))
+                    _conn.commit()
+                except Exception:
+                    pass
 
 
 @app.before_request
@@ -1398,9 +1520,15 @@ def ft_searches():
     return render_template('ft_searches.html', user=user, searches=searches)
 
 
-def _ft_added_ids() -> set[str]:
-    """Retourne l'ensemble des ft_offer_id déjà présents dans la table job."""
-    rows = db.session.query(Job.ft_offer_id).filter(Job.ft_offer_id.isnot(None)).all()
+def _ft_added_ids(owner_id: int | None = None) -> set[str]:
+    """Retourne l'ensemble des ft_offer_id déjà présents dans la table job.
+
+    Si owner_id est précisé, ne retourne que les IDs ajoutés par cet utilisateur.
+    """
+    q = db.session.query(Job.ft_offer_id).filter(Job.ft_offer_id.isnot(None))
+    if owner_id is not None:
+        q = q.filter(Job.user_id == owner_id)
+    rows = q.all()
     return {r[0] for r in rows}
 
 
@@ -1417,7 +1545,7 @@ def ft_search_view(search_id):
         offers=ft_search.offers,
         search_info=ft_search.search_info,
         search_id=search_id,
-        added_ids=_ft_added_ids(),
+        added_ids=_ft_added_ids(session.get('login_id')),
         unavailable_ids=ft_search.unavailable,
     )
 
@@ -1658,6 +1786,16 @@ def ft_add_candidature(search_id):
         name=title, url=url_offer, zipCode=zip_code, company=company,
         contact='', date=datetime.now(), email='', user_id=session['login_id'],
     )
+    # Defensive logging: ensure owner is the logged-in user
+    try:
+        owner_id = int(session.get('login_id'))
+    except Exception:
+        owner_id = None
+    app.logger.debug(f"ft_add_candidature: session_login_id={session.get('login_id')} owner_id={owner_id} search_id={search_id} offer_id={offer_id}")
+    if owner_id is None:
+        flash('Impossible de déterminer le propriétaire de la candidature.', 'error')
+        return redirect(url_for('ft_search_view', search_id=search_id))
+    job.user_id = owner_id
     job.ft_offer_id = offer_id or None
     db.session.add(job)
     db.session.commit()

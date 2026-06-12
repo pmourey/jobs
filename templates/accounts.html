@@ -60,7 +60,7 @@
                 <td>
                     {% if account.is_admin %}
                         <span class="badge bg-danger">Administrateur</span>
-                    {% elif account.is_editor %}
+                    {% elif account.is_user %}
                         <span class="badge bg-warning">Editeur</span>
                     {% else %}
                         <span class="badge bg-secondary">Utilisateur</span>
@@ -82,7 +82,7 @@
                         <strong>{{ account.username }}</strong>
                         {% if account.is_admin %}
                             <span class="badge bg-danger ms-1">Admin</span>
-                        {% elif account.is_editor %}
+                        {% elif account.is_user %}
                             <span class="badge bg-warning ms-1">Editeur</span>
                         {% else %}
                             <span class="badge bg-secondary ms-1">User</span>

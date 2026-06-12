@@ -21,8 +21,7 @@ db = SQLAlchemy()
 
 class Role(Enum):
     ADMIN = 0
-    EDITOR = 1
-    READER = 2
+    USER = 1
 
 
 class User(db.Model):
@@ -38,7 +37,12 @@ class User(db.Model):
     validated = db.Column(db.Boolean, default=False)
 
     def __repr__(self):
-        return f'{self.username}:{self.password} ({Role(self.role)})'
+        # Use safe enum conversion to avoid ValueError for legacy/unknown values stored in DB
+        try:
+            role_display = Role(self.role)
+        except Exception:
+            role_display = f'UNKNOWN({self.role})'
+        return f'{self.username}:{self.password} ({role_display})'
 
     def __init__(self, username: str, password: str, creation_date: DateTime, email: str):
         self.username = username
@@ -46,7 +50,11 @@ class User(db.Model):
         # self.password = generate_password_hash(password, method='scrypt')
         self.creationDate = creation_date
         self.email = email
-        self.role = Role.READER.value
+        # default role is USER
+        self.role = Role.USER.value
+
+    # autoriser la consultation des offres par d'autres utilisateurs (opt-in)
+    allow_view_offers = db.Column(db.Boolean, default=False)
 
     # @validates('email')
     # def validate_email(self, email):
@@ -70,15 +78,26 @@ class User(db.Model):
 
     @property
     def is_admin(self):
-        return Role(self.role) == Role.ADMIN
+        try:
+            return Role(self.role) == Role.ADMIN
+        except Exception:
+            # unknown/legacy role values are not admin
+            return False
 
     @property
     def is_editor(self):
-        return Role(self.role) == Role.EDITOR
+        try:
+            return Role(self.role) == Role.USER
+        except Exception:
+            return False
 
     @property
-    def is_reader(self):
-        return Role(self.role) == Role.READER
+    def is_user(self):
+        try:
+            return Role(self.role) == Role.USER
+        except Exception:
+            # treat unknown roles conservatively as non-user
+            return False
 
 
 @dataclass

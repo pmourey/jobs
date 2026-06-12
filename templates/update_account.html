@@ -14,10 +14,29 @@
                             <label for="role" class="form-label">Sélectionnez un nouveau rôle pour <strong>{{ user.username }}</strong>:</label>
                             <select id="role" name="role" class="form-select">
                                 <option value="Administrateur" {% if user.is_admin %} selected {% endif %}>🔴 Administrateur</option>
-                                <option value="Editeur" {% if user.is_editor %} selected {% endif %}>🟠 Editeur</option>
-                                <option value="Lecteur" {% if user.is_reader %} selected {% endif %}>⚪ Lecteur</option>
+                                <option value="Utilisateur" {% if user.is_user %} selected {% endif %}>🟠 Utilisateur</option>
                             </select>
                         </div>
+                        {# allow_view_offers editable only by the account owner #}
+                        {% if current_user_id == user.id %}
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="allow_view_offers" name="allow_view_offers" {% if user.allow_view_offers %}checked{% endif %}>
+                            <label class="form-check-label" for="allow_view_offers">Autoriser les autres utilisateurs de l'application à consulter mes offres</label>
+                        </div>
+                        {% else %}
+                        <div class="mb-3">
+                            <small class="text-muted">Les options de partage des offres ne peuvent être modifiées que par le propriétaire du compte.</small>
+                        </div>
+                        {% endif %}
+
+                        {# CV JSON upload - only owner can upload their original CV JSON #}
+                        {% if current_user_id == user.id %}
+                        <div class="mb-3">
+                            <label for="cv_json" class="form-label">Importer votre CV (JSON GitConnected)</label>
+                            <input class="form-control" type="file" id="cv_json" name="cv_json" accept="application/json">
+                            <div class="form-text">Ce fichier sera stocké dans votre dossier utilisateur et utilisé pour les fonctionnalités IA.</div>
+                        </div>
+                        {% endif %}
                         <div class="text-end">
                             <a href="{{ url_for('show_accounts') }}" class="btn btn-secondary me-2">Annuler</a>
                             <button type="submit" class="btn btn-primary">✅ Mettre à jour</button>
