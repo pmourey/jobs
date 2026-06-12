@@ -10,7 +10,7 @@ Application Flask de suivi de candidatures avec authentification, gestion des r�
 
 - Gestion des candidatures : création, modification, suppression, archivage (actif/clos), suivi des dates et du texte de lettre.
 - Authentification complète : inscription, validation e-mail, connexion/déconnexion, changement et récupération de mot de passe.
-- Gestion des rôles : Administrateur, Éditeur, Lecteur avec restrictions d'accès par route.
+- Gestion des rôles : Administrateur, Utilisateur (anciennement "Éditeur"). Les valeurs de rôle ont été normalisées ; un script de migration est fourni pour convertir d'anciennes valeurs.
 - Administration des comptes et sessions : sessions actives, sessions fermées, fermeture/suppression unitaire ou en lot.
 - Génération de lettre de motivation PDF côté serveur via ReportLab (sans Word ni LibreOffice en production).
 - Personnalisation IA du CV : aperçu des suggestions, sélection fine des sections, génération et sauvegarde d'un CV PDF.
@@ -24,11 +24,17 @@ Application Flask de suivi de candidatures avec authentification, gestion des r�
   - /preview_cv_data/<id> (aperçu JSON)
   - /save_cv_pdf/<id> (génération + sauvegarde dans static/uploads)
   - /generate_cv_pdf/<id> (téléchargement du CV sauvegardé ou fallback dynamique)
+- Stockage des CV générés : désormais, les CV PDF générés par l'IA sont sauvegardés par utilisateur sous `static/uploads/users/{user_id}/generated/`.
+- Import de CV JSON utilisateur : chaque utilisateur peut uploader son CV source (GitConnected JSON) depuis son profil. Le fichier est validé côté serveur (JSON parsé) et sauvegardé sous `static/uploads/users/{user_id}/cv_original.json`.
 - Ajout du flux LM IA :
   - /preview_lm_ai/<id> (génération de texte)
   - /save_lm_text/<id> (persistance en base)
 - Ajout de la suppression/fermeture de sessions en lot : /delete_sessions (POST JSON)
 - Messages de validation formulaire renforcés sur /new/ (champs requis, e-mail invalide, conservation des valeurs saisies)
+- Option de partage des offres : chaque utilisateur peut activer `allow_view_offers` dans son profil pour autoriser les autres utilisateurs à consulter ses offres (opt-in). Par défaut, un utilisateur ne voit que ses propres candidatures.
+- UI : dans la page Candidatures, un sélecteur permet d'afficher les candidatures d'un autre utilisateur (si celui-ci a autorisé le partage). Par défaut la vue montre uniquement les offres de l'utilisateur connecté.
+- Téléchargement CV : le bouton "⬇️ PDF" télécharge maintenant le CV depuis le répertoire utilisateur (`static/uploads/users/{user_id}/generated`) quand présent.
+- Validation JSON côté serveur : l'upload du CV JSON est parsé et validé avant sauvegarde ; un message d'erreur est retourné si le JSON est invalide.
 
 ## Prérequis
 
@@ -69,12 +75,15 @@ cp config_template.py config.py
 - GITHUB_TOKEN (optionnel, recommandé pour IA)
 - GITHUB_MODELS_BASE_URL, GITHUB_MODELS_MODEL
 
+Note : si vous modifiez la logique des rôles, utilisez le script de migration fourni `scripts/convert_roles.py` pour convertir les anciennes valeurs role=2 en role=1 avant d'opérer.
+
 ## Données et fichiers attendus
 
 - static/cv.json : base CV utilisée pour la personnalisation IA.
 - static/Cover_letter.dot ou static/Cover_letter.dotx : template de lettre.
 - static/uploads/ : PDFs générés (créé automatiquement si absent).
 - static/images/ : captures de candidature et ressources associées.
+- static/uploads/users/{user_id}/ : dossiers utilisateurs contenant leurs CV originaux (`cv_original.json`) et CV générés (`generated/`)
 
 ## Lancer l'application
 
@@ -94,6 +103,7 @@ Puis ouvrir le navigateur sur l'URL Flask affichée en console.
 - /preview_cv_data/<id> : aperçu des recommandations IA CV (POST)
 - /save_cv_pdf/<id> : génération + sauvegarde CV PDF (POST)
 - /generate_cv_pdf/<id> : téléchargement CV PDF
+- /update_account/<id> : modification du profil. Seul le propriétaire peut modifier l'option `allow_view_offers` et uploader son CV JSON ; les administrateurs peuvent modifier uniquement le rôle d'un autre utilisateur.
 - /preview_lm_ai/<id> : génération IA LM (POST)
 - /save_lm_text/<id> : sauvegarde texte LM (POST)
 - /sessions, /closed_sessions : suivi des sessions
@@ -107,6 +117,7 @@ Des scripts de test sont disponibles dans test/, notamment :
 - test/test_delete_sessions.py
 - test/test_new_route.py
 - test/test_empty_form.py
+- Ajoutez des tests pour la validation d'upload JSON et pour la logique de visibilité des offres (par défaut : affichage des offres de l'utilisateur connecté).
 
 Exemple :
 
@@ -130,6 +141,15 @@ python test/test_generate_cover_letter_pdf.py
 - tools/cv_tools.py : IA CV/LM et génération CV PDF.
 - templates/ : vues Jinja2.
 - static/ : assets, templates documents, uploads.
+
+## Scripts utilitaires
+
+- `scripts/convert_roles.py` : script local de migration pour convertir `role=2` en `role=1` (fait une sauvegarde de la base avant modification).
+
+## Notes de sécurité et confidentialité
+
+- Les offres d'un utilisateur ne sont visibles par d'autres que si l'utilisateur a explicitement activé `allow_view_offers`.
+- Les CV JSON uploadés et les CV PDF générés sont stockés sous `static/uploads/users/{user_id}/` ; assurez-vous d'appliquer les règles d'accès et sauvegarde appropriées en production.
 
 ## Contact
 
