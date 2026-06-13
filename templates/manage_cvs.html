@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="container mt-4">
+  <h2>Gestion des CV pour l'utilisateur {{ user.username if user else user_id }}</h2>
+
+  <div class="mb-3">
+    <a href="{{ url_for('update_account', id=user_id) }}" class="btn btn-secondary">Retour profil</a>
+  </div>
+
+  <div class="row">
+    <div class="col-md-6">
+      <h4>Fichiers disponibles</h4>
+      <ul class="list-group">
+        {% for f in files %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+              <div>
+                {# Friendly label for parsed LinkedIn JSON #}
+                {% if f.name == 'cv_linkedin_parsed.json' %}
+                  <strong>CV LinkedIn</strong>
+                {% else %}
+                  <strong>{{ f.label }}</strong>
+                {% endif %}
+              <div class="small text-muted">{{ f.name }}</div>
+            </div>
+              <div>
+              {% if f.is_json %}
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('static', filename=f.path) }}" target="_blank">Voir JSON</a>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('edit_cv', user_id=user_id) }}">Éditer</a>
+                {# If a corresponding PDF exists (same stem), offer a PDF preview link #}
+                {% set pdf_candidate = f.name.replace('.json', '.pdf') %}
+                {% set pdf_names = files|map(attribute='name')|list %}
+                {% if pdf_candidate in pdf_names %}
+                  {% set pdf_path = 'uploads/users/' ~ user_id ~ '/cvs/' ~ pdf_candidate %}
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('static', filename=pdf_path) }}" target="_blank">Aperçu PDF lié</a>
+                {% endif %}
+              {% else %}
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('static', filename=f.path) }}" target="_blank">Aperçu PDF</a>
+              {% endif %}
+              <!-- delete form -->
+              <form method="post" action="{{ url_for('manage_cvs', user_id=user_id) }}" style="display:inline-block;">
+                <input type="hidden" name="file" value="{{ f.name }}">
+                <input type="hidden" name="action" value="delete">
+                <button class="btn btn-sm btn-danger" type="submit" onclick="return confirm('Supprimer {{ f.name }} ?')">Supprimer</button>
+              </form>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="col-md-6">
+      <h4>Fusionner des CV (JSON)</h4>
+      {# Only propose merge when both LinkedIn and GitConnected JSON files are present #}
+          {% set json_names_lc = json_files|map(attribute='name')|map('lower')|list %}
+          {% set joined_names = json_names_lc|join(',') %}
+          {% set has_linkedin = 'linkedin' in joined_names %}
+          {% set has_gitconnected = 'gitconnected' in joined_names %}
+      {% if not json_files %}
+        <div class="alert alert-info">Aucun fichier JSON disponible pour la fusion.</div>
+      {% elif not (has_linkedin and has_gitconnected) %}
+        <div class="alert alert-warning">La fusion est proposée uniquement si vous avez à la fois un CV LinkedIn et un CV GitConnected (JSON).</div>
+      {% else %}
+        <form method="post" action="{{ url_for('merge_cvs', user_id=user_id) }}">
+          <p>Sélectionnez, pour chaque section, la source à utiliser. Seuls les CV originaux (LinkedIn / GitConnected / resume) sont proposés.</p>
+          {% for sec in sections %}
+            <div class="mb-2">
+              <label class="form-label"><strong>{{ sec|capitalize }}</strong></label>
+              <div>
+                <select class="form-select mb-2" name="section_{{ sec }}">
+                  <option value="">-- (auto) --</option>
+                  {% for jf in json_files %}
+                    <option value="{{ jf.name }}">{{ jf.label }}{% if jf.preview %} — {{ jf.preview }}{% endif %} ({{ jf.name }})</option>
+                  {% endfor %}
+                </select>
+                {% if json_files %}
+                  <div class="form-text mb-2">Aperçu : choisissez la source pour remplacer la section entière.</div>
+                {% endif %}
+
+                {# Granular selection: show items per file for list sections #}
+                <div class="accordion" id="accordion_{{ sec }}">
+                  {% for jf in json_files %}
+                    {% set details = json_details.get(jf.name, {}) %}
+                    {% set items = details.get(sec, []) %}
+                    {% if items and items|length > 0 %}
+                      <div class="accordion-item">
+                        <h2 class="accordion-header" id="heading_{{ sec }}_{{ loop.index }}">
+                          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_{{ sec }}_{{ loop.index }}" aria-expanded="false" aria-controls="collapse_{{ sec }}_{{ loop.index }}">
+                            {{ jf.label }} ({{ jf.name }}) — {{ items|length }} éléments
+                          </button>
+                        </h2>
+                        <div id="collapse_{{ sec }}_{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="heading_{{ sec }}_{{ loop.index }}" data-bs-parent="#accordion_{{ sec }}">
+                          <div class="accordion-body py-1">
+                            {% for it in items %}
+                              <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="pick__{{ jf.name }}__{{ sec }}[]" value="{{ it.idx }}" id="pick_{{ jf.name }}_{{ sec }}_{{ it.idx }}">
+                                <label class="form-check-label small" for="pick_{{ jf.name }}_{{ sec }}_{{ it.idx }}">{{ it.label }}</label>
+                              </div>
+                            {% endfor %}
+                          </div>
+                        </div>
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+          <div class="mt-3">
+            <button class="btn btn-primary" type="submit">Fusionner et créer nouveau CV</button>
+          </div>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock main %}
+
+
+
+
+
+
+
+
+

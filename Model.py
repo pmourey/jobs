@@ -190,7 +190,18 @@ class Job(db.Model):
 
     @property
     def first_name(self) -> Optional[str]:
-        return self.contact.split()[0] if self.contact else ''
+        try:
+            if not self.contact:
+                return ''
+            if not isinstance(self.contact, str):
+                # defensive: convert non-string (dict/list) to string
+                contact_str = str(self.contact)
+            else:
+                contact_str = self.contact
+            parts = contact_str.split()
+            return parts[0] if parts else ''
+        except Exception:
+            return ''
 
     @property
     def expired(self) -> bool:

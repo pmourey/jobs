@@ -18,6 +18,71 @@ def build_cv_pdf_filename(job: Job) -> str:
     return f'CV Philippe Mourey - {company} - {title}.pdf'
 
 
+def user_cvs_dir(static_folder: str | Path, user_id: int) -> Path:
+    """Retourne le Path du répertoire cvs pour un utilisateur donné.
+    Convention: static/uploads/users/{user_id}/cvs
+    """
+    return Path(static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+
+
+def save_cv_json_for_user(static_folder: str | Path, user_id: int, src_json_path: Path, kind: str = 'gitconnected') -> Path:
+    """Copie un fichier JSON de CV dans le répertoire utilisateur en appliquant une nomenclature.
+
+    kind peut être: 'gitconnected', 'linkedin_parsed', 'other'.
+    Renvoie le path de destination.
+    """
+    dest_dir = user_cvs_dir(static_folder, user_id)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    kind_map = {
+        'gitconnected': 'cv_gitconnected.json',
+        'linkedin_parsed': 'cv_linkedin_parsed.json',
+        'other': src_json_path.name,
+    }
+    dest_name = kind_map.get(kind, 'cv_' + kind + '.json')
+    dest = dest_dir / dest_name
+    from shutil import copy2
+    copy2(src_json_path, dest)
+    # update meta
+    meta_path = dest_dir / 'cvs_meta.json'
+    try:
+        import json as _json
+        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+    except Exception:
+        meta = {}
+    meta.setdefault(dest_name, dest_name)
+    if '_default' not in meta:
+        meta['_default'] = dest_name
+    meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+    return dest
+
+
+def parse_linkedin_pdf_to_json(pdf_path: Path, out_json_path: Path) -> bool:
+    """Tente de convertir un CV LinkedIn PDF en JSON structuré via le projet
+    https://github.com/firedigger/linkedin-resume-parser
+
+    - Si la bibliothèque/module est installé, on l'utilise directement.
+    - Sinon, on essaie d'appeler le binaire via subprocess si disponible.
+
+    Retourne True si le fichier JSON de sortie a été généré, False sinon.
+    """
+    try:
+        # Try to import as a module if installed
+        from linkedin_resume_parser import parser as lp
+        data = lp.parse_pdf(str(pdf_path))
+        import json as _json
+        out_json_path.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+        return True
+    except Exception:
+        pass
+    try:
+        # Try to call an external script/cli if available
+        import subprocess
+        res = subprocess.run(['linkedin-resume-parser', str(pdf_path), '-o', str(out_json_path)], check=False)
+        return out_json_path.exists()
+    except Exception:
+        return False
+
+
 def load_cv_data(static_folder) -> dict:
     """Charge cv.json depuis le dossier static."""
     cv_path = Path(static_folder) / 'cv.json'
@@ -364,7 +429,8 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
                              selected_skills: list | None = None,
                              selected_references: list | None = None,
                              selected_projects: list | None = None,
-                             selected_premium_modules: list | None = None) -> str:
+                             selected_premium_modules: list | None = None,
+                             cv_data: dict | None = None) -> str:
     """Génère une lettre de motivation personnalisée via l'API GitHub Models / OpenAI."""
     # Use the centralized wrapper to call GitHub Models (handles backoff, Retry-After, cache)
     from tools.github_models_client import chat_completion
@@ -382,11 +448,12 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
         author_name = 'Philippe Mourey'
 
     # Charger cv_data pour les sections optionnelles
-    cv_data: dict = {}
-    try:
-        cv_data = load_cv_data(static_folder)
-    except Exception:
-        pass
+    if cv_data is None:
+        cv_data = {}
+        try:
+            cv_data = load_cv_data(static_folder)
+        except Exception:
+            pass
 
     # Extraire le texte du PDF de capture si disponible
     capture_text = ''
@@ -471,19 +538,28 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
 
     user_prompt = "Génère la lettre de motivation pour ce poste :\n\n" + "\n\n".join(context_parts)
 
+    # Determine display name for signature: prefer cv_data.basics.name then author_name
+    author_display = None
+    try:
+        basics = cv_data.get('basics', {}) if isinstance(cv_data, dict) else {}
+        author_display = basics.get('name') or author_name
+    except Exception:
+        author_display = author_name
+
     if not github_token:
         title = job.name or 'ce poste'
         company = job.company or 'votre entreprise'
-        return (
+        base_text = (
             f"Je vous adresse ma candidature pour le poste de {title} au sein de {company}.\n\n"
             "Fort de mon expérience dans le développement logiciel et la gestion de projets IT, "
             "je suis convaincu de pouvoir apporter une réelle valeur ajoutée à votre équipe.\n\n"
             "Je reste à votre disposition pour un entretien afin de vous présenter "
             "plus en détail mon parcours et mes motivations.\n\n"
-            # "Je vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.\n\n"
-            # f"{author_name}\n\n"
             "[GITHUB_TOKEN non configuré : texte généré sans IA]"
         )
+        if author_display:
+            base_text = base_text + "\n" + (author_display or '')
+        return base_text
 
     try:
         raw = chat_completion(
@@ -495,7 +571,14 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
             max_tokens=max_tokens,
             cache_ttl=45,
         )
-        return raw.strip()
+        text_out = raw.strip()
+        try:
+            # append signature if not present
+            if author_display and author_display not in text_out:
+                text_out = text_out + "\n\n" + author_display
+        except Exception:
+            pass
+        return text_out
     except Exception as exc:
         if _is_rate_limit_error(exc):
             raise RuntimeError('Trop de requêtes vers GitHub Models. Réessayez dans une minute.') from exc
@@ -525,11 +608,26 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
     except Exception:
         static_folder = str(Path(__file__).parent.parent / 'static')
 
-    SENDER_NAME = 'PHILIPPE MOUREY'
-    SENDER_STREET = '1880, route de Saint Jeannet'
-    SENDER_CITY = '06700 Saint Laurent du Var'
-    SENDER_PHONE = '06 89 15 08 56'
-    SENDER_EMAIL = 'philippe.mourey@gmail.com'
+    # Default sender info (fallback), can be overridden from cv_data.basics when available
+    # Ensure values used in PDF header are strings (defensive against malformed JSON where fields may be objects)
+    def _safe_str(v):
+        if v is None:
+            return ''
+        if isinstance(v, str):
+            return v
+        try:
+            import json as _json
+            return _json.dumps(v, ensure_ascii=False)
+        except Exception:
+            return str(v)
+
+    basics = cv_data.get('basics', {}) if isinstance(cv_data, dict) else {}
+    SENDER_NAME = _safe_str(basics.get('name')) or 'PHILIPPE MOUREY'
+    # 'location' field may be composite; prefer 'address' like field or fallback to provided 'location'
+    SENDER_STREET = _safe_str(basics.get('location') or basics.get('address')) or '1880, route de Saint Jeannet'
+    SENDER_CITY = _safe_str(basics.get('city')) or '06700 Saint Laurent du Var'
+    SENDER_PHONE = _safe_str(basics.get('phone')) or '06 89 15 08 56'
+    SENDER_EMAIL = _safe_str(basics.get('email')) or 'philippe.mourey@gmail.com'
     PHOTO_WIDTH = 2.5 * cm
 
     COLOR_DARK = rl_colors.HexColor('#1a1a2e')
@@ -568,9 +666,20 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
     story = []
     cv_title = suggestions.get('cv_title') or cv_data.get('basics', {}).get('label', '')
 
-    photo_path = Path(static_folder) / 'Photo_CV.png'
-    if not photo_path.exists():
-        photo_path = Path(static_folder) / 'photo.jpg'
+    # Prefer user-specific uploaded photo if present: static/uploads/users/{user_id}/photo.jpg
+    photo_path = None
+    try:
+        owner_id = getattr(job, 'user_id', None)
+        if owner_id is not None:
+            candidate = Path(static_folder) / 'uploads' / 'users' / str(owner_id) / 'photo.jpg'
+            if candidate.exists():
+                photo_path = candidate
+    except Exception:
+        photo_path = None
+    if photo_path is None:
+        photo_path = Path(static_folder) / 'Photo_CV.png'
+        if not photo_path.exists():
+            photo_path = Path(static_folder) / 'photo.jpg'
 
     name_cell = [
         Paragraph(SENDER_NAME, st_name),

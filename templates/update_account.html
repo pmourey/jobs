@@ -2,6 +2,8 @@
 {% block main %}
 
 <main class="container mt-4">
+    <!-- Placeholder for JS-inserted Bootstrap alerts -->
+    <div id="flash_placeholder"></div>
     <div class="row justify-content-center">
         <div class="col-md-8 col-lg-10">
             <div class="card">
@@ -9,7 +11,7 @@
                     <h5 class="card-title mb-0">👥 Modification du compte</h5>
                 </div>
                 <div class="card-body">
-                    <form action="{{ url_for('update_account', id=user.id) }}" method="POST" onsubmit="return confirmSubmit();">
+                    <form action="{{ url_for('update_account', id=user.id) }}" method="POST" enctype="multipart/form-data" onsubmit="return confirmSubmit();">
                         <div class="mb-3">
                             <label for="role" class="form-label">Sélectionnez un nouveau rôle pour <strong>{{ user.username }}</strong>:</label>
                             <select id="role" name="role" class="form-select">
@@ -31,17 +33,95 @@
 
                         {# CV JSON upload - only owner can upload their original CV JSON #}
                         {% if current_user_id == user.id %}
-                        <div class="mb-3">
-                            <label for="cv_json" class="form-label">Importer votre CV (JSON GitConnected)</label>
-                            <input class="form-control" type="file" id="cv_json" name="cv_json" accept="application/json">
-                            <div class="form-text">Ce fichier sera stocké dans votre dossier utilisateur et utilisé pour les fonctionnalités IA.</div>
-                        </div>
-                        {% endif %}
+                        <!-- end role form here -->
                         <div class="text-end">
-                            <a href="{{ url_for('show_accounts') }}" class="btn btn-secondary me-2">Annuler</a>
-                            <button type="submit" class="btn btn-primary">✅ Mettre à jour</button>
+                            <!-- Removed 'Annuler' per request; provide a navigation button back to main menu -->
+                            <a href="{{ url_for('welcome') }}" class="btn btn-secondary me-2">← Retour au menu</a>
+                            <button type="submit" class="btn btn-primary">✅ Mettre à jour le rôle</button>
                         </div>
                     </form>
+
+                    <!-- Photo de profil (upload vers update_account) -->
+                    <hr />
+                    <h6>Photo de profil</h6>
+                    <div class="card mb-3">
+                      <div class="card-body">
+                        <div class="row mb-3">
+                          <div class="col-md-3">
+                            {% set user_photo = ('uploads/users/' ~ user.id ~ '/photo.jpg') %}
+                            <img id="profilePhotoPreview" src="{{ url_for('static', filename=user_photo) }}" alt="Photo" class="img-fluid rounded" onerror="this.src='{{ url_for('static', filename='photo.jpg') }}'" />
+                          </div>
+                          <div class="col-md-9">
+                            <form id="profilePhotoForm" action="{{ url_for('update_account', id=user.id) }}" method="POST" enctype="multipart/form-data">
+                              <div class="mb-3">
+                                <label for="profile_photo" class="form-label">Télécharger une photo de profil (jpg/png)</label>
+                                <input class="form-control" type="file" id="profile_photo" name="profile_photo" accept="image/png,image/jpeg">
+                              </div>
+                              <div class="text-end">
+                                <button type="button" id="btnUploadPhoto" class="btn btn-primary">Enregistrer la photo</button>
+                              </div>
+                            </form>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Gestion du compte: upload et gestion des CV séparée -->
+                    <hr />
+                    <h6>Gestion du compte</h6>
+                    <div class="card mb-3">
+                      <div class="card-body">
+                        <div class="mb-3">
+                            <label for="cv_json" class="form-label">Importer votre CV (JSON GitConnected)</label>
+                            <div class="input-group">
+                                <input class="form-control" type="file" id="cv_json" name="cv_json" accept="application/json">
+                                <button class="btn btn-outline-primary" type="button" id="btnUploadJson">Charger</button>
+                            </div>
+                            <div class="form-text">Ce fichier sera stocké dans votre dossier utilisateur et utilisé pour les fonctionnalités IA.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="cv_pdf" class="form-label">Importer un CV (PDF export LinkedIn)</label>
+                            <div class="input-group">
+                                <input class="form-control" type="file" id="cv_pdf" name="cv_pdf" accept="application/pdf">
+                                <button class="btn btn-outline-primary" type="button" id="btnUploadPdf">Charger</button>
+                            </div>
+                            <div class="form-text">Exemples : "Profile_soso.pdf" — le PDF sera stocké et listé ci-dessous.</div>
+                        </div>
+
+
+                        <hr />
+                        <h6>CV chargés</h6>
+                        {% set cvs_dir = ('uploads/users/' ~ user.id ~ '/cvs') %}
+                        {% set meta_path = None %}
+                        {# We'll list files by checking the static path at render time is not possible here, so provide fallback: show links if files exist on disk via URL construction #}
+                        <div class="mb-3">
+                            <small class="text-muted">Les CV importés sont listés ci-dessous. Vous pouvez définir un CV par défaut, renommer l'affichage, ou supprimer le fichier. L'édition du contenu est disponible uniquement pour les CV JSON.</small>
+                        </div>
+                        <div id="cvsList">
+                            {# Provide link to manage page; editing JSON is no longer available from this menu #}
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('manage_cvs_view', user_id=user.id) }}">Gérer mes CVs</a>
+                            {% if cvs_files and cvs_files|length > 0 %}
+                            <div class="mt-2">
+                                <label for="default_cv" class="form-label">CV par défaut pour les aperçus et la génération IA</label>
+                                <div class="input-group">
+                                    <select id="default_cv" name="default_cv" class="form-select">
+                                        {% for cf in cvs_files %}
+                                            <option value="{{ cf.name }}" {% if cvs_meta and cvs_meta._default == cf.name %}selected{% endif %}>{{ cf.label }} ({{ cf.name }})</option>
+                                        {% endfor %}
+                                    </select>
+                                    <button class="btn btn-outline-secondary" type="button" id="btnSetDefault">Définir par défaut</button>
+                                </div>
+                            </div>
+                            {% endif %}
+                            <form action="/manage_cvs/{{ user.id }}" method="POST" id="manageCvsForm" class="mt-2">
+                                <input type="hidden" name="action" id="manage_action">
+                                <input type="hidden" name="file" id="manage_file">
+                                <input type="hidden" name="newname" id="manage_newname">
+                            </form>
+                        </div>
+                      </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -52,6 +132,133 @@
             var result = confirm("Êtes-vous sûr de vouloir modifier ce rôle ?");
             return result;
         }
+        document.addEventListener('DOMContentLoaded', function(){
+            // JSON upload handled by btnUploadJson below
+            // Handle PDF upload via separate POST to /import_cv to avoid mixing with account update
+            const btnPdf = document.getElementById('btnUploadPdf');
+            if (btnPdf){
+                btnPdf.addEventListener('click', async function(){
+                    const input = document.getElementById('cv_pdf');
+                    if (!input || !input.files || input.files.length === 0){
+                        showMessage('warning', 'Veuillez sélectionner un fichier PDF à charger');
+                        return;
+                    }
+                    const file = input.files[0];
+                    const fd = new FormData();
+                    fd.append('cv_pdf', file);
+                    fd.append('user_id', '{{ user.id }}');
+                    try {
+                        const resp = await fetch('/import_cv', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+                        // read body as text first to avoid clone() errors
+                        const bodyText = await resp.text();
+                        let data;
+                        try {
+                            data = JSON.parse(bodyText);
+                        } catch (err) {
+                            data = { ok: false, text: bodyText };
+                        }
+                        if (resp.ok && data.ok) {
+                            // display a friendly message then reload to refresh file list
+                            showMessage('success', data.message || 'Upload effectué.');
+                            window.location.reload();
+                        } else {
+                            showMessage('danger', 'Erreur lors de l\'upload : ' + (data.message || data.text || resp.status));
+                        }
+                    } catch (e) {
+                        showMessage('danger', 'Erreur réseau lors de l\'upload: ' + e);
+                    }
+                });
+            }
+            const btnJson = document.getElementById('btnUploadJson');
+            if (btnJson){
+                btnJson.addEventListener('click', async function(){
+                    const input = document.getElementById('cv_json');
+                    if (!input || !input.files || input.files.length === 0){
+                        showMessage('warning', 'Veuillez sélectionner un fichier JSON à charger');
+                        return;
+                    }
+                    const file = input.files[0];
+                    const fd = new FormData();
+                    fd.append('cv_json', file);
+                    fd.append('user_id', '{{ user.id }}');
+                    try {
+                        const resp = await fetch('/import_cv', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+                        // read body as text first to avoid clone() errors
+                        const bodyText2 = await resp.text();
+                        let data;
+                        try {
+                            data = JSON.parse(bodyText2);
+                        } catch (err) {
+                            data = { ok: false, text: bodyText2 };
+                        }
+                        if (resp.ok && data.ok) {
+                            showMessage('success', data.message || 'Upload effectué.');
+                            window.location.reload();
+                        } else {
+                            showMessage('danger', 'Erreur lors de l\'upload : ' + (data.message || data.text || resp.status));
+                        }
+                    } catch (e) {
+                        showMessage('danger', 'Erreur réseau lors de l\'upload: ' + e);
+                    }
+                });
+            }
+            const btnSetDefault = document.getElementById('btnSetDefault');
+            if (btnSetDefault){
+                btnSetDefault.addEventListener('click', function(){
+                    const sel = document.getElementById('default_cv');
+                    if (!sel) return showMessage('warning','Aucun CV sélectionné');
+                    const filename = sel.value;
+                    const form = document.getElementById('manageCvsForm');
+                    document.getElementById('manage_action').value = 'set_default';
+                    document.getElementById('manage_file').value = filename;
+                    form.submit();
+                });
+            }
+                    // Handle profile photo upload
+                    const btnUploadPhoto = document.getElementById('btnUploadPhoto');
+                    if (btnUploadPhoto){
+                        btnUploadPhoto.addEventListener('click', async function(){
+                            const input = document.getElementById('profile_photo');
+                            if (!input || !input.files || input.files.length === 0){
+                                showMessage('warning', 'Veuillez sélectionner une image à charger');
+                                return;
+                            }
+                            const file = input.files[0];
+                            const fd = new FormData(document.getElementById('profilePhotoForm'));
+                            fd.append('profile_photo', file);
+                            try {
+                                const resp = await fetch('{{ url_for('update_account', id=user.id) }}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+                                const bodyText = await resp.text();
+                                let data;
+                                try { data = JSON.parse(bodyText); } catch(e){ data = { ok: resp.ok, text: bodyText }; }
+                                if (resp.ok){
+                                    showMessage('success', 'Photo enregistrée. Rechargement...');
+                                    // update preview src to bypass cache
+                                    const preview = document.getElementById('profilePhotoPreview');
+                                    if (preview){
+                                        const ts = Date.now();
+                                        preview.src = '{{ url_for('static', filename='uploads/users/' ~ user.id ~ '/photo.jpg') }}' + '?t=' + ts;
+                                    }
+                                } else {
+                                    showMessage('danger', 'Erreur lors de l\'upload : ' + (data.message || data.text || resp.status));
+                                }
+                            } catch (e){
+                                showMessage('danger', 'Erreur réseau lors de l\'upload: ' + e);
+                            }
+                        });
+                    }
+            // Utility to show Bootstrap alerts dynamically
+            function showMessage(level, message, timeoutMs = 6000){
+                const container = document.getElementById('flash_placeholder');
+                if (!container) return;
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = `<div class="alert alert-${level} alert-dismissible fade show" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                container.appendChild(wrapper);
+                if (timeoutMs > 0){
+                    setTimeout(()=>{ try{ wrapper.remove(); }catch(e){} }, timeoutMs);
+                }
+            }
+        });
     </script>
 </main>
 {% endblock main %}

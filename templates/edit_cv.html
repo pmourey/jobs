@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block main %}
+<main class="container mt-4">
+  <h4>Édition du CV (JSON)</h4>
+  <form method="POST">
+    <div class="mb-3">
+      <label for="cv_text" class="form-label">Contenu JSON</label>
+      <textarea id="cv_text" name="cv_text" class="form-control" rows="20">{{ cv_text }}</textarea>
+    </div>
+    <button class="btn btn-primary" type="submit">Sauvegarder</button>
+    <a class="btn btn-secondary" href="{{ url_for('update_account', id=user_id) }}">Annuler</a>
+  </form>
+</main>
+{% endblock main %}
+

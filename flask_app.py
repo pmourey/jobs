@@ -57,6 +57,8 @@ from tools.cv_tools import (build_cv_pdf_filename,
                             generate_tailored_cv_pdf_bytes,
                             get_ai_cover_letter_text, get_ai_cv_suggestions,
                             load_cv_data)
+from tools.merge_cvs import merge_cv_jsons
+from tools.import_cv import parse_json_cv, fetch_linkedin_profile
 from tools.document_tools import (build_cover_letter_pdf_filename,
                                   generate_cover_letter_pdf_bytes,
                                   resolve_cover_letter_template_path)
@@ -195,6 +197,37 @@ def get_client_ip():
         client_ip = request.remote_addr
     return client_ip
 
+
+def _resolve_user_cv_data(user_id: int) -> dict:
+    """Charge le CV JSON par défaut de l'utilisateur si disponible.
+    Retourne un dict (chargé) ou None si absent.
+    """
+    try:
+        cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+        meta_path = cvs_dir / 'cvs_meta.json'
+        meta = {}
+        if meta_path.exists():
+            import json as _json
+            meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+        default = meta.get('_default')
+        if not default:
+            return None
+        target = cvs_dir / default
+        if target.exists() and target.suffix.lower() == '.json':
+            return _json.loads(target.read_text(encoding='utf-8'))
+        # If pdf, try to load parsed sibling
+        candidate2 = cvs_dir / (target.stem + '.json')
+        candidate1 = cvs_dir / 'cv_linkedin_parsed.json'
+        for c in (candidate2, candidate1):
+            if c.exists():
+                try:
+                    return _json.loads(c.read_text(encoding='utf-8'))
+                except Exception:
+                    continue
+    except Exception:
+        return None
+    return None
+
 @app.route('/get_ip')
 def get_ip():
     # Obtenir l'adresse IP du client
@@ -210,6 +243,118 @@ def get_ip():
     server_ip = gethostbyname(server_hostname)
 
     return f"Adresse IP du client : {client_ip}\nAdresse IP du serveur : {server_ip}"
+
+
+@app.route('/user_cv_default', methods=['GET'])
+@is_connected
+def user_cv_default():
+    """Retourne le nom du fichier CV par défaut pour l'utilisateur connecté.
+    JSON: { default: 'cv.pdf', meta: { ... } }
+    """
+    user = get_user_by_id(session['login_id'])
+    cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id) / 'cvs'
+    meta_path = cvs_dir / 'cvs_meta.json'
+    import json as _json
+    meta = {}
+    try:
+        if meta_path.exists():
+            meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+    except Exception:
+        meta = {}
+    default = meta.get('_default')
+    # Build full URL when possible to help the client display a direct link
+    default_url = None
+    try:
+        if default:
+            rel = f'uploads/users/{user.id}/cvs/{default}'
+            default_url = url_for('static', filename=rel)
+    except Exception:
+        default_url = None
+    return jsonify({'default': default, 'default_url': default_url, 'meta': meta})
+
+
+@app.route('/__debug_user_cv_default/<int:user_id>', methods=['GET'])
+def debug_user_cv_default(user_id):
+    """Debug endpoint (no auth) returning the same payload as `/user_cv_default` for a given user id.
+    Temporary: used to verify client behaviour for tests/dev. Remove before production use.
+    """
+    cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    meta_path = cvs_dir / 'cvs_meta.json'
+    import json as _json
+    meta = {}
+    try:
+        if meta_path.exists():
+            meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+    except Exception:
+        meta = {}
+    default = meta.get('_default')
+    default_url = None
+    try:
+        if default:
+            rel = f'uploads/users/{user_id}/cvs/{default}'
+            default_url = url_for('static', filename=rel)
+    except Exception:
+        default_url = None
+    return jsonify({'default': default, 'default_url': default_url, 'meta': meta})
+
+
+@app.route('/__debug_preview_cv_data/<int:job_id>', methods=['POST'])
+def debug_preview_cv_data(job_id):
+    """Debug preview endpoint without auth. Accepts JSON body { "user_id": X, "default_cv": "..." }.
+    Returns a light preview (basics.label, summary) and cv_source info for verification.
+    """
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get('user_id')
+    default_cv = payload.get('default_cv')
+    # try to load meta if default not provided
+    if not default_cv and user_id:
+        cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+        meta_path = cvs_dir / 'cvs_meta.json'
+        try:
+            if meta_path.exists():
+                meta_obj = _json.loads(meta_path.read_text(encoding='utf-8'))
+                default_cv = meta_obj.get('_default')
+        except Exception:
+            default_cv = None
+
+    # resolve cv_data
+    cv_data = None
+    if default_cv and user_id:
+        try:
+            user_cvs = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+            target = user_cvs / default_cv
+            if target.suffix.lower() == '.json' and target.exists():
+                cv_data = _json.loads(target.read_text(encoding='utf-8'))
+            elif target.suffix.lower() == '.pdf':
+                candidate2 = user_cvs / (target.stem + '.json')
+                candidate1 = user_cvs / 'cv_linkedin_parsed.json'
+                for c in (candidate2, candidate1):
+                    if c.exists():
+                        try:
+                            cv_data = _json.loads(c.read_text(encoding='utf-8'))
+                            break
+                        except Exception:
+                            continue
+        except Exception:
+            cv_data = None
+
+    if not cv_data:
+        cv_data = load_cv_data(app.static_folder)
+
+    resolved_name = default_cv if default_cv and cv_data else None
+    try:
+        resolved_url = url_for('static', filename=f'uploads/users/{user_id}/cvs/{resolved_name}') if resolved_name else None
+    except Exception:
+        resolved_url = None
+
+    basics = cv_data.get('basics', {}) if isinstance(cv_data, dict) else {}
+    resp = {
+        'cv_title': basics.get('label'),
+        'summary': basics.get('summary'),
+        'cv_source': resolved_name,
+        'cv_source_url': resolved_url,
+    }
+    return jsonify(resp)
 
 
 @login_manager.user_loader
@@ -655,7 +800,8 @@ def show_all():
                         continue
     # Charger formations et certifications pour les modales avancées
     try:
-        _cvd = load_cv_data(app.static_folder)
+        # Prefer user's default CV JSON when available (so modales avancées utilisent le bon profil)
+        _cvd = _resolve_user_cv_data(user.id) or load_cv_data(app.static_folder)
         cv_education = [
             {
                 'idx': i,
@@ -774,8 +920,58 @@ def preview_cv_data(id):
         ]
         return sugg
 
+    def _resolve_default_cv_data(user_id: int, default_name: str) -> dict | None:
+        """Tente de charger un CV JSON correspondant au nom fourni dans les uploads utilisateur.
+        Retourne un dict si trouvé, sinon None.
+        """
+        try:
+            user_cvs = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+            if not user_cvs.exists():
+                return None
+            target = user_cvs / default_name
+            # If it's a JSON file, load directly
+            if target.suffix.lower() == '.json' and target.exists():
+                return _json.loads(target.read_text(encoding='utf-8'))
+            # If it's a PDF, try to find a parsed JSON sibling
+            if target.suffix.lower() == '.pdf':
+                # common parsed filename used by import_cv
+                candidate1 = user_cvs / 'cv_linkedin_parsed.json'
+                candidate2 = user_cvs / (target.stem + '.json')
+                for c in (candidate2, candidate1):
+                    if c.exists():
+                        try:
+                            return _json.loads(c.read_text(encoding='utf-8'))
+                        except Exception:
+                            continue
+            return None
+        except Exception:
+            return None
+
     try:
-        cv_data = load_cv_data(app.static_folder)
+        # Determine which CV to use: prefer explicit payload.default_cv, else use user's meta _default if present
+        default_cv = payload.get('default_cv')
+        if not default_cv:
+            # try to read user's cvs_meta.json
+            try:
+                meta_path = Path(app.static_folder) / 'uploads' / 'users' / str(job.user_id) / 'cvs' / 'cvs_meta.json'
+                if meta_path.exists():
+                    meta_obj = _json.loads(meta_path.read_text(encoding='utf-8'))
+                    default_cv = meta_obj.get('_default')
+            except Exception:
+                default_cv = None
+
+        if default_cv:
+            resolved = _resolve_default_cv_data(job.user_id, default_cv)
+            if resolved:
+                cv_data = resolved
+            else:
+                cv_data = load_cv_data(app.static_folder)
+        else:
+            cv_data = load_cv_data(app.static_folder)
+        # expose resolved name for debugging / client
+        # expose which filename was used (for debugging/client display)
+        resolved_name = default_cv if (default_cv and resolved) else (default_cv if default_cv and not resolved else None)
+        app.logger.info(f"preview_cv_data: resolved default_cv='{resolved_name}' for user_id={job.user_id} job_id={id}")
         if github_token:
             suggestions = get_ai_cv_suggestions(
                 job=job, cv_data=cv_data, github_token=github_token,
@@ -806,7 +1002,18 @@ def preview_cv_data(id):
         suggestions['active_section_labels'] = [
             _section_labels[s] for s in (suggestions.get('_active_sections') or []) if s in _section_labels
         ]
-        return jsonify(suggestions)
+        # include cv_source so client can show which CV was used for the preview
+        resp = suggestions.copy() if isinstance(suggestions, dict) else {'suggestions': suggestions}
+        resp['cv_source'] = resolved_name
+        try:
+            if resolved_name:
+                rel = f'uploads/users/{job.user_id}/cvs/{resolved_name}'
+                resp['cv_source_url'] = url_for('static', filename=rel)
+            else:
+                resp['cv_source_url'] = None
+        except Exception:
+            resp['cv_source_url'] = None
+        return jsonify(resp)
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:
@@ -846,8 +1053,46 @@ def save_cv_pdf(id):
             'source': 'fallback',
         }
 
+    def _resolve_default_cv_data(user_id: int, default_name: str) -> dict | None:
+        try:
+            user_cvs = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+            if not user_cvs.exists():
+                return None
+            target = user_cvs / default_name
+            if target.suffix.lower() == '.json' and target.exists():
+                return _json.loads(target.read_text(encoding='utf-8'))
+            if target.suffix.lower() == '.pdf':
+                candidate1 = user_cvs / 'cv_linkedin_parsed.json'
+                candidate2 = user_cvs / (target.stem + '.json')
+                for c in (candidate2, candidate1):
+                    if c.exists():
+                        try:
+                            return _json.loads(c.read_text(encoding='utf-8'))
+                        except Exception:
+                            continue
+            return None
+        except Exception:
+            return None
+
     try:
-        cv_data = load_cv_data(app.static_folder)
+        default_cv = payload.get('default_cv')
+        if not default_cv:
+            try:
+                meta_path = Path(app.static_folder) / 'uploads' / 'users' / str(job.user_id) / 'cvs' / 'cvs_meta.json'
+                if meta_path.exists():
+                    meta_obj = _json.loads(meta_path.read_text(encoding='utf-8'))
+                    default_cv = meta_obj.get('_default')
+            except Exception:
+                default_cv = None
+
+        if default_cv:
+            resolved = _resolve_default_cv_data(job.user_id, default_cv)
+            if resolved:
+                cv_data = resolved
+            else:
+                cv_data = load_cv_data(app.static_folder)
+        else:
+            cv_data = load_cv_data(app.static_folder)
         if github_token:
             suggestions = get_ai_cv_suggestions(
                 job=job, cv_data=cv_data, github_token=github_token,
@@ -870,7 +1115,8 @@ def save_cv_pdf(id):
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:
-        app.logger.error(f'save_cv_pdf error: {exc}')
+        # Log full traceback to help debugging unexpected types inside job/cv fields
+        app.logger.exception('save_cv_pdf error')
         try:
             cv_data = load_cv_data(app.static_folder)
             suggestions = _fallback_suggestions(cv_data, warning=str(exc))
@@ -897,8 +1143,26 @@ def save_cv_pdf(id):
     # URL relative pour téléchargement
     rel_path = f'uploads/users/{owner_id}/generated/{cv_filename}'
     download_url = url_for('static', filename=rel_path)
-    pdf_name = build_cv_pdf_filename(job)
-    return jsonify({'url': download_url, 'filename': pdf_name})
+    try:
+        pdf_name = build_cv_pdf_filename(job)
+    except Exception as e:
+        app.logger.exception(f'build_cv_pdf_filename failed: {e}')
+        # Fallback to a safe filename
+        pdf_name = f'cv_{id}.pdf'
+
+    # expose which filename was used (for debugging/client display)
+    resolved_name = default_cv if (default_cv and resolved) else (default_cv if default_cv and not resolved else None)
+    app.logger.info(f"save_cv_pdf: resolved default_cv='{resolved_name}' for user_id={job.user_id} job_id={id}")
+    try:
+        if resolved_name:
+            rel = f'uploads/users/{job.user_id}/cvs/{resolved_name}'
+            resolved_url = url_for('static', filename=rel)
+        else:
+            resolved_url = None
+    except Exception:
+        resolved_url = None
+
+    return jsonify({'url': download_url, 'filename': pdf_name, 'cv_source': resolved_name, 'cv_source_url': resolved_url})
 
 
 @app.route('/generate_cv_pdf/<int:id>', endpoint='generate_cv_pdf')
@@ -929,7 +1193,9 @@ def generate_cv_pdf(id):
     # Fallback : génération à la volée
     github_token = app.config.get('GITHUB_TOKEN', '')
     try:
-        cv_data = load_cv_data(app.static_folder)
+        # Prefer the connected user's default CV when building ATS keywords so
+        # derived keywords reflect the user's profile instead of the global static/cv.json
+        cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
         if github_token:
             suggestions = get_ai_cv_suggestions(job=job, cv_data=cv_data, github_token=github_token)
         else:
@@ -985,6 +1251,46 @@ def preview_lm_ai(id):
         'publications': '📚 Publications',
     }
     try:
+        # Allow overriding CV data via default_cv property (client may pass the filename stored for the job owner)
+        default_cv = payload.get('default_cv')
+        if not default_cv:
+            try:
+                meta_path = Path(app.static_folder) / 'uploads' / 'users' / str(job.user_id) / 'cvs' / 'cvs_meta.json'
+                if meta_path.exists():
+                    meta_obj = _json.loads(meta_path.read_text(encoding='utf-8'))
+                    default_cv = meta_obj.get('_default')
+            except Exception:
+                default_cv = None
+
+        def _resolve_default_cv_data(user_id: int, default_name: str) -> dict | None:
+            try:
+                user_cvs = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+                if not user_cvs.exists():
+                    return None
+                target = user_cvs / default_name
+                if target.suffix.lower() == '.json' and target.exists():
+                    return _json.loads(target.read_text(encoding='utf-8'))
+                if target.suffix.lower() == '.pdf':
+                    candidate1 = user_cvs / 'cv_linkedin_parsed.json'
+                    candidate2 = user_cvs / (target.stem + '.json')
+                    for c in (candidate2, candidate1):
+                        if c.exists():
+                            try:
+                                return _json.loads(c.read_text(encoding='utf-8'))
+                            except Exception:
+                                continue
+                return None
+            except Exception:
+                return None
+
+        resolved = None
+        if default_cv:
+            resolved = _resolve_default_cv_data(job.user_id, default_cv)
+
+        # expose resolved name for debugging / client
+        resolved_name = default_cv if (default_cv and resolved) else (default_cv if default_cv and not resolved else None)
+        app.logger.info(f"preview_lm_ai: resolved default_cv='{resolved_name}' for user_id={job.user_id} job_id={id}")
+
         text = get_ai_cover_letter_text(
             job=job, github_token=github_token,
             additional_prompt=additional_prompt, include_sections=include_sections,
@@ -994,12 +1300,23 @@ def preview_lm_ai(id):
             selected_references=selected_references,
             selected_projects=selected_projects,
             selected_premium_modules=selected_premium_modules,
+            cv_data=resolved,
         )
-        return jsonify({
+        resp = {
             'text': text,
             'active_section_labels': [_section_labels[s] for s in include_sections if s in _section_labels],
             'active_premium_labels': [_premium_labels[s] for s in selected_premium_modules if s in _premium_labels],
-        })
+            'cv_source': resolved_name,
+        }
+        try:
+            if resolved_name:
+                rel = f'uploads/users/{job.user_id}/cvs/{resolved_name}'
+                resp['cv_source_url'] = url_for('static', filename=rel)
+            else:
+                resp['cv_source_url'] = None
+        except Exception:
+            resp['cv_source_url'] = None
+        return jsonify(resp)
     except Exception as exc:
         app.logger.error(f'preview_lm_ai error: {exc}')
         status_code = 429 if ('429' in str(exc) or 'Too Many Requests' in str(exc)) else 500
@@ -1160,6 +1477,48 @@ def update_account(id):
             with open(orig_path, 'w', encoding='utf-8') as fh:
                 fh.write(_json.dumps(parsed, ensure_ascii=False, indent=2))
 
+        # Handle PDF upload from account page (input name 'cv_pdf')
+        if current.id == user.id and 'cv_pdf' in request.files and request.files['cv_pdf'].filename:
+            fpdf = request.files['cv_pdf']
+            if not fpdf.filename.lower().endswith('.pdf'):
+                flash('Veuillez fournir un fichier PDF.', 'error')
+                return redirect(url_for('update_account', id=user.id))
+            cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id) / 'cvs'
+            cvs_dir.mkdir(parents=True, exist_ok=True)
+            dest = cvs_dir / fpdf.filename
+            try:
+                fpdf.save(str(dest))
+            except Exception as exc:
+                flash(f"Erreur lors de l'enregistrement du PDF : {exc}", 'error')
+                return redirect(url_for('update_account', id=user.id))
+            # update metadata
+            meta_path = cvs_dir / 'cvs_meta.json'
+            try:
+                meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+            except Exception:
+                meta = {}
+            meta.setdefault(fpdf.filename, fpdf.filename)
+            if '_default' not in meta:
+                meta['_default'] = fpdf.filename
+            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+        # Handle profile photo upload (input name 'profile_photo')
+        if current.id == user.id and 'profile_photo' in request.files and request.files['profile_photo'].filename:
+            pf = request.files['profile_photo']
+            # accept common image extensions
+            if not any(pf.filename.lower().endswith(ext) for ext in ('.png', '.jpg', '.jpeg')):
+                flash('Veuillez fournir une image (png/jpg).', 'error')
+                return redirect(url_for('update_account', id=user.id))
+            photo_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id)
+            photo_dir.mkdir(parents=True, exist_ok=True)
+            dest_photo = photo_dir / 'photo.jpg'
+            try:
+                pf.save(str(dest_photo))
+                flash('Photo de profil enregistrée.', 'success')
+            except Exception as exc:
+                app.logger.error(f'Failed to save profile photo for user {user.id}: {exc}')
+                flash(f"Erreur lors de l'enregistrement de la photo : {exc}", 'error')
+                return redirect(url_for('update_account', id=user.id))
+
         db.session.add(user)
         db.session.commit()
         flash('Record was successfully updated')
@@ -1170,7 +1529,624 @@ def update_account(id):
 
     else:
         # Pass current user id so template can hide/share controls
-        return render_template('update_account.html', user=user, current_user_id=current.id)
+        # Also provide list of uploaded CVs and metadata so the template can offer a "CV par défaut" selector
+        cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id) / 'cvs'
+        import json as _json
+        meta = {}
+        files = []
+        if cvs_dir.exists():
+            meta_path = cvs_dir / 'cvs_meta.json'
+            try:
+                meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+            except Exception:
+                meta = {}
+            for p in sorted(cvs_dir.iterdir()):
+                if p.is_file():
+                    files.append({'name': p.name, 'label': meta.get(p.name, p.name)})
+
+        return render_template('update_account.html', user=user, current_user_id=current.id,
+                               cvs_files=files, cvs_meta=meta)
+
+
+@app.route('/import_cv', methods=['POST'])
+@is_connected
+def import_cv():
+    """Endpoint pour importer un CV via upload JSON ou via URL (LinkedIn/FT).
+    - Form fields possibles: 'cv_json' file, 'cv_url' text, 'user_id' hidden.
+    """
+    current = get_user_by_id(session['login_id'])
+    target_id = int(request.form.get('user_id', current.id))
+    if target_id != current.id and not current.is_admin:
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('update_account', id=target_id))
+
+    import json as _json
+
+    # Handle JSON upload
+    if 'cv_json' in request.files and request.files['cv_json'].filename:
+        f = request.files['cv_json']
+        raw = f.read()
+        try:
+            parsed = parse_json_cv(raw)
+        except Exception as exc:
+            # If AJAX, return JSON error
+            if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept','').startswith('application/json'):
+                return jsonify({'ok': False, 'message': f'JSON invalide: {exc}'}), 400
+            flash(f'JSON invalide: {exc}', 'error')
+            return redirect(url_for('update_account', id=target_id))
+        # Save pretty JSON
+        user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(target_id)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        orig_path = user_dir / 'cv_original.json'
+        with open(orig_path, 'w', encoding='utf-8') as fh:
+            import json as _json
+            fh.write(_json.dumps(parsed, ensure_ascii=False, indent=2))
+        # Respond differently for AJAX vs normal form
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept','').startswith('application/json'):
+            return jsonify({'ok': True, 'message': 'CV JSON importé avec succès.'}), 200
+        flash('CV JSON importé avec succès.', 'success')
+        return redirect(url_for('update_account', id=target_id))
+
+    # Handle PDF upload (LinkedIn exported PDF)
+    if 'cv_pdf' in request.files and request.files['cv_pdf'].filename:
+        f = request.files['cv_pdf']
+        filename = f.filename
+        # ensure directory
+        cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(target_id) / 'cvs'
+        cvs_dir.mkdir(parents=True, exist_ok=True)
+        dest = cvs_dir / filename
+        try:
+            f.save(str(dest))
+        except Exception as exc:
+            flash(f"Erreur lors de l'enregistrement du PDF : {exc}", 'error')
+            return redirect(url_for('update_account', id=target_id))
+        # Try to parse LinkedIn PDF into structured JSON using tools.cv_tools
+        parse_debug_msgs = []
+        try:
+            from tools.cv_tools import parse_linkedin_pdf_to_json
+            parsed_out = cvs_dir / 'cv_linkedin_parsed.json'
+            msg = f'Attempting parse_linkedin_pdf_to_json for {dest} -> {parsed_out}'
+            app.logger.info(msg)
+            parse_debug_msgs.append(msg)
+            try:
+                parsed_ok = parse_linkedin_pdf_to_json(dest, parsed_out)
+            except Exception as e:
+                app.logger.exception(f'parse_linkedin_pdf_to_json raised: {e}')
+                parse_debug_msgs.append(f'parse_linkedin_pdf_to_json raised: {e}')
+                parsed_ok = False
+
+            # Fallback: if parser returned False or did not create file, try the bundled linkedin-resume-parser CLI
+            if not parsed_ok or not parsed_out.exists():
+                try:
+                    import subprocess, sys
+                    msg = 'Primary parser failed or produced no output — trying linkedin-resume-parser CLI fallback'
+                    app.logger.info(msg)
+                    parse_debug_msgs.append(msg)
+                    # Call the CLI module provided in linkedin-resume-parser package
+                    cmd = [sys.executable, '-m', 'linkedin_resume_parser.cli', str(dest), '-o', str(parsed_out)]
+                    app.logger.debug(f'Running fallback command: {cmd}')
+                    parse_debug_msgs.append(f'Running fallback command: {cmd}')
+                    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+                    app.logger.debug(f'fallback stdout: {proc.stdout[:300]}')
+                    app.logger.debug(f'fallback stderr: {proc.stderr[:300]}')
+                    parse_debug_msgs.append(f'fallback stdout: {proc.stdout[:300]}')
+                    parse_debug_msgs.append(f'fallback stderr: {proc.stderr[:300]}')
+                    parsed_ok = parsed_out.exists()
+                    # If subprocess fallback failed due to module not found (module not installed in venv),
+                    # try an in-process fallback using the local package present in the workspace.
+                    if not parsed_ok and b"ModuleNotFoundError" in (proc.stderr or b""):
+                        try:
+                            app.logger.info('Subprocess fallback reported ModuleNotFoundError — attempting in-process parser import')
+                            parse_debug_msgs.append('Subprocess fallback ModuleNotFoundError — trying in-process import')
+                            # Attempt to import the local workspace package by adding its parent dir to sys.path
+                            import importlib, sys
+                            pkg_path = Path(__file__).parent / 'linkedin-resume-parser'
+                            if str(pkg_path) not in sys.path:
+                                sys.path.insert(0, str(pkg_path))
+                            # Now import the parser module
+                            lrp = importlib.import_module('linkedin_resume_parser.parser')
+                            resume_dict = lrp.parse_pdf(str(dest))
+                            # write JSON
+                            parsed_out.write_text(_json.dumps(resume_dict, ensure_ascii=False, indent=2), encoding='utf-8')
+                            parsed_ok = parsed_out.exists()
+                            parse_debug_msgs.append('In-process parser produced output' if parsed_ok else 'In-process parser produced no output')
+                        except Exception as e:
+                            app.logger.exception(f'In-process linkedin parser failed: {e}')
+                            parse_debug_msgs.append(f'In-process linkedin parser failed: {e}')
+                            parsed_ok = False
+                except Exception as e:
+                    app.logger.exception(f'Fallback CLI parse failed: {e}')
+                    parse_debug_msgs.append(f'Fallback CLI parse failed: {e}')
+                    parsed_ok = False
+
+            if parsed_ok and parsed_out.exists():
+                parsed_name = parsed_out.name
+            else:
+                parsed_name = None
+        except Exception:
+            app.logger.exception('Unexpected error while attempting LinkedIn PDF parse')
+            parse_debug_msgs.append('Unexpected error while attempting LinkedIn PDF parse')
+            parsed_name = None
+
+        # update metadata file
+        meta_path = cvs_dir / 'cvs_meta.json'
+        try:
+            meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+        except Exception:
+            meta = {}
+        meta.setdefault(filename, filename)
+        # register parsed json if available
+        if parsed_name:
+            meta.setdefault(parsed_name, parsed_name)
+        if '_default' not in meta:
+            # prefer parsed JSON as default, else the uploaded PDF
+            meta['_default'] = parsed_name or filename
+        meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+        # If this was an AJAX/fetch request, return JSON so the frontend can handle it
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept','').startswith('application/json'):
+            return jsonify({'ok': True, 'message': 'CV PDF importé avec succès.', 'pdf': filename, 'parsed_json': parsed_name, 'parse_log': parse_debug_msgs}), 200
+        flash('CV PDF importé avec succès.', 'success')
+        return redirect(url_for('update_account', id=target_id))
+
+    # Handle URL import
+    cv_url = request.form.get('cv_url', '').strip()
+    if cv_url:
+        # basic source detection
+        try:
+            if 'linkedin.com' in cv_url:
+                cv = fetch_linkedin_profile(cv_url)
+            else:
+                # try to fetch raw JSON
+                import requests
+                r = requests.get(cv_url, timeout=5)
+                r.raise_for_status()
+                cv = parse_json_cv(r.content)
+        except Exception as exc:
+            flash(f'Import via URL échoué : {exc}', 'error')
+            return redirect(url_for('update_account', id=target_id))
+        # persist minimal cv dict as JSON
+        user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(target_id)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        orig_path = user_dir / 'cv_original.json'
+        with open(orig_path, 'w', encoding='utf-8') as fh:
+            import json as _json
+            fh.write(_json.dumps(cv, ensure_ascii=False, indent=2))
+        flash('CV importé depuis URL avec succès.', 'success')
+        return redirect(url_for('update_account', id=target_id))
+
+    flash('Aucun fichier ni URL fourni pour l\'import.', 'error')
+    return redirect(url_for('update_account', id=target_id))
+
+
+@app.route('/manage_cvs/<int:user_id>', methods=['POST'])
+@is_connected
+def manage_cvs(user_id):
+    """Rename, set default or delete uploaded CVs (PDF or JSON)."""
+    current = get_user_by_id(session['login_id'])
+    if user_id != current.id and not current.is_admin:
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('update_account', id=user_id))
+
+    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    meta_path = user_dir / 'cvs_meta.json'
+    if not user_dir.exists():
+        flash('Aucun CV trouvé.', 'error')
+        return redirect(url_for('update_account', id=user_id))
+
+    # load metadata
+    import json as _json
+    try:
+        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+    except Exception:
+        meta = {}
+
+    # actions: rename, set_default, delete
+    action = request.form.get('action')
+    file = request.form.get('file')
+    if not file:
+        flash('Fichier non spécifié', 'error')
+        return redirect(url_for('update_account', id=user_id))
+
+    file_path = user_dir / file
+    if action == 'delete':
+        try:
+            if file_path.exists():
+                file_path.unlink()
+            if file in meta:
+                del meta[file]
+            # if default was this, remove
+            if meta.get('_default') == file:
+                meta.pop('_default', None)
+            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+            flash('Fichier supprimé', 'success')
+        except Exception as e:
+            flash(f'Erreur suppression: {e}', 'error')
+    elif action == 'set_default':
+        meta['_default'] = file
+        meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+        flash('CV par défaut mis à jour', 'success')
+    elif action == 'rename':
+        newname = request.form.get('newname', '').strip()
+        if not newname:
+            flash('Nouveau nom vide', 'error')
+        else:
+            meta[file] = newname
+            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+            flash('Nom mis à jour', 'success')
+    else:
+        flash('Action inconnue', 'error')
+
+    return redirect(url_for('update_account', id=user_id))
+
+
+@app.route('/edit_cv/<int:user_id>', methods=['GET', 'POST'])
+@is_connected
+def edit_cv(user_id):
+    current = get_user_by_id(session['login_id'])
+    if user_id != current.id and not current.is_admin:
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('show_all'))
+    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id)
+    orig_path = user_dir / 'cv_original.json'
+    if request.method == 'POST':
+        content = request.form.get('cv_text', '').strip()
+        try:
+            import json as _json
+            parsed = _json.loads(content)
+        except Exception as exc:
+            flash(f'JSON invalide : {exc}', 'error')
+            return render_template('edit_cv.html', user_id=user_id, cv_text=content)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        with open(orig_path, 'w', encoding='utf-8') as fh:
+            fh.write(_json.dumps(parsed, ensure_ascii=False, indent=2))
+        flash('CV sauvegardé.', 'success')
+        return redirect(url_for('update_account', id=user_id))
+    else:
+        if orig_path.exists():
+            text = orig_path.read_text(encoding='utf-8')
+        else:
+            text = ''
+        return render_template('edit_cv.html', user_id=user_id, cv_text=text)
+
+
+@app.route('/manage_cvs_view/<int:user_id>', methods=['GET'])
+@is_connected
+def manage_cvs_view(user_id):
+    """Affiche l'interface de gestion des CV (PDF + JSON) et propose la fusion."""
+    current = get_user_by_id(session['login_id'])
+    if user_id != current.id and not current.is_admin:
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('update_account', id=user_id))
+
+    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    if not user_dir.exists():
+        flash('Aucun CV trouvé pour cet utilisateur.', 'info')
+        return redirect(url_for('update_account', id=user_id))
+
+    # load metadata
+    import json as _json
+    meta_path = user_dir / 'cvs_meta.json'
+    try:
+        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+    except Exception:
+        meta = {}
+
+    files = []
+    for p in sorted(user_dir.iterdir()):
+        if p.is_file():
+            files.append({
+                'name': p.name,
+                'path': f'uploads/users/{user_id}/cvs/{p.name}',
+                'is_json': p.suffix.lower() == '.json',
+                'label': meta.get(p.name, p.name),
+            })
+
+    # Build list of JSON files (for merging) but only originals (LinkedIn export or GitConnected)
+    def _is_original_json(name: str) -> bool:
+        ln = name.lower()
+        if ln.startswith('cv_merged'):
+            return False
+        # heuristics: linkedin parsed exports, gitconnected, original resume files
+        if 'linkedin' in ln or 'gitconnected' in ln or ln.endswith('_resume.json') or ln == 'cv_original.json':
+            return True
+        # also accept filenames that contain 'profile' + 'resume'
+        if 'resume' in ln or 'profile' in ln:
+            return True
+        return False
+
+    json_files = [f for f in files if f['is_json'] and _is_original_json(f['name'])]
+
+    # Sections to propose selection for
+    sections = ['basics', 'work', 'education', 'skills', 'projects', 'certificates', 'references', 'languages', 'volunteer']
+
+    # Validate that listed json_files are valid JSON, annotate a preview snippet
+    # and build detailed per-section items for granular selection in the template
+    import json as _json
+    json_details = {}
+    for jf in list(json_files):
+        try:
+            p = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs' / jf['name']
+            txt = p.read_text(encoding='utf-8')
+            parsed = _json.loads(txt)
+            # preview: for basics or first keys
+            preview = ''
+            if isinstance(parsed.get('basics'), dict):
+                preview = parsed.get('basics', {}).get('label') or parsed.get('basics', {}).get('name','')
+            if not preview:
+                for k in ('work','education','skills'):
+                    v = parsed.get(k)
+                    if v:
+                        if isinstance(v, list) and len(v)>0:
+                            first = v[0]
+                            if isinstance(first, dict):
+                                preview = first.get('position') or first.get('name') or str(first)
+                            else:
+                                preview = str(first)
+                            break
+            jf['preview'] = preview
+
+            # Build per-section item lists for granular selection
+            details = {}
+            for sec in ('work','education','skills','projects','certificates','references'):
+                items = parsed.get(sec) or []
+                normalized = []
+                if isinstance(items, list):
+                    for i, it in enumerate(items):
+                        if isinstance(it, dict):
+                            label = it.get('position') or it.get('name') or it.get('institution') or it.get('title') or str(it)
+                        else:
+                            label = str(it)
+                        normalized.append({'idx': i, 'label': label})
+                details[sec] = normalized
+            json_details[jf['name']] = details
+        except Exception:
+            json_files.remove(jf)
+
+    return render_template('manage_cvs.html', user=get_user_by_id(session['login_id']),
+                           files=files, json_files=json_files, sections=sections, user_id=user_id,
+                           json_details=json_details)
+
+
+@app.route('/merge_cvs_editor/<int:user_id>', methods=['GET', 'POST'])
+@is_connected
+def merge_cvs_editor(user_id):
+    """Advanced merge editor: compare two source JSON side-by-side and pick items per section.
+    - GET: show selector to choose left/right source (defaults to first two originals)
+    - POST: receives picks and performs merge similarly to /merge_cvs
+    """
+    current = get_user_by_id(session['login_id'])
+    if user_id != current.id and not current.is_admin:
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    if not user_dir.exists():
+        flash('Aucun CV trouvé pour cet utilisateur.', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    # collect original json files
+    def is_orig(n: str) -> bool:
+        ln = n.lower()
+        return (not ln.startswith('cv_merged')) and ('linkedin' in ln or 'gitconnected' in ln or ln.endswith('_resume.json') or ln=='cv_original.json' or 'resume' in ln or 'profile' in ln)
+
+    json_paths = [p for p in sorted(user_dir.iterdir()) if p.is_file() and p.suffix.lower()=='.json' and is_orig(p.name)]
+    json_names = [p.name for p in json_paths]
+
+    sections = ['work','education','skills','projects','certificates','references']
+
+    if request.method == 'GET':
+        left = request.args.get('left') or (json_names[0] if len(json_names)>0 else None)
+        right = request.args.get('right') or (json_names[1] if len(json_names)>1 else None)
+        # load details for each
+        import json as _json
+        left_details = {}
+        right_details = {}
+        for p in json_paths:
+            if p.name==left:
+                left_details = _json.loads(p.read_text(encoding='utf-8'))
+            if p.name==right:
+                right_details = _json.loads(p.read_text(encoding='utf-8'))
+        return render_template('merge_cvs_editor.html', user=get_user_by_id(session['login_id']), user_id=user_id,
+                               json_names=json_names, left=left, right=right, sections=sections,
+                               left_details=left_details, right_details=right_details)
+
+    # POST: perform merge from selections
+    # reuse merge_cvs behavior: accept section_* for whole-section replacement and pick__{filename}__{section}[] for granular
+    selections = {}
+    for key, val in request.form.items():
+        if key.startswith('section_') and val:
+            selections[key.replace('section_','')] = val
+
+    # perform base merge using existing utility
+    json_paths_all = [p for p in sorted(user_dir.iterdir()) if p.is_file() and p.suffix.lower()=='.json']
+    try:
+        merged = merge_cv_jsons(json_paths_all, selections)
+    except Exception as exc:
+        app.logger.error(f'merge_cvs_editor error: {exc}')
+        flash(f'Erreur lors de la fusion: {exc}', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    # then apply granular picks similar to merge_cvs
+    import json as _json
+    for sec in sections:
+        combined = []
+        for p in json_paths_all:
+            fname = p.name
+            field = f'pick__{fname}__{sec}[]'
+            picks = request.form.getlist(field)
+            if picks:
+                try:
+                    src = _json.loads(p.read_text(encoding='utf-8'))
+                    items = src.get(sec) or []
+                    for idx in picks:
+                        try:
+                            i = int(idx)
+                            if 0 <= i < len(items):
+                                combined.append(items[i])
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+        if combined:
+            seen = set()
+            uniq = []
+            for it in combined:
+                key = _json.dumps(it, sort_keys=True)
+                if key not in seen:
+                    seen.add(key)
+                    uniq.append(it)
+            merged[sec] = uniq
+
+    # Save merged
+    import time
+    fname = f'cv_merged_editor_{int(time.time())}.json'
+    dest = user_dir / fname
+    try:
+        dest.write_text(_json.dumps(merged, ensure_ascii=False, indent=2), encoding='utf-8')
+    except Exception as exc:
+        app.logger.error(f'Failed to write merged CV editor: {exc}')
+        flash(f'Impossible de sauvegarder le CV fusionné: {exc}', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    # update meta
+    meta_path = user_dir / 'cvs_meta.json'
+    try:
+        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+    except Exception:
+        meta = {}
+    meta.setdefault(fname, fname)
+    meta['_default'] = fname
+    meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    flash(f'CV fusionné créé: {fname}', 'success')
+    return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+
+@app.route('/merge_cvs/<int:user_id>', methods=['POST'])
+@is_connected
+def merge_cvs(user_id):
+    """Exécute la fusion des CV JSON selon les sélections envoyées par le formulaire."""
+    current = get_user_by_id(session['login_id'])
+    if user_id != current.id and not current.is_admin:
+        return jsonify({'error': 'Action non autorisée.'}), 403
+
+    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    if not user_dir.exists():
+        flash('Aucun CV JSON trouvé.', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    # Collect JSON files available
+    json_paths = [p for p in sorted(user_dir.iterdir()) if p.is_file() and p.suffix.lower() == '.json']
+    if not json_paths:
+        flash('Aucun fichier JSON à fusionner.', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    # Build selections per section from form (e.g. form fields named section_basics, section_work, ...)
+    selections = {}
+    for key, val in request.form.items():
+        if key.startswith('section_') and val:
+            section = key.replace('section_', '')
+            selections[section] = val
+
+    # Ensure selections reference allowed original files only
+    def _is_original_json_local(name: str) -> bool:
+        ln = name.lower()
+        if ln.startswith('cv_merged'):
+            return False
+        if 'linkedin' in ln or 'gitconnected' in ln or ln.endswith('_resume.json') or ln == 'cv_original.json':
+            return True
+        if 'resume' in ln or 'profile' in ln:
+            return True
+        return False
+
+    allowed = {p.name for p in json_paths if _is_original_json_local(p.name)}
+    for sec, fname in list(selections.items()):
+        if fname and fname not in allowed:
+            flash(f'Fichier sélectionné non autorisé pour la fusion: {fname}', 'error')
+            return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    # call merge util
+    try:
+        merged = merge_cv_jsons(json_paths, selections)
+    except Exception as exc:
+        app.logger.error(f'merge_cvs error: {exc}')
+        flash(f'Erreur lors de la fusion: {exc}', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    # Handle granular picks: for each sec and filename, gather picked indices
+    # Expected form field names: pick__{filename}__{section}[] -> list of indices as strings
+    granular_sections = ['work','education','skills','projects','certificates','references']
+    import json as _json
+    for sec in granular_sections:
+        # collect per-file picks
+        combined = []
+        for p in json_paths:
+            fname = p.name
+            field = f'pick__{fname}__{sec}[]'
+            picks = request.form.getlist(field)
+            if picks:
+                # load source JSON
+                try:
+                    src = _json.loads(p.read_text(encoding='utf-8'))
+                    items = src.get(sec) or []
+                    for idx in picks:
+                        try:
+                            i = int(idx)
+                            if 0 <= i < len(items):
+                                combined.append(items[i])
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+        if combined:
+            # deduplicate simple: keep first occurrence by stringified content
+            seen = set()
+            uniq = []
+            for it in combined:
+                key = _json.dumps(it, sort_keys=True)
+                if key not in seen:
+                    seen.add(key)
+                    uniq.append(it)
+            merged[sec] = uniq
+
+    # Save merged as new JSON file
+    import json as _json, time
+    fname = f'cv_merged_{int(time.time())}.json'
+    dest = user_dir / fname
+    try:
+        dest.write_text(_json.dumps(merged, ensure_ascii=False, indent=2), encoding='utf-8')
+    except Exception as exc:
+        app.logger.error(f'Failed to write merged CV: {exc}')
+        flash(f'Impossible de sauvegarder le CV fusionné: {exc}', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    # Try to generate a PDF for convenience and save alongside JSON
+    try:
+        pdf_bytes = generate_tailored_cv_pdf_bytes(merged)
+        pdf_name = fname.replace('.json', '.pdf')
+        pdf_path = user_dir / pdf_name
+        with open(pdf_path, 'wb') as pf:
+            pf.write(pdf_bytes)
+    except Exception as exc:
+        app.logger.debug(f'PDF generation skipped or failed for merged CV: {exc}')
+
+    # update metadata
+    meta_path = user_dir / 'cvs_meta.json'
+    try:
+        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+    except Exception:
+        meta = {}
+    meta.setdefault(fname, fname)
+    # if pdf was created, set it as default preview
+    if 'pdf_name' in locals():
+        meta.setdefault(pdf_name, pdf_name)
+        meta['_default'] = pdf_name
+    else:
+        meta['_default'] = fname  # set merged as default by convenience
+    meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    flash(f'CV fusionné créé: {fname}', 'success')
+    return redirect(url_for('manage_cvs_view', user_id=user_id))
 
 
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
@@ -1353,13 +2329,48 @@ def _ft_ats_prefix(ats_mode: bool) -> str:
 def france_travail():
     user = get_user_by_id(session['login_id'])
     last_extraction = AppSetting.get('ft_last_extraction')
+    # Construire dynamiquement la liste de mots-clés ATS à partir du CV de l'utilisateur
+    try:
+        # Prefer the connected user's default CV when building ATS keywords for the edit page
+        cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
+        derived = []
+        # titre / label du CV
+        label = (cv_data.get('basics', {}) or {}).get('label')
+        if label:
+            derived.append(label)
+        # noms de compétences (skills)
+        for s in (cv_data.get('skills', []) or [])[:8]:
+            name = s.get('name') if isinstance(s, dict) else str(s)
+            if name:
+                derived.append(name)
+        # postes récents
+        for w in (cv_data.get('work', []) or [])[:6]:
+            pos = (w.get('position') or w.get('summary') or '')
+            if pos:
+                derived.append(pos)
+    except Exception:
+        derived = []
+
+    # Combiner les mots-clés dérivés et la liste statique tout en évitant les doublons
+    seen = set()
+    ats_list = []
+    for kw in (derived + ATS_KEYWORDS_PROFILE):
+        if not kw:
+            continue
+        k = kw.strip()
+        if k and k not in seen:
+            ats_list.append(k)
+            seen.add(k)
+        if len(ats_list) >= 16:
+            break
+
     return render_template(
         'france_travail.html',
         user=user,
         contract_types=CONTRACT_TYPES,
         work_modes=WORK_MODES,
         departments=DEPARTMENTS,
-        ats_keywords=ATS_KEYWORDS_PROFILE,
+        ats_keywords=ats_list,
         last_extraction=last_extraction,
         default_dept=app.config.get('FT_DEFAULT_DEPT', '06'),
     )
@@ -1390,13 +2401,44 @@ def france_travail_edit_page(search_id):
         'edit_search_id': ft_search.id,
         'search_info': ft_search.search_info,
     }
+    # Même logique que la page principale : construire une liste ATS dérivée du CV
+    try:
+        # Prefer the connected user's default CV when building ATS keywords for the edit page
+        cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
+        derived = []
+        label = (cv_data.get('basics', {}) or {}).get('label')
+        if label:
+            derived.append(label)
+        for s in (cv_data.get('skills', []) or [])[:8]:
+            name = s.get('name') if isinstance(s, dict) else str(s)
+            if name:
+                derived.append(name)
+        for w in (cv_data.get('work', []) or [])[:6]:
+            pos = (w.get('position') or w.get('summary') or '')
+            if pos:
+                derived.append(pos)
+    except Exception:
+        derived = []
+
+    seen = set()
+    ats_list = []
+    for kw in (derived + ATS_KEYWORDS_PROFILE):
+        if not kw:
+            continue
+        k = kw.strip()
+        if k and k not in seen:
+            ats_list.append(k)
+            seen.add(k)
+        if len(ats_list) >= 16:
+            break
+
     return render_template(
         'france_travail.html',
         user=user,
         contract_types=CONTRACT_TYPES,
         work_modes=WORK_MODES,
         departments=DEPARTMENTS,
-        ats_keywords=ATS_KEYWORDS_PROFILE,
+        ats_keywords=ats_list,
         last_extraction=AppSetting.get('ft_last_extraction'),
         default_dept=app.config.get('FT_DEFAULT_DEPT', '06'),
         **prefill,
@@ -1423,7 +2465,8 @@ def france_travail_search():
 
     try:
         if mode == 'auto':
-            cv_data = load_cv_data(app.static_folder)
+            # Prefer the connected user's default CV data for automatic searches
+            cv_data = _resolve_user_cv_data(user.id) or load_cv_data(app.static_folder)
             min_creation_date = None
             reset_flag = request.form.get('reset_flag') == 'on'
             if not reset_flag:
@@ -1712,7 +2755,7 @@ def ft_search_refresh(search_id):
     p = ft_search.params
     try:
         if p.get('mode') == 'auto':
-            cv_data = load_cv_data(app.static_folder)
+            cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
             offers = search_auto_from_cv(
                 client_id=client_id, client_secret=client_secret,
                 cv_data=cv_data, departement=p.get('departement'),

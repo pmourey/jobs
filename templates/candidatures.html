@@ -205,8 +205,8 @@
 		modal.show();
 	}
 
-	async function loadCvPreview(jobId) {
-		const body = document.getElementById('cvModalBody');
+				async function loadCvPreview(jobId) {
+						const body = document.getElementById('cvModalBody');
 		const retryBtn = document.getElementById('cvRetryBtn');
 		const insertBtn = document.getElementById('cvInsertBtn');
 		const dlBtn = document.getElementById('cvDownloadBtn');
@@ -219,11 +219,51 @@
 		retryBtn.disabled = true;
 
 		try {
+			// Show which CV source will be used in the modal (default user CV if present)
+			// Ensure an element exists in the modal body to display this info
+			if (!document.getElementById('cvDefaultInfo')) {
+				const infoLine = document.createElement('div');
+				infoLine.id = 'cvDefaultInfo';
+				infoLine.className = 'small text-muted mb-2';
+				body.parentNode.insertBefore(infoLine, body);
+			}
+
+			// Fetch user's default CV metadata and include it in the IA request so the server
+			// can use the user's default (parsed JSON or PDF) when generating suggestions.
+			let defaultCv = null;
+			let ddata = null;
+			try {
+				const dresp = await fetch('/user_cv_default', { method: 'GET' });
+				if (dresp.ok) {
+					ddata = await dresp.json();
+					defaultCv = ddata.default || null;
+				}
+			} catch (e) {
+				// ignore, fallback handled server-side
+			}
+
+			// Update the small info line to show the CV filename or fallback notice
+			const infoElt = document.getElementById('cvDefaultInfo');
+			if (infoElt) {
+				if (ddata && ddata.default_url) {
+					infoElt.innerHTML = 'CV utilisé : <a href="' + ddata.default_url + '" target="_blank">' + escapeHtml(ddata.default) + '</a>';
+				} else if (defaultCv && typeof defaultCv === 'string') {
+					const url = '/static/uploads/users/{{ user.id }}/cvs/' + encodeURIComponent(defaultCv);
+					infoElt.innerHTML = 'CV utilisé : <a href="' + url + '" target="_blank">' + escapeHtml(defaultCv) + '</a>';
+				} else if (defaultCv && defaultCv.filename) {
+					// backward-compatible object form
+					const url = defaultCv.url || ('/static/uploads/' + defaultCv.filename);
+					infoElt.innerHTML = 'CV utilisé : <a href="' + url + '" target="_blank">' + escapeHtml(defaultCv.filename) + '</a>';
+				} else {
+					infoElt.textContent = 'CV utilisé : profil parsé intégré (fallback si aucun CV uploadé)';
+				}
+			}
 			const resp = await fetch('/preview_cv_data/' + jobId, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					additional_prompt: additionalPrompt,
+					default_cv: defaultCv,
 					ats_mode: document.getElementById('cvAtsMode') ? document.getElementById('cvAtsMode').checked : false,
 					include_sections: _getCheckedSections('cv'),
 					selected_education: _getSelectedEducation('cv'),
@@ -388,11 +428,45 @@
 		retryBtn.disabled = true;
 
 		try {
+			// Same behaviour as CV: include user's default CV (parsed JSON / pdf) so LM IA can reference it
+			// Show a small info line about which CV will be used
+			if (!document.getElementById('lmDefaultInfo')) {
+				const infoLine = document.createElement('div');
+				infoLine.id = 'lmDefaultInfo';
+				infoLine.className = 'small text-muted mb-2';
+				body.parentNode.insertBefore(infoLine, body);
+			}
+			let defaultCv = null;
+			let ddata = null;
+			try {
+				const dresp = await fetch('/user_cv_default', { method: 'GET' });
+				if (dresp.ok) {
+					ddata = await dresp.json();
+					defaultCv = ddata.default || null;
+				}
+			} catch (e) {
+				// ignore
+			}
+			const infoElt = document.getElementById('lmDefaultInfo');
+			if (infoElt) {
+				if (ddata && ddata.default_url) {
+					infoElt.innerHTML = 'CV utilisé : <a href="' + ddata.default_url + '" target="_blank">' + escapeHtml(ddata.default) + '</a>';
+				} else if (defaultCv && typeof defaultCv === 'string') {
+					const url = '/static/uploads/users/{{ user.id }}/cvs/' + encodeURIComponent(defaultCv);
+					infoElt.innerHTML = 'CV utilisé : <a href="' + url + '" target="_blank">' + escapeHtml(defaultCv) + '</a>';
+				} else if (defaultCv && defaultCv.filename) {
+					const url = defaultCv.url || ('/static/uploads/' + defaultCv.filename);
+					infoElt.innerHTML = 'CV utilisé : <a href="' + url + '" target="_blank">' + escapeHtml(defaultCv.filename) + '</a>';
+				} else {
+					infoElt.textContent = 'CV utilisé : profil parsé intégré (fallback si aucun CV uploadé)';
+				}
+			}
 			const resp = await fetch('/preview_lm_ai/' + jobId, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					additional_prompt: additionalPrompt,
+					default_cv: defaultCv,
 					ats_mode: document.getElementById('lmAtsMode') ? document.getElementById('lmAtsMode').checked : false,
 					include_sections: _getCheckedSections('lm'),
 					selected_education: _getSelectedEducation('lm'),
@@ -602,7 +676,7 @@
 								class="btn btn-sm btn-outline-secondary"
 								title="Générer la lettre de motivation en PDF">PDF</a>
 							<button type="button" class="btn btn-sm btn-outline-success" title="Générer LM par IA"
-								onclick="openLmAiModal({{ job.id }}, '{{ job.name|e }}', '{{ job.company|e }}')">
+								onclick='openLmAiModal({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'>
 								🤖 LM
 							</button>
 						</div>
@@ -611,7 +685,7 @@
 						<div class="d-flex align-items-center gap-1 flex-wrap">
 							<button type="button" class="btn btn-sm btn-outline-primary"
 								title="Générer CV personnalisé IA"
-								onclick="showCVPreview({{ job.id }}, '{{ job.name|e }}', '{{ job.company|e }}')">
+								onclick='showCVPreview({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'>
 								🤖 CV
 							</button>
 							{% if cv_pdf_urls.get(job.id) %}
@@ -680,10 +754,10 @@
 							class="btn btn-sm btn-outline-secondary py-0 ms-1"
 							title="Générer la lettre de motivation en PDF">LM PDF</a>
 						<button type="button" class="btn btn-sm btn-outline-success py-0 ms-1"
-							onclick="openLmAiModal({{ job.id }}, '{{ job.name|e }}', '{{ job.company|e }}')"
+							onclick='openLmAiModal({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'
 							title="Générer LM par IA">🤖 LM</button>
 						<button type="button" class="btn btn-sm btn-outline-primary py-0 ms-1"
-							onclick="showCVPreview({{ job.id }}, '{{ job.name|e }}', '{{ job.company|e }}')"
+							onclick='showCVPreview({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'
 							title="Générer CV personnalisé IA">🤖 CV</button>
 						{% if cv_pdf_urls.get(job.id) %}
 						<a href="{{ cv_pdf_urls.get(job.id) }}" class="btn btn-sm btn-success py-0 ms-1"
