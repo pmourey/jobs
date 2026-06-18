@@ -615,6 +615,19 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
             return ''
         if isinstance(v, str):
             return v
+        # For dict-like address/location values, try to build a readable string
+        if isinstance(v, dict):
+            for k in ('address', 'formatted', 'streetAddress', 'street_address'):
+                if k in v and v[k]:
+                    return str(v[k])
+            parts = [p for p in (v.get('street'), v.get('postalCode') or v.get('postal_code') or v.get('postal'), v.get('city') or v.get('locality') or v.get('town'), v.get('region')) if p]
+            if parts:
+                return ', '.join(map(str, parts))
+            try:
+                import json as _json
+                return _json.dumps(v, ensure_ascii=False)
+            except Exception:
+                return str(v)
         try:
             import json as _json
             return _json.dumps(v, ensure_ascii=False)
@@ -623,9 +636,49 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
 
     basics = cv_data.get('basics', {}) if isinstance(cv_data, dict) else {}
     SENDER_NAME = _safe_str(basics.get('name')) or 'PHILIPPE MOUREY'
-    # 'location' field may be composite; prefer 'address' like field or fallback to provided 'location'
-    SENDER_STREET = _safe_str(basics.get('location') or basics.get('address')) or '1880, route de Saint Jeannet'
-    SENDER_CITY = _safe_str(basics.get('city')) or '06700 Saint Laurent du Var'
+    # 'location' or 'address' may be composite objects. Extract street-like and city-like parts
+    def _extract_street_city(v):
+        if not v:
+            return ('', '')
+        if isinstance(v, str):
+            return (v, '')
+        if isinstance(v, dict):
+            # try common keys for street/address and city/postal
+            street_keys = ('streetAddress', 'street_address', 'street', 'address', 'formatted')
+            city_keys = ('city', 'locality', 'town', 'region', 'postalCode', 'postal_code', 'postal')
+            street = ''
+            city = ''
+            for k in street_keys:
+                if k in v and v.get(k):
+                    street = v.get(k)
+                    break
+            # compose city with postal if available
+            city_parts = []
+            for k in ('postalCode', 'postal_code', 'postal'):
+                if k in v and v.get(k):
+                    city_parts.append(str(v.get(k)))
+            for k in ('city', 'locality', 'town', 'region'):
+                if k in v and v.get(k):
+                    city_parts.append(str(v.get(k)))
+                    break
+            city = ', '.join(city_parts).strip()
+            return (_safe_str(street) or '', _safe_str(city) or '')
+        # list or other
+        try:
+            return (' '.join(map(str, v)), '')
+        except Exception:
+            return (str(v), '')
+
+    addr_src = basics.get('address') or basics.get('location')
+    street_val, city_val = _extract_street_city(addr_src)
+    # Build a single address line and avoid duplicating city if already included
+    addr_str = _safe_str(basics.get('address') or basics.get('location'))
+    SENDER_STREET = street_val or (addr_str if addr_str else '1880, route de Saint Jeannet')
+    # If addr_str already contains the city substring, avoid repeating it
+    if city_val and addr_str and str(city_val).strip() and str(city_val).strip() in addr_str:
+        SENDER_CITY = ''
+    else:
+        SENDER_CITY = city_val or _safe_str(basics.get('city')) or '06700 Saint Laurent du Var'
     SENDER_PHONE = _safe_str(basics.get('phone')) or '06 89 15 08 56'
     SENDER_EMAIL = _safe_str(basics.get('email')) or 'philippe.mourey@gmail.com'
     PHOTO_WIDTH = 2.5 * cm

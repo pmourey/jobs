@@ -371,9 +371,14 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
             # common fields
             for k in ('address', 'formatted', 'streetAddress', 'street_address'):
                 if k in v and v[k]:
-                    return v[k]
-            # fallback: join simple parts
-            parts = [str(p) for p in (v.get('street'), v.get('city'), v.get('postalCode')) if p]
+                    return str(v[k])
+            # fallback: join simple parts (street, postal, city, region)
+            parts = [str(p) for p in (
+                v.get('street'),
+                v.get('postalCode') or v.get('postal_code') or v.get('postal'),
+                v.get('city') or v.get('locality') or v.get('town'),
+                v.get('region')
+            ) if p]
             if parts:
                 return ', '.join(parts)
             try:
@@ -412,9 +417,44 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
     except Exception:
         basics = {}
 
-    SENDER_NAME    = _safe_str(basics.get('name')) or (author or 'PHILIPPE MOUREY')
-    SENDER_STREET  = _address_str(basics.get('address') or basics.get('location')) or '1880, route de Saint Jeannet'
-    SENDER_CITY    = _safe_str(basics.get('city')) or '06700 Saint Laurent du Var'
+    SENDER_NAME = _safe_str(basics.get('name')) or (author or 'PHILIPPE MOUREY')
+    addr_str = _address_str(basics.get('address') or basics.get('location'))
+    SENDER_STREET = addr_str or '1880, route de Saint Jeannet'
+    # Avoid duplicating the city when it is already included in the address string
+    city_val = _safe_str(basics.get('city'))
+    def _norm(s: str) -> str:
+        return re.sub(r'[^0-9a-zA-Z]+', '', s or '').strip().lower()
+
+    duplicate_city = False
+    try:
+        # If we have an address string and no explicit city field, prefer the address and don't add the fallback
+        if (not city_val) and addr_str:
+            duplicate_city = True
+        elif city_val and addr_str:
+            n_addr = _norm(str(addr_str))
+            # Try normalized full city first
+            n_city_full = _norm(str(city_val))
+            if n_city_full and n_city_full in n_addr:
+                duplicate_city = True
+            else:
+                # Try removing leading postal code from city_val (e.g. '06700 Saint...')
+                import re as _re
+                city_only = _re.sub(r'^\s*\d{5}\s*', '', str(city_val)).strip()
+                n_city_only = _norm(city_only)
+                if n_city_only and n_city_only in n_addr:
+                    duplicate_city = True
+                else:
+                    # also consider postal code presence: extract 5-digit postal code from city_val
+                    m = _re.search(r'\\b(\\d{5})\\b', str(city_val))
+                    if m and m.group(1) in str(addr_str):
+                        duplicate_city = True
+    except Exception:
+        duplicate_city = False
+
+    if duplicate_city:
+        SENDER_CITY = ''
+    else:
+        SENDER_CITY = city_val or '06700 Saint Laurent du Var'
     SENDER_PHONE   = _safe_str(basics.get('phone')) or '06 89 15 08 56'
     SENDER_EMAIL   = _safe_str(basics.get('email')) or 'philippe.mourey@gmail.com'
     PHOTO_WIDTH    = 2.5 * cm

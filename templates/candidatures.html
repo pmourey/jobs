@@ -302,7 +302,8 @@
 			if (data.cv_title) {
 				html += '<h6 class="text-primary fw-bold">' + escapeHtml(data.cv_title) + '</h6>';
 			}
-			if (data.summary) {
+			// Afficher le résumé seulement s'il contient du texte non vide (trim) — sinon ne rien afficher
+			if (data.summary && String(data.summary).trim().length > 0) {
 				html += '<p class="small mt-2">' + escapeHtml(data.summary) + '</p>';
 			}
 			if (data.warning) {
@@ -354,9 +355,61 @@
 	function _showCvDownloadButton(url, filename) {
 		const dlBtn = document.getElementById('cvDownloadBtn');
 		dlBtn.href = url;
-		dlBtn.download = filename || 'CV.pdf';
+		dlBtn.setAttribute('data-filename', filename || 'CV.pdf');
 		dlBtn.classList.remove('d-none');
 	}
+
+	// Force download via fetch to ensure the PDF is downloaded (not opened inline)
+	document.addEventListener('DOMContentLoaded', () => {
+		const dl = document.getElementById('cvDownloadBtn');
+		if (!dl) return;
+		dl.addEventListener('click', async (e) => {
+			e.preventDefault();
+			const url = dl.href;
+				// Use the pretty filename provided on the element (data-filename) when available
+				const filename = dl.getAttribute('data-filename') || dl.dataset.filename || ('cv_' + Date.now() + '.pdf');
+			try {
+				const resp = await fetch(url, { credentials: 'same-origin' });
+				if (!resp.ok) throw new Error('Téléchargement échoué: ' + resp.statusText);
+				const blob = await resp.blob();
+				const blobUrl = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = blobUrl;
+				a.download = filename;
+				document.body.appendChild(a);
+				a.click();
+				a.remove();
+				URL.revokeObjectURL(blobUrl);
+			} catch (err) {
+				alert('Erreur lors du téléchargement : ' + err.message);
+			}
+		});
+
+		// Attach handlers to any CV PDF links in lists so they download instead of opening
+		document.querySelectorAll('.cv-download-link').forEach(link => {
+			link.addEventListener('click', async (e) => {
+				e.preventDefault();
+				const url = link.href;
+							// Use the pretty filename provided on the link (data-filename) when available
+							const filename = link.getAttribute('data-filename') || link.dataset.filename || ('cv_' + Date.now() + '.pdf');
+				try {
+					const resp = await fetch(url, { credentials: 'same-origin' });
+					if (!resp.ok) throw new Error('Téléchargement échoué: ' + resp.statusText);
+					const blob = await resp.blob();
+					const blobUrl = URL.createObjectURL(blob);
+					const a = document.createElement('a');
+					a.href = blobUrl;
+					a.download = filename;
+					document.body.appendChild(a);
+					a.click();
+					a.remove();
+					URL.revokeObjectURL(blobUrl);
+				} catch (err) {
+					alert('Erreur lors du téléchargement : ' + err.message);
+				}
+			});
+		});
+	});
 
 	async function insertCvPdf() {
 		if (!currentCvPreviewJobId) return;
@@ -675,7 +728,9 @@
 							<a href="{{ url_for('generate_cover_letter_pdf', id=job.id) }}"
 								class="btn btn-sm btn-outline-secondary"
 								title="Générer la lettre de motivation en PDF">PDF</a>
-							<button type="button" class="btn btn-sm btn-outline-success" title="Générer LM par IA"
+							<!-- LM IA: allow opening AI generation modal -->
+							<button type="button" class="btn btn-sm btn-outline-success"
+								title="Générer une lettre de motivation avec l'IA"
 								onclick='openLmAiModal({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'>
 								🤖 LM
 							</button>
@@ -689,8 +744,8 @@
 								🤖 CV
 							</button>
 							{% if cv_pdf_urls.get(job.id) %}
-							<a href="{{ cv_pdf_urls.get(job.id) }}" class="btn btn-sm btn-success"
-								title="Télécharger CV PDF">⬇️ PDF</a>
+							<a href="{{ cv_pdf_urls.get(job.id) }}" class="btn btn-sm btn-success cv-download-link"
+								title="Télécharger CV PDF" data-filename="{{ cv_pdf_filenames.get(job.id) or ('cv_%s.pdf' % job.id) }}">⬇️ PDF</a>
 							{% endif %}
 						</div>
 					</td>
@@ -753,15 +808,16 @@
 						<a href="{{ url_for('generate_cover_letter_pdf', id=job.id) }}"
 							class="btn btn-sm btn-outline-secondary py-0 ms-1"
 							title="Générer la lettre de motivation en PDF">LM PDF</a>
+						<!-- Mobile: LM IA button opens AI modal -->
 						<button type="button" class="btn btn-sm btn-outline-success py-0 ms-1"
-							onclick='openLmAiModal({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'
-							title="Générer LM par IA">🤖 LM</button>
+							title="Générer une lettre de motivation avec l'IA"
+							onclick='openLmAiModal({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'>🤖 LM</button>
 						<button type="button" class="btn btn-sm btn-outline-primary py-0 ms-1"
 							onclick='showCVPreview({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'
 							title="Générer CV personnalisé IA">🤖 CV</button>
 						{% if cv_pdf_urls.get(job.id) %}
-						<a href="{{ cv_pdf_urls.get(job.id) }}" class="btn btn-sm btn-success py-0 ms-1"
-							title="Télécharger CV PDF">⬇️ PDF</a>
+						<a href="{{ cv_pdf_urls.get(job.id) }}" class="btn btn-sm btn-success py-0 ms-1 cv-download-link"
+							title="Télécharger CV PDF" data-filename="{{ cv_pdf_filenames.get(job.id) or ('cv_%s.pdf' % job.id) }}">⬇️ PDF</a>
 						{% endif %}
 						{% if job.cover_letter_text %}
 						<span class="ms-1 small text-truncate" style="max-width:120px">{{ job.cover_letter_text

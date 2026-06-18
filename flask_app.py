@@ -768,36 +768,36 @@ def show_all():
             j.recent_ts = 0
     user = get_user_by_id(user_id)
     # Determine which jobs already have a saved CV PDF on disk
-    uploads_dir = Path(app.static_folder) / 'uploads'
     cv_pdf_urls = {}
-    # check per-user generated dir first
-    if uploads_dir.exists():
-        # old global files cv_{id}.pdf
-        for p in uploads_dir.glob('cv_*.pdf'):
-            stem = p.stem.replace('cv_', '')
-            if stem.isdigit():
-                try:
-                    jid = int(stem)
-                    rel = f'uploads/{p.name}'
-                    cv_pdf_urls[jid] = url_for('static', filename=rel)
-                except Exception:
-                    continue
-    # per-user generated files
-    users_dir = uploads_dir / 'users'
-    if users_dir.exists():
-        for user_dir in users_dir.iterdir():
-            gen_dir = user_dir / 'generated'
+    # Map job.id -> pretty filename (long human readable name) to use in HTML data-filename.
+    cv_pdf_filenames = {}
+    # For each job check if the sanitized pretty filename exists in the per-user generated directory.
+    for j in jobs:
+        try:
+            owner_id = j.user_id
+            gen_dir = Path(app.static_folder) / 'uploads' / 'users' / str(owner_id) / 'generated'
             if not gen_dir.exists():
                 continue
-            for p in gen_dir.glob('cv_*.pdf'):
-                stem = p.stem.replace('cv_', '')
-                if stem.isdigit():
-                    try:
-                        jid = int(stem)
-                        rel = f'uploads/users/{user_dir.name}/generated/{p.name}'
-                        cv_pdf_urls[jid] = url_for('static', filename=rel)
-                    except Exception:
-                        continue
+            try:
+                from tools.document_tools import sanitize_filename_part
+                pretty = build_cv_pdf_filename(j)
+                # keep the pretty (long) name as-is for display/HTML data attributes
+                cv_pdf_filenames[j.id] = pretty
+                # create a filesystem-safe sanitized filename for the actual file on disk
+                safe = sanitize_filename_part(Path(pretty).stem) + '.pdf'
+            except Exception:
+                # fallback: use a simple generated name both for display and storage
+                pretty = f'cv_{j.id}.pdf'
+                cv_pdf_filenames[j.id] = pretty
+                safe = pretty
+            candidate = gen_dir / safe
+            if candidate.exists():
+                rel = f'uploads/users/{owner_id}/generated/{candidate.name}'
+                cv_pdf_urls[j.id] = url_for('static', filename=rel)
+                # ensure filename mapping exists for jobs where file is present
+                cv_pdf_filenames.setdefault(j.id, candidate.name)
+        except Exception:
+            continue
     # Charger formations et certifications pour les modales avancées
     try:
         # Prefer user's default CV JSON when available (so modales avancées utilisent le bon profil)
@@ -852,6 +852,7 @@ def show_all():
     # Prepare list of users for the selector: include current user and users who opted-in
     users_list = User.query.filter((User.id == user_id) | (User.allow_view_offers == True)).order_by(User.username).all()
     return render_template('candidatures.html', jobs=jobs, user=user, users=users_list, cv_pdf_urls=cv_pdf_urls,
+                           cv_pdf_filenames=cv_pdf_filenames,
                            cv_education=cv_education, cv_certificates=cv_certificates,
                            cv_skills=cv_skills, cv_references=cv_references, cv_projects=cv_projects)
 
@@ -886,7 +887,9 @@ def generate_cover_letter_pdf(id):
 def preview_cv_data(id):
     """Retourne les suggestions IA de personnalisation du CV au format JSON (pour l'aperçu modal)."""
     job = Job.query.get_or_404(id)
-    github_token = app.config.get('GITHUB_TOKEN', '')
+    # If external AI calls are administratively disabled, fall back to local suggestions
+    enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
+    github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
     payload = request.get_json(force=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
     ats_mode = bool(payload.get('ats_mode', False))
@@ -1030,7 +1033,9 @@ def preview_cv_data(id):
 def save_cv_pdf(id):
     """Génère le CV personnalisé IA, le sauvegarde sur disque et retourne l'URL de téléchargement."""
     job = Job.query.get_or_404(id)
-    github_token = app.config.get('GITHUB_TOKEN', '')
+    # If external AI is disabled, fall back to local suggestions (no external token used)
+    enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
+    github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
     payload = request.get_json(force=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
     ats_mode = bool(payload.get('ats_mode', False))
@@ -1136,12 +1141,24 @@ def save_cv_pdf(id):
     owner_id = job.user_id
     user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(owner_id) / 'generated'
     user_dir.mkdir(parents=True, exist_ok=True)
-    cv_filename = f'cv_{id}.pdf'
-    cv_path = user_dir / cv_filename
+    # Use a human-readable, sanitized filename for stored CV PDFs
+    try:
+        from tools.document_tools import sanitize_filename_part
+        try:
+            pdf_name = build_cv_pdf_filename(job)
+        except Exception:
+            # fallback: build a readable name from job fields
+            pdf_name = f"CV {getattr(job, 'user_id', '')} - {job.company or ''} - {job.name or ''}"
+        # sanitize and ensure .pdf suffix
+        safe_name = sanitize_filename_part(Path(pdf_name).stem) + '.pdf'
+    except Exception:
+        # As a last resort, create a simple readable filename including job id
+        safe_name = sanitize_filename_part(f"CV {job.id}") + '.pdf'
+    cv_path = user_dir / safe_name
     cv_path.write_bytes(pdf_bytes)
 
     # URL relative pour téléchargement
-    rel_path = f'uploads/users/{owner_id}/generated/{cv_filename}'
+    rel_path = f'uploads/users/{owner_id}/generated/{cv_path.name}'
     download_url = url_for('static', filename=rel_path)
     try:
         pdf_name = build_cv_pdf_filename(job)
@@ -1170,28 +1187,30 @@ def save_cv_pdf(id):
 def generate_cv_pdf(id):
     """Télécharge directement le CV PDF sauvegardé sur disque, ou génère à la volée si absent."""
     job = Job.query.get_or_404(id)
-    # First check per-user generated directory
+    # First check per-user generated directory for the sanitized pretty filename
     owner_id = job.user_id
-    user_generated = Path(app.static_folder) / 'uploads' / 'users' / str(owner_id) / 'generated' / f'cv_{id}.pdf'
-    if user_generated.exists():
-        return send_file(
-            str(user_generated),
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=build_cv_pdf_filename(job),
-        )
-    # Fallback: older location
-    uploads_dir = Path(app.static_folder) / 'uploads'
-    cv_path = uploads_dir / f'cv_{id}.pdf'
-    if cv_path.exists():
-        return send_file(
-            str(cv_path),
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=build_cv_pdf_filename(job),
-        )
+    gen_dir = Path(app.static_folder) / 'uploads' / 'users' / str(owner_id) / 'generated'
+    try:
+        from tools.document_tools import sanitize_filename_part
+        pretty = build_cv_pdf_filename(job)
+        safe = sanitize_filename_part(Path(pretty).stem) + '.pdf'
+        user_generated = gen_dir / safe
+        if user_generated.exists():
+            return send_file(
+                str(user_generated),
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=build_cv_pdf_filename(job),
+            )
+    except Exception:
+        # fallback to legacy name below
+        pass
     # Fallback : génération à la volée
-    github_token = app.config.get('GITHUB_TOKEN', '')
+    # If external AI is disabled, fall back to local suggestions (no external token used)
+    enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
+    github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
+    if not app.config.get('ENABLE_REMOTE_IA', True):
+        github_token = ''
     try:
         # Prefer the connected user's default CV when building ATS keywords so
         # derived keywords reflect the user's profile instead of the global static/cv.json
@@ -1290,18 +1309,34 @@ def preview_lm_ai(id):
         # expose resolved name for debugging / client
         resolved_name = default_cv if (default_cv and resolved) else (default_cv if default_cv and not resolved else None)
         app.logger.info(f"preview_lm_ai: resolved default_cv='{resolved_name}' for user_id={job.user_id} job_id={id}")
-
-        text = get_ai_cover_letter_text(
-            job=job, github_token=github_token,
-            additional_prompt=additional_prompt, include_sections=include_sections,
-            selected_education=selected_education,
-            selected_certificates=selected_certificates,
-            selected_skills=selected_skills,
-            selected_references=selected_references,
-            selected_projects=selected_projects,
-            selected_premium_modules=selected_premium_modules,
-            cv_data=resolved,
-        )
+        # If external AI is disabled (or no token), produce a lightweight local fallback text
+        enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
+        if not enable_ai or not github_token:
+            # Build a simple, useful LM fallback from job and CV basics
+            basics = (resolved or {}).get('basics', {}) if resolved else {}
+            candidate_name = basics.get('name') or ''
+            summary = basics.get('summary') or ''
+            skills = ', '.join([s.get('name') if isinstance(s, dict) else str(s) for s in (resolved or {}).get('skills', [])[:6]])
+            intro = f"Madame, Monsieur,\n\nJe vous propose ma candidature pour le poste '{job.name}' chez {job.company}."
+            body = ''
+            if summary:
+                body += '\n\n' + summary
+            if skills:
+                body += '\n\nCompétences clés : ' + skills
+            closing = '\n\nJe reste à votre disposition pour un entretien.\n\nCordialement,\n' + (candidate_name or '')
+            text = intro + body + closing
+        else:
+            text = get_ai_cover_letter_text(
+                job=job, github_token=github_token,
+                additional_prompt=additional_prompt, include_sections=include_sections,
+                selected_education=selected_education,
+                selected_certificates=selected_certificates,
+                selected_skills=selected_skills,
+                selected_references=selected_references,
+                selected_projects=selected_projects,
+                selected_premium_modules=selected_premium_modules,
+                cv_data=resolved,
+            )
         resp = {
             'text': text,
             'active_section_labels': [_section_labels[s] for s in include_sections if s in _section_labels],
@@ -2634,6 +2669,7 @@ def ft_search_export(search_id):
         # header: added URL column
         header = ['Date', 'Intitulé', 'Entreprise', 'Lieu', 'Contrat', 'Salaire', 'URL']
         rows.append(header)
+        # populate rows from offers
         for o in offers:
             date = o.get('dateCreation') or o.get('date') or ''
             title = o.get('intitule') or o.get('title') or o.get('name') or ''
@@ -2644,17 +2680,15 @@ def ft_search_export(search_id):
             url = o.get('url') or o.get('link') or o.get('source_url') or ''
             rows.append([date, title, company, location, contract, salary, url])
 
-        filename_base = f'ft_search_{search_id}_{search_label}' if search_label else f'ft_search_{search_id}'
-
-        if fmt == 'csv':
-            sio = StringIO()
-            writer = csv.writer(sio)
-            for r in rows:
-                writer.writerow(r)
-            sio.seek(0)
-            filename = f'{filename_base}.csv'
-            return send_file(BytesIO(sio.getvalue().encode('utf-8')), mimetype='text/csv', as_attachment=True,
-                             download_name=filename)
+        # write CSV to memory and return
+        sio = StringIO()
+        writer = csv.writer(sio)
+        for r in rows:
+            writer.writerow(r)
+        sio.seek(0)
+        filename = f'{filename_base}.csv'
+        return send_file(_BytesIO(sio.getvalue().encode('utf-8')), mimetype='text/csv', as_attachment=True,
+                         download_name=filename)
 
         # fmt == 'xlsx'
         try:

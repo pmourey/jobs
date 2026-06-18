@@ -16,6 +16,10 @@ class Config:
     GITHUB_TOKEN = ''
     GITHUB_MODELS_BASE_URL = 'https://models.github.ai/inference'
     GITHUB_MODELS_MODEL = 'openai/gpt-4.1'
+    # Enable or disable outbound AI model calls (GitHub Models / OpenAI-compatible).
+    # On hosts that block outgoing connections (ex: PythonAnywhere), set this to False
+    # to force local fallbacks for CV / LM generation.
+    ENABLE_REMOTE_IA = False
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24
     # SCHEDULER_INTERVAL = 10
