@@ -454,14 +454,34 @@
 
 	function openLmAiModal(jobId, jobName, company) {
 		currentLmAiJobId = jobId;
-		currentLmAiText = '';
+		// Try to preload an existing LM: prefer unsaved generated draft (localStorage), else saved LM in page
+		const draftKey = 'lm_generated_' + jobId;
+		const storedDraft = (window.localStorage && localStorage.getItem(draftKey)) || null;
+		if (storedDraft) {
+			currentLmAiText = storedDraft;
+		} else {
+			// look for hidden elements that contain saved LM text (desktop/mobile)
+			const desk = document.getElementById('lm-content-desktop-' + jobId);
+			const mob = document.getElementById('lm-content-mobile-' + jobId);
+			if (desk && desk.textContent && desk.textContent.trim()) {
+				currentLmAiText = desk.textContent.trim();
+			} else if (mob && mob.textContent && mob.textContent.trim()) {
+				currentLmAiText = mob.textContent.trim();
+			} else {
+				currentLmAiText = '';
+			}
+		}
 		document.getElementById('lmAiModalTitle').textContent =
 			'🤖 Génération LM pour ' + (jobName || 'cette offre');
 		document.getElementById('lmAiInsertBtn').classList.add('d-none');
 		document.getElementById('lmAiAdditionalPrompt').value = '';
-		// Afficher le placeholder et le bouton Générer (pas d'auto-exécution)
-		document.getElementById('lmAiModalBody').innerHTML =
-			'<div class="text-center py-4 text-muted">Cliquez sur <strong>🤖 Générer</strong> pour lancer la génération IA.</div>';
+		// If we have a preloaded LM text, show it so user can refine via prompt; otherwise show placeholder
+		if (currentLmAiText) {
+			document.getElementById('lmAiModalBody').innerHTML = '<div style="white-space:pre-wrap">' + escapeHtml(currentLmAiText) + '</div>';
+			document.getElementById('lmAiInsertBtn').classList.remove('d-none');
+		} else {
+			document.getElementById('lmAiModalBody').innerHTML = '<div class="text-center py-4 text-muted">Cliquez sur <strong>🤖 Générer</strong> pour lancer la génération IA.</div>';
+		}
 		const lmRetryBtnInit = document.getElementById('lmAiRetryBtn');
 		lmRetryBtnInit.textContent = '🤖 Générer';
 		var modal = new bootstrap.Modal(document.getElementById('lmAiModal'));
@@ -539,6 +559,14 @@
 				return;
 			}
 			currentLmAiText = data.text || '';
+			// persist unsaved generated draft in localStorage so user can re-open modal and continue editing
+			try {
+				if (window.localStorage) {
+					localStorage.setItem('lm_generated_' + jobId, currentLmAiText);
+				}
+			} catch (e) {
+				// ignore storage errors (quota/private mode)
+			}
 			let lmHtml = '';
 			if (_getCheckedSections('lm').length || _getSelectedEducation('lm').length || _getSelectedCertificates('lm').length || _getSelectedSkills('lm').length || _getSelectedReferences('lm').length || _getSelectedProjects('lm').length || _getCheckedValues('.lm-premium-check').length) {
 				lmHtml += '<div class="alert alert-light border py-2 small mb-2">Sélections manuelles prises en compte pour adapter la lettre.</div>';
