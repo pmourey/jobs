@@ -4,6 +4,7 @@ Outils de génération de CV personnalisé via l'API GitHub Models (IA) et Repor
 from __future__ import annotations
 
 import json as _json
+import os
 import re
 from io import BytesIO
 from pathlib import Path
@@ -267,6 +268,106 @@ def _build_premium_modules_text(cv_data: dict, selected_premium_modules: list | 
     return ('\n\n' + '\n\n'.join(parts)) if parts else ''
 
 
+def _is_local_llm_endpoint(base_url: str) -> bool:
+    lower = (base_url or '').lower()
+    return 'localhost' in lower or '127.0.0.1' in lower
+
+
+def _get_local_llm_tuning(model_name: str) -> dict:
+    try:
+        from flask import current_app
+        tuning_map = current_app.config.get('OLLAMA_LOCAL_TUNING') or {}
+    except Exception:
+        tuning_map = {}
+    return tuning_map.get(model_name, {})
+
+
+def _build_core_profile_text(cv_data: dict, is_local_llm: bool) -> str:
+    if not isinstance(cv_data, dict):
+        return ''
+
+    basics = cv_data.get('basics', {}) or {}
+    work = cv_data.get('work', []) or []
+    skills = cv_data.get('skills', []) or []
+
+    parts = []
+
+    summary = (basics.get('summary') or '').replace('\n', ' ').strip()
+    if summary:
+        summary_limit = 180 if is_local_llm else 500
+        parts.append(f"Resume candidat : {summary[:summary_limit]}")
+
+    skill_limit = 5 if is_local_llm else 10
+    skill_names = [s.get('name') if isinstance(s, dict) else str(s) for s in skills[:skill_limit]]
+    skill_names = [name for name in skill_names if name]
+    if skill_names:
+        parts.append('Competences clefs : ' + ', '.join(skill_names))
+
+    work_limit = 1 if is_local_llm else 4
+    work_lines = []
+    for item in work[:work_limit]:
+        if not isinstance(item, dict):
+            continue
+        position = item.get('position', '')
+        company = item.get('name', '')
+        start = (item.get('startDate') or '?')[:4]
+        end = (item.get('endDate') or 'present')[:4]
+        summary = (item.get('summary') or '').replace('\n', ' ').strip()
+        summary_limit = 90 if is_local_llm else 180
+        line = f"- {position} chez {company} ({start}-{end})"
+        if summary:
+            line += f" : {summary[:summary_limit]}"
+        work_lines.append(line)
+    if work_lines:
+        parts.append("Experiences saillantes :\n" + '\n'.join(work_lines))
+
+    return '\n\n'.join(parts)
+
+
+def _cleanup_cover_letter_output(text: str, author_display: str | None) -> str:
+    cleaned = (text or '').strip()
+    if cleaned.startswith('```'):
+        cleaned = re.sub(r'^```(?:text|markdown)?\s*', '', cleaned)
+        cleaned = re.sub(r'\s*```$', '', cleaned)
+
+    filtered_lines = []
+    for line in cleaned.splitlines():
+        stripped = line.strip()
+        lowered = stripped.lower()
+        if not stripped:
+            filtered_lines.append('')
+            continue
+        if lowered.startswith('voici une lettre de motivation'):
+            continue
+        if lowered.startswith('voici une proposition de lettre'):
+            continue
+        if lowered.startswith('titre :'):
+            continue
+        if lowered.startswith('objet :'):
+            continue
+        filtered_lines.append(stripped)
+
+    cleaned = '\n'.join(filtered_lines).strip()
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+
+    if cleaned and cleaned[-1] not in '.!?':
+        last_sentence_end = max(cleaned.rfind('.'), cleaned.rfind('!'), cleaned.rfind('?'))
+        if last_sentence_end > 80:
+            cleaned = cleaned[:last_sentence_end + 1].rstrip()
+
+    closing_markers = ('cordialement', 'bien cordialement', 'je vous prie d')
+    has_closing = any(marker in cleaned.lower() for marker in closing_markers)
+    if cleaned and not has_closing:
+        cleaned = (
+            cleaned.rstrip()
+            + "\n\nJe serais heureux d'echanger avec vous afin de vous presenter plus en detail ma motivation et ma contribution possible a vos projets."
+        )
+
+    if author_display and author_display not in cleaned:
+        cleaned = cleaned.rstrip() + "\n\nCordialement,\n" + author_display
+    return cleaned
+
+
 def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
                           additional_prompt: str = '',
                           include_sections: list | None = None,
@@ -368,6 +469,18 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
 
     # Augmenter max_tokens si des sections avancées sont incluses
     max_tokens = 1200 if inc else 900
+    is_local_llm = _is_local_llm_endpoint(base_url)
+    local_tuning = _get_local_llm_tuning(model_name) if is_local_llm else {}
+    # Local CPU inference is much slower; keep output compact to avoid request timeouts.
+    if is_local_llm:
+        max_tokens = min(max_tokens, local_tuning.get('cv', {}).get('max_tokens', 180))
+    request_timeout = local_tuning.get('cv', {}).get('request_timeout', 180) if is_local_llm else 60
+    local_options = None
+    if is_local_llm:
+        local_options = local_tuning.get('options') or {
+            'num_thread': int(os.cpu_count() or 8),
+            'num_ctx': 2048,
+        }
 
     try:
         raw = chat_completion(
@@ -375,10 +488,12 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
             model=model_name,
             base_url=base_url,
             api_key=github_token,
-            response_format={'type': 'json_object'},
+            response_format=None if is_local_llm else {'type': 'json_object'},
             temperature=0.3,
             max_tokens=max_tokens,
             cache_ttl=45,
+            request_timeout=request_timeout,
+            options=local_options,
         )
     except Exception as exc:
         fallback = _default_cv_suggestions(cv_data)
@@ -469,9 +584,9 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
         "Rédige une lettre de motivation professionnelle et personnalisée en français, "
         "structurée en 3 à 4 paragraphes complets. Utilise la première personne du singulier (je/j'), "
         "emploie des phrases complètes et un style soutenu mais naturel. Évite les fragments et les listes à puces. "
-        "Corrige les accords et verbes — écris des phrases bien conjuguées (ex. 'J'ai développé', 'J'ai conçu').\n\n"
-        # "Inclue en fin de texte une formule de politesse courante et une signature courte (prénom et nom de l'auteur). "
-        # "Réponds uniquement avec le corps de la lettre, comprenant la formule de politesse et la signature (pas d'en-tête ni de salutation initiale)."
+        "Corrige les accords et verbes — écris des phrases bien conjuguées (ex. 'J'ai développé', 'J'ai conçu'). "
+        "Retourne uniquement le texte final de la lettre, sans titre, sans objet, sans commentaire introductif de type "
+        "'Voici une lettre', et sans balisage Markdown.\n\n"
     )
 
     # Renforcer le system prompt si des sections avancées sont incluses
@@ -488,6 +603,7 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
         inc.append('github_projects')
 
     premium_modules = list(selected_premium_modules or [])
+    is_local_llm = _is_local_llm_endpoint(base_url)
 
     if inc:
         system_prompt += (
@@ -496,9 +612,24 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
             "N'énumère pas les rubriques, n'emploie pas leurs intitulés exacts et évite les citations trop littérales. "
             "La lettre doit rester fluide, générale et orientée sur la valeur apportée au poste."
         )
-
+    if is_local_llm:
+        system_prompt += (
+            "\n\nPour ce modele local, privilegie une lettre breve et concrete : 2 paragraphes courts, "
+            "5 a 7 phrases au total, avec une conclusion simple."
+        )
     # Augmenter max_tokens si des sections avancées sont incluses
     max_tokens = 1800 if inc else 1400
+    max_tokens = 1800 if inc else 1400
+    local_tuning = _get_local_llm_tuning(model_name) if is_local_llm else {}
+    if is_local_llm:
+        max_tokens = min(max_tokens, local_tuning.get('cover_letter', {}).get('max_tokens', 220))
+    request_timeout = local_tuning.get('cover_letter', {}).get('request_timeout', 240) if is_local_llm else 60
+    local_options = None
+    if is_local_llm:
+        local_options = local_tuning.get('options') or {
+            'num_thread': int(os.cpu_count() or 8),
+            'num_ctx': 2048,
+        }
 
     context_parts = [
         f"Poste : {job.name or 'N/A'}",
@@ -508,15 +639,22 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
     if job.url:
         context_parts.append(f"Lien de l'offre : {job.url}")
     if capture_text.strip():
+        capture_limit = local_tuning.get('cover_letter', {}).get('capture_excerpt_chars', 900)
+        capture_excerpt = capture_text.strip()[:capture_limit] if is_local_llm else capture_text.strip()[:2500]
         context_parts.append(
-            f"Texte extrait de l'offre (capture PDF) :\n{capture_text.strip()[:2500]}"
+            f"Texte extrait de l'offre (capture PDF) :\n{capture_excerpt}"
         )
     elif job.is_capture:
         context_parts.append("Note : une capture PDF de l'offre est disponible (texte non extractible).")
     if job.cover_letter_text:
+        lm_existing_limit = local_tuning.get('cover_letter', {}).get('existing_letter_excerpt_chars', 400)
+        lm_existing_excerpt = job.cover_letter_text[:lm_existing_limit] if is_local_llm else job.cover_letter_text[:1200]
         context_parts.append(
-            f"Lettre de motivation existante (à améliorer ou à utiliser comme base) :\n{job.cover_letter_text[:1200]}"
+            f"Lettre de motivation existante (à améliorer ou à utiliser comme base) :\n{lm_existing_excerpt}"
         )
+    core_profile_text = _build_core_profile_text(cv_data, is_local_llm)
+    if core_profile_text:
+        context_parts.append("Profil candidat :\n" + core_profile_text)
 
     # Sections optionnelles (mode avancé)
     optional_text = _build_optional_sections_text(
@@ -536,7 +674,12 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
     if additional_prompt:
         context_parts.append(f"Instructions supplémentaires / corrections : {additional_prompt}")
 
-    user_prompt = "Génère la lettre de motivation pour ce poste :\n\n" + "\n\n".join(context_parts)
+    user_prompt = (
+        "Genere la lettre de motivation finale pour ce poste.\n"
+        "Contraintes de sortie : pas de titre, pas d'objet, pas d'explication avant ou apres la lettre.\n"
+        "Mets l'accent sur l'adequation Python, DevOps, automatisation, Linux et integration applicative.\n\n"
+        + "\n\n".join(context_parts)
+    )
 
     # Determine display name for signature: prefer cv_data.basics.name then author_name
     author_display = None
@@ -567,19 +710,28 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
             model=model_name,
             base_url=base_url,
             api_key=github_token,
-            temperature=0.5,
+            temperature=0.35 if is_local_llm else 0.5,
             max_tokens=max_tokens,
             cache_ttl=45,
+            request_timeout=request_timeout,
+            options=local_options,
         )
-        text_out = raw.strip()
-        try:
-            # append signature if not present
-            if author_display and author_display not in text_out:
-                text_out = text_out + "\n\n" + author_display
-        except Exception:
-            pass
-        return text_out
+        return _cleanup_cover_letter_output(raw.strip(), author_display)
     except Exception as exc:
+        # If the models endpoint was removed or returns 410 Gone, fall back to non-AI text
+        msg = str(exc)
+        if '410' in msg or 'Gone' in msg:
+            base_text = (
+                f"Je vous adresse ma candidature pour le poste de {job.name or 'ce poste'} au sein de {job.company or 'votre entreprise'}.\n\n"
+                "Fort de mon expérience dans le développement logiciel et la gestion de projets IT, "
+                "je suis convaincu de pouvoir apporter une réelle valeur ajoutée à votre équipe.\n\n"
+                "Je reste à votre disposition pour un entretien afin de vous présenter "
+                "plus en détail mon parcours et mes motivations.\n\n"
+                "[API IA indisponible : texte généré sans IA]"
+            )
+            if author_display:
+                base_text = base_text + "\n" + (author_display or '')
+            return base_text
         if _is_rate_limit_error(exc):
             raise RuntimeError('Trop de requêtes vers GitHub Models. Réessayez dans une minute.') from exc
         raise RuntimeError(f"Erreur API IA lors de la génération de la LM : {exc}") from exc
@@ -980,7 +1132,3 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
     )
     doc.build(story)
     return buffer.getvalue()
-
-
-
-
