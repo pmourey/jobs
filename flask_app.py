@@ -2660,6 +2660,8 @@ def ft_search_export(search_id):
         slug = re.sub(r'[^A-Za-z0-9_\-]', '', slug)
         return slug[:maxlen]
     search_label = _safe_slug(ft_search.search_info or f'search_{search_id}')
+    # Base filename for exports: include search id and safe label
+    filename_base = f'ft_search_{search_id}_{search_label}'
 
     if fmt in ('csv', 'xlsx'):
         # Build rows in memory first
