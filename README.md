@@ -41,7 +41,7 @@ Application Flask de suivi de candidatures avec authentification, gestion des r�
 - Python 3.10+
 - Pip
 - Compte Gmail + mot de passe d'application (si envoi d'e-mails activé)
-- Optionnel : token GitHub Models pour les fonctionnalités IA
+- Optionnel : IA locale via Ollama (gratuit) ou clé API d'un provider OpenAI-compatible
 
 LibreOffice est optionnel et utile surtout pour des conversions locales de templates legacy .dot. Le rendu PDF principal est géré en Python.
 
@@ -72,8 +72,67 @@ cp config_template.py config.py
 - SMTP_SERVER, SMTP_PORT, GMAIL_USER, GMAIL_APP_PWD
 - SECRET_KEY
 - SQLALCHEMY_DATABASE_URI
-- GITHUB_TOKEN (optionnel, recommandé pour IA)
-- GITHUB_MODELS_BASE_URL, GITHUB_MODELS_MODEL
+- Configuration IA (au choix) :
+  - **Option A — IA locale (Ollama, recommandé pour usage gratuit)**  
+    - `GITHUB_TOKEN = 'ollama-local'` (valeur factice)
+    - `GITHUB_MODELS_BASE_URL = 'http://localhost:11434'`
+    - `GITHUB_MODELS_MODEL = 'llama3.1:8b'`
+    - `ENABLE_REMOTE_IA = True`
+    - `OLLAMA_LOCAL_TUNING = IMAC_64GB_OLLAMA_TUNING`
+  - **Option B — Provider distant OpenAI-compatible**
+    - `GITHUB_TOKEN = '<API_KEY>'`
+    - `GITHUB_MODELS_BASE_URL = 'https://api.openai.com'` (exemple)
+    - `GITHUB_MODELS_MODEL = '<model>'`
+    - `ENABLE_REMOTE_IA = True`
+  - **Option C — Désactiver les appels IA distants**
+    - `ENABLE_REMOTE_IA = False` (fallback local CV/LM)
+
+## IA locale gratuite avec Ollama
+
+> GitHub Models (`models.github.ai`) est retiré. Pour continuer à utiliser les endpoints IA du projet (`/preview_cv_data`, `/preview_lm_ai`), utilisez Ollama local ou un provider externe.
+
+1. Installer Ollama (macOS)
+
+```bash
+brew install ollama
+```
+
+2. Démarrer le serveur Ollama
+
+```bash
+ollama serve
+```
+
+3. Télécharger un modèle
+
+```bash
+ollama pull llama3.1:8b
+```
+
+4. Vérifier l'API locale (OpenAI-compatible)
+
+```bash
+curl -s http://localhost:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ollama-local" \
+  -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"Dis bonjour en français"}]}'
+```
+
+5. Redémarrer Flask
+
+```bash
+python flask_app.py
+```
+
+6. Ajuster le tuning local si necessaire
+
+- Le fichier `ollama_tuning.py` contient les reglages dedies a un iMac 16 CPU logiques / 64 Go RAM.
+- Le preset `IMAC_64GB_OLLAMA_TUNING['llama3.1:8b']` ajuste :
+  - `num_thread`
+  - `num_ctx`
+  - `max_tokens`
+  - `request_timeout`
+  - la taille des extraits de contexte envoyes au modele
 
 Note : si vous modifiez la logique des rôles, utilisez le script de migration fourni `scripts/convert_roles.py` pour convertir les anciennes valeurs role=2 en role=1 avant d'opérer.
 
@@ -154,4 +213,3 @@ python test/test_generate_cover_letter_pdf.py
 ## Contact
 
 Pour toute question ou incident, contacter l'auteur du projet.
-

@@ -36,7 +36,9 @@ def _cache_set(key: str, value: Any, ttl: int | None = None) -> None:
 
 def chat_completion(messages: list[dict], model: str, base_url: str, api_key: str,
                     max_tokens: int = 1000, temperature: float = 0.3,
-                    response_format: dict | None = None, cache_ttl: int = 30) -> str:
+                    response_format: dict | None = None, cache_ttl: int = 30,
+                    request_timeout: float = 60,
+                    options: dict | None = None) -> str:
     """Effectue une completion chat vers l'endpoint OpenAI-compatible.
 
     - Implémente retry/backoff pour 429 et erreurs réseau.
@@ -72,13 +74,15 @@ def chat_completion(messages: list[dict], model: str, base_url: str, api_key: st
     }
     if response_format:
         payload['response_format'] = response_format
+    if options:
+        payload['options'] = options
 
     # Retry/backoff
     backoff = 1.0
     for attempt in range(6):
         try:
             global _BLOCK_UNTIL
-            r = requests.post(url, headers=headers, json=payload, timeout=10)
+            r = requests.post(url, headers=headers, json=payload, timeout=request_timeout)
             # Global block if another caller set a long Retry-After previously
             if time.time() < _BLOCK_UNTIL:
                 raise RuntimeError('Blocked due to previous rate-limit; retry after block expires')
@@ -119,5 +123,3 @@ def chat_completion(messages: list[dict], model: str, base_url: str, api_key: st
             continue
     # Si on arrive ici, raise last exception
     raise RuntimeError(f"API call failed after retries: {locals().get('last_exc', 'unknown')}")
-
-

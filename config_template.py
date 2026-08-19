@@ -1,5 +1,6 @@
 # config.py
 from pytz import timezone
+from ollama_tuning import IMAC_64GB_OLLAMA_TUNING
 
 
 class Config:
@@ -13,13 +14,14 @@ class Config:
     GMAIL_USER = 'philippe.mourey@gmail.com'
     GMAIL_APP_PWD = "your GMail Application password"
     CV_RESUME = 'https://www.linkedin.com/in/pmourey/<br>https://github.com/pmourey/jobs<br>https://pmourey.github.io/portfolio/'
-    GITHUB_TOKEN = ''
-    GITHUB_MODELS_BASE_URL = 'https://models.github.ai/inference'
-    GITHUB_MODELS_MODEL = 'openai/gpt-4.1'
+    GITHUB_TOKEN = 'ollama-local'
+    GITHUB_MODELS_BASE_URL = 'http://localhost:11434'
+    GITHUB_MODELS_MODEL = 'llama3.1:8b'
+    OLLAMA_LOCAL_TUNING = IMAC_64GB_OLLAMA_TUNING
     # Enable or disable outbound AI model calls (GitHub Models / OpenAI-compatible).
     # On hosts that block outgoing connections (ex: PythonAnywhere), set this to False
     # to force local fallbacks for CV / LM generation.
-    ENABLE_REMOTE_IA = False
+    ENABLE_REMOTE_IA = True
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24
     # SCHEDULER_INTERVAL = 10
