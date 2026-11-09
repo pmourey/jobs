@@ -12,6 +12,296 @@ from pathlib import Path
 from Model import Job
 
 
+# Small helper to route requests to either the centralized GitHub Models client
+# or a local Ollama-compatible endpoint (default localhost:11434). The centralized
+# client is preferred; if the project is configured to use a local endpoint and
+# the api_key is 'ollama-local', a lightweight HTTP call to the local server is used.
+def _model_infer(messages: list, model: str, base_url: str, api_key: str, *,
+                 temperature: float = 0.5, max_tokens: int = 512, request_timeout: int = 60, options: dict | None = None):
+    """Return the model output string.
+    messages: list of {'role':..., 'content':...} for chat-style prompts. If using a local
+    Ollama endpoint, messages will be concatenated as a single prompt (system + user).
+    """
+    # Prefer the centralized wrapper if available
+    try:
+        from tools.github_models_client import chat_completion
+    except Exception:
+        chat_completion = None
+
+    is_local = ('localhost' in (base_url or '').lower()) or ('127.0.0.1' in (base_url or '').lower())
+
+    # If configured to use local Ollama by token string, call its REST API directly or force CLI
+    if is_local and (api_key == 'ollama-local' or api_key == 'OLLAMA_LOCAL'):
+        try:
+            import requests
+
+            # Try Ollama /api/chat HTTP endpoint first (fast, native streaming disabled)
+            try:
+                chat_url = f"{base_url.rstrip('/')}/api/chat"
+                chat_options = {
+                    'temperature': float(temperature or 0.5),
+                    'num_predict': int(max_tokens or 512),
+                }
+                if options and isinstance(options, dict):
+                    chat_options.update(options)
+                chat_payload = {
+                    'model': model,
+                    'messages': messages,
+                    'stream': False,
+                    'options': chat_options,
+                }
+                # If JSON output is requested, tell Ollama HTTP API
+                all_text = ' '.join(m.get('content', '') for m in messages).lower()
+                if 'json' in all_text:
+                    chat_payload['format'] = 'json'
+
+                chat_resp = requests.post(chat_url, json=chat_payload, timeout=request_timeout)
+                if chat_resp.status_code == 200:
+                    chat_json = chat_resp.json()
+                    res_content = chat_json.get('message', {}).get('content', '')
+                    if res_content:
+                        return res_content.strip()
+            except Exception as e:
+                last_exc = e
+
+            # If the HTTP API failed, do not hang on CLI, try /api/generate as fallback
+            cli_forced = False
+            last_exc = None
+
+            if cli_forced:
+                # Try CLI first
+                try:
+                    import subprocess, shlex
+                    # Build prompt string (concatenate system+user messages)
+                    prompt_text = ''
+                    for m in messages:
+                        role = m.get('role','')
+                        content = m.get('content','')
+                        if role == 'system':
+                            prompt_text += f"[SYSTEM]\n{content}\n\n"
+                        else:
+                            prompt_text += f"{content}\n\n"
+                    cmd = ['ollama', 'run', model, prompt_text, '--format', 'json']
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=request_timeout)
+                    if res.returncode == 0 and res.stdout:
+                        out = res.stdout.strip()
+                        try:
+                            idx = out.find('{')
+                            if idx != -1:
+                                j = _json.loads(out[idx:])
+                            else:
+                                j = _json.loads(out)
+                            text = ''
+                            if isinstance(j, dict):
+                                if 'response' in j:
+                                    text = j.get('response')
+                                elif 'output' in j:
+                                    text = j.get('output')
+                                else:
+                                    for v in j.values():
+                                        if isinstance(v, str):
+                                            text = v
+                                            break
+                            if not text:
+                                return out
+                            return (text or '').strip()
+                        except Exception:
+                            return out
+                    # if CLI failed, capture stderr
+                    last_exc = Exception(f'CLI failed: rc={res.returncode} stderr={res.stderr.strip()}')
+                except Exception as e:
+                    last_exc = e
+
+            # If CLI didn't return usable output, fall back to HTTP endpoints
+            urls_to_try = [
+                f"{base_url.rstrip('/')}/api/predict",
+                f"{base_url.rstrip('/')}/api/generate",
+                f"{base_url.rstrip('/')}/api/completions",
+            ]
+            for url in urls_to_try:
+                try:
+                    resp = requests.post(url, json=payload, timeout=request_timeout)
+                    resp.raise_for_status()
+                    # Prefer JSON, but accept raw text if JSON parsing fails
+                    text = ''
+                    try:
+                        j = resp.json()
+                    except Exception:
+                        j = None
+                    if isinstance(j, dict):
+                        text = j.get('response') or j.get('output') or j.get('text') or ''
+                        if not text:
+                            results = j.get('results') or j.get('outputs') or j.get('choices')
+                            if isinstance(results, list) and results:
+                                first = results[0]
+                                if isinstance(first, dict):
+                                    text = first.get('content') or first.get('text') or first.get('output', '')
+                    if not text:
+                        # fallback to raw response body
+                        text = (resp.text or '')
+                    if text:
+                        return text
+                except Exception as e:
+                    last_exc = e
+                    continue
+
+            # If none worked, raise last exception to surface issue
+            if last_exc:
+                raise last_exc
+            return ''
+        except Exception as e:
+            raise
+
+    # If the base_url or model indicates Google Generative AI / Gemini
+    lower_url = (base_url or '').lower()
+    lower_model = (model or '').lower()
+    is_gemini = ('generativelanguage.googleapis.com' in lower_url or
+                 (api_key or '').startswith(('AIza', 'AQ.', 'GOOGLE_', 'GEMINI_')) or
+                 'gemini' in lower_model or 'google' in lower_url)
+    if is_gemini:
+        try:
+            import requests
+
+            # Map legacy/deprecated model names to modern active Gemini models
+            gemini_aliases = {
+                'gemini-1.5-pro': 'gemini-3.5-flash-lite',
+                'gemini-1.5-flash': 'gemini-3.5-flash-lite',
+                'gemini-2.5-pro': 'gemini-3.5-flash-lite',
+                'gemini-2.5-flash': 'gemini-3.5-flash-lite',
+                'gemini-pro': 'gemini-3.5-flash-lite',
+                'gemini-pro-latest': 'gemini-3.5-flash-lite',
+                'gemini-flash-latest': 'gemini-3.5-flash-lite',
+                'gemini-3.5-flash': 'gemini-3.5-flash-lite',
+            }
+            requested_model = gemini_aliases.get(model, model) if ('gemini' in lower_model) else 'gemini-3.5-flash-lite'
+            models_to_try = [requested_model]
+            for candidate in ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest']:
+                if candidate not in models_to_try:
+                    models_to_try.append(candidate)
+
+            # Build Gemini contents from messages
+            contents = []
+            system_instruction = None
+            for m in messages:
+                role = m.get('role', '')
+                content = m.get('content', '')
+                if role == 'system':
+                    system_instruction = {'parts': [{'text': content}]}
+                else:
+                    contents.append({'role': 'user' if role == 'user' else 'model', 'parts': [{'text': content}]})
+
+            if not contents and system_instruction:
+                contents = [{'role': 'user', 'parts': system_instruction['parts']}]
+
+            payload = {
+                'contents': contents,
+                'generationConfig': {
+                    'temperature': float(temperature or 0.5),
+                    'maxOutputTokens': max(int(max_tokens or 1500), 1500),
+                }
+            }
+            if system_instruction:
+                payload['systemInstruction'] = system_instruction
+
+            all_text = ' '.join(m.get('content', '') for m in messages).lower()
+            if 'json' in all_text:
+                payload['generationConfig']['responseMimeType'] = 'application/json'
+
+            params = {}
+            headers = {'Content-Type': 'application/json'}
+
+            actual_key = api_key or os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY', '')
+            if actual_key and not actual_key.startswith(('ollama', 'github_pat')):
+                params['key'] = actual_key
+            else:
+                # Try Bearer token if ADC is available
+                try:
+                    from google.auth.transport.requests import Request
+                    from google.oauth2 import service_account
+                    sac = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+                    if sac and os.path.exists(sac):
+                        creds = service_account.Credentials.from_service_account_file(sac, scopes=['https://www.googleapis.com/auth/generative-language', 'https://www.googleapis.com/auth/cloud-platform'])
+                        creds.refresh(Request())
+                        headers['Authorization'] = f"Bearer {creds.token}"
+                except Exception:
+                    pass
+
+            last_gemini_exc = None
+            for g_model in models_to_try:
+                try:
+                    gemini_endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent"
+                    resp = requests.post(gemini_endpoint, json=payload, headers=headers, params=params, timeout=request_timeout)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    candidates = data.get('candidates', [])
+                    if candidates:
+                        parts = candidates[0].get('content', {}).get('parts', [])
+                        if parts:
+                            return parts[0].get('text', '').strip()
+                except Exception as g_err:
+                    last_gemini_exc = g_err
+                    continue
+
+            if last_gemini_exc:
+                raise last_gemini_exc
+            return ''
+        except Exception as e:
+            # If Gemini was specifically targeted, do not fall through to invalid endpoints
+            if 'generativelanguage.googleapis.com' in lower_url:
+                raise
+            pass
+
+    # Otherwise try the centralized client if available
+    if chat_completion:
+        return chat_completion(
+            messages=messages,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            request_timeout=request_timeout,
+            options=options,
+        )
+
+    # Last resort: attempt a simple HTTP call compatible with GitHub Models / OpenAI
+    try:
+        import requests
+        url = base_url.rstrip('/')
+        # If base_url looks like GitHub Models inference, craft a POST to /v1/chat/completions or similar
+        # Try standard OpenAI-compatible endpoint
+        if url.endswith('/inference'):
+            endpoint = url
+        else:
+            endpoint = url
+        payload = {
+            'model': model,
+            'messages': messages,
+            'temperature': float(temperature or 0.5),
+            'max_tokens': int(max_tokens or 512),
+        }
+        headers = {'Content-Type': 'application/json'}
+        if api_key:
+            # support Bearer token or simple header name
+            headers['Authorization'] = f"Bearer {api_key}"
+        resp = requests.post(endpoint, json=payload, headers=headers, timeout=request_timeout)
+        resp.raise_for_status()
+        try:
+            data = resp.json()
+            # try to extract usual fields
+            if isinstance(data, dict):
+                # openai-style
+                if 'choices' in data and isinstance(data['choices'], list) and data['choices']:
+                    return data['choices'][0].get('message', {}).get('content', '') or data['choices'][0].get('text', '') or ''
+                # direct text
+                return data.get('data') or data.get('output') or data.get('text') or ''
+            return ''
+        except Exception:
+            return resp.text
+    except Exception as e:
+        raise
+
+
 def build_cv_pdf_filename(job: Job) -> str:
     from tools.document_tools import sanitize_filename_part
     company = sanitize_filename_part(job.company)
@@ -93,13 +383,25 @@ def load_cv_data(static_folder) -> dict:
         return _json.load(f)
 
 
-def _default_cv_suggestions(cv_data: dict) -> dict:
+def _default_cv_suggestions(cv_data: dict, job: Job | None = None) -> dict:
     skills = cv_data.get('skills', [])
+    default_projs = ['jobs', 'mini_etl_project']
+    if job:
+        target_text = f"{job.name or ''} {job.cover_letter_text or ''}".lower()
+        if any(w in target_text for w in ['delphi', 'pascal']):
+            default_projs = ['Delphi', 'jobs']
+        elif any(w in target_text for w in ['data', 'etl', 'donnee', 'données', 'sql', 'base']):
+            default_projs = ['jobs', 'mini_etl_project', 'board-games-backend']
+        elif any(w in target_text for w in ['linux', 'systeme', 'système', 'devops', 'supervision', 'production', 'bash']):
+            default_projs = ['jobs', 'mini_etl_project']
+        else:
+            default_projs = ['jobs', 'board-games-backend']
     return {
         'cv_title': cv_data.get('basics', {}).get('label', 'Développeur / Consultant IT'),
         'summary': cv_data.get('basics', {}).get('summary', ''),
         'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
         'highlighted_skill_names': [s['name'] for s in skills[:6]],
+        'highlighted_project_names': default_projs,
         'warning': "Aperçu généré sans IA à cause d'une indisponibilité réseau/API.",
         'source': 'fallback',
     }
@@ -411,6 +713,10 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
         for i, w in enumerate(cv_data.get('work', []))
     )
     skills_summary = ', '.join(s['name'] for s in cv_data.get('skills', []))
+    projects_summary = '\n'.join(
+        f"  - {p['name']} [{p.get('primaryLanguage', '')}] : {p.get('summary', '')}"
+        for p in cv_data.get('projects', [])
+    )
 
     # Sections optionnelles (mode avancé)
     optional_text = _build_optional_sections_text(
@@ -445,7 +751,8 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
         "- Localisation : {loc}\n"
         "- LM existante : {lm}\n\n"
         "Experiences du candidat (index entre crochets) :\n{work}\n\n"
-        "Competences disponibles : {skills}"
+        "Competences disponibles : {skills}\n\n"
+        "Projets personnels du candidat :\n{projects}"
         "{optional}"
         "\n\n{extra}"
         'Retourne un objet JSON avec exactement ces champs :\n'
@@ -453,7 +760,8 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
         '  "cv_title": "titre de CV personnalise en francais (max 80 caracteres)",\n'
         '  "summary": "resume professionnel personnalise en francais (3-4 phrases max 600 caracteres) — intègre les éléments sélectionnés de manière naturelle si pertinents",\n'
         '  "highlighted_work_indices": [liste d entiers : indices des 3-5 experiences les plus pertinentes],\n'
-        '  "highlighted_skill_names": [liste de noms de competences les plus pertinentes pour ce poste]\n'
+        '  "highlighted_skill_names": [liste de noms de competences les plus pertinentes pour ce poste],\n'
+        '  "highlighted_project_names": [liste des 2-3 noms de projets personnels les plus pertinents pour ce poste]\n'
         '}}'
     ).format(
         use_optional=use_optional_instruction,
@@ -463,6 +771,7 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
         lm=job.cover_letter_text or 'Non precise',
         work=work_summary,
         skills=skills_summary,
+        projects=projects_summary,
         optional=optional_text,
         extra=f"Instructions supplementaires : {additional_prompt}\n\n" if additional_prompt else '',
     )
@@ -483,22 +792,20 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
         }
 
     try:
-        raw = chat_completion(
+        raw = _model_infer(
             messages=[{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}],
             model=model_name,
             base_url=base_url,
             api_key=github_token,
-            response_format=None if is_local_llm else {'type': 'json_object'},
             temperature=0.3,
             max_tokens=max_tokens,
-            cache_ttl=45,
             request_timeout=request_timeout,
             options=local_options,
         )
     except Exception as exc:
-        fallback = _default_cv_suggestions(cv_data)
+        fallback = _default_cv_suggestions(cv_data, job=job)
         fallback['warning'] = (
-            'Trop de requêtes vers GitHub Models. Réessayez dans une minute.' if _is_rate_limit_error(exc)
+            'Trop de requêtes vers le endpoint de modèles. Réessayez dans une minute.' if _is_rate_limit_error(exc)
             else f"Aperçu généré sans IA : {exc}"
         )
         return fallback
@@ -509,12 +816,16 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
             raw = re.sub(r'^```(?:json)?\s*', '', raw)
             raw = re.sub(r'\s*```$', '', raw)
     try:
-        result = _json.loads(raw or '{}')
+        # Some local endpoints may return already a dict/object; handle gracefully
+        if isinstance(raw, dict):
+            result = raw
+        else:
+            result = _json.loads(raw or '{}')
         # Conserver la liste des sections actives pour affichage dans la modale
         result['_active_sections'] = inc
         return result
     except Exception:
-        return _default_cv_suggestions(cv_data)
+        return _default_cv_suggestions(cv_data, job=job)
 
 
 def _extract_pdf_text(pdf_path: Path) -> str:
@@ -705,18 +1016,17 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
         return base_text
 
     try:
-        raw = chat_completion(
+        raw = _model_infer(
             messages=[{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}],
             model=model_name,
             base_url=base_url,
             api_key=github_token,
             temperature=0.35 if is_local_llm else 0.5,
             max_tokens=max_tokens,
-            cache_ttl=45,
             request_timeout=request_timeout,
             options=local_options,
         )
-        return _cleanup_cover_letter_output(raw.strip(), author_display)
+        return _cleanup_cover_letter_output((raw or '').strip(), author_display)
     except Exception as exc:
         # If the models endpoint was removed or returns 410 Gone, fall back to non-AI text
         msg = str(exc)
@@ -733,7 +1043,7 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
                 base_text = base_text + "\n" + (author_display or '')
             return base_text
         if _is_rate_limit_error(exc):
-            raise RuntimeError('Trop de requêtes vers GitHub Models. Réessayez dans une minute.') from exc
+            raise RuntimeError('Trop de requêtes vers le endpoint de modèles. Réessayez dans une minute.') from exc
         raise RuntimeError(f"Erreur API IA lors de la génération de la LM : {exc}") from exc
 
 
@@ -893,9 +1203,13 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
         Spacer(1, 6),
         Paragraph(SENDER_STREET, st_contact),
         Paragraph(SENDER_CITY, st_contact),
-        Paragraph('\u260e ' + SENDER_PHONE, st_icon),
-        Paragraph('\u2709 ' + SENDER_EMAIL, st_icon),
+        Paragraph(f'Tél.\u00a0: {SENDER_PHONE}', st_contact),
+        Paragraph(f'Email\u00a0: {SENDER_EMAIL}', st_contact),
     ]
+    rqth_label = cv_data.get('basics', {}).get('rqth') or cv_data.get('basics', {}).get('status')
+    if rqth_label:
+        name_cell.append(Spacer(1, 2))
+        name_cell.append(Paragraph(f'<b>Statut\u00a0:</b> {rqth_label}', st_contact))
 
     if photo_path.exists():
         try:
@@ -1028,6 +1342,9 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
             story.append(Paragraph(' - '.join(tp) or edu.get('institution', ''), st_edu))
             ey = (edu.get('endDate') or '')[:4]
             story.append(Paragraph(edu.get('institution', '') + (' (' + ey + ')' if ey else ''), st_edu_sub))
+            desc = edu.get('description', '')
+            if desc:
+                story.append(Paragraph(f'<i>{desc}</i>', st_edu_sub))
             story.append(Spacer(1, 3))
         story.append(Spacer(1, 9))
 
@@ -1079,30 +1396,54 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
         story.append(Spacer(1, 9))
 
     inc = include_sections or suggestions.get('_active_sections') or []
+    all_projects = cv_data.get('projects', [])
 
-    # Section Projets GitHub (si cochée en mode avancé)
-    if 'github_projects' in inc or selected_projects is not None:
-        projects = cv_data.get('projects', [])
-        if selected_projects is not None:
-            projects = [p for p in projects if p.get('name') in selected_projects]
-        if projects:
-            story.append(Paragraph('PROJETS PERSONNELS', st_section))
-            story.append(HRFlowable(width='100%', thickness=0.3, color=COLOR_LGREY))
-            story.append(Spacer(1, 4))
-            for p in projects[:6]:
-                langs = p.get('languages') or ([p['primaryLanguage']] if p.get('primaryLanguage') else [])
-                lang_str = ', '.join(langs[:4]) if langs else ''
-                proj_url = p.get('url') or p.get('githubUrl') or ''
-                title_line = p['name'] + (f' [{lang_str}]' if lang_str else '')
-                story.append(Paragraph('\u2022 ' + title_line, st_jt))
-                desc = p.get('summary') or p.get('description') or ''
-                if desc:
-                    story.append(Paragraph(desc[:180], st_body))
-                if proj_url:
-                    story.append(Paragraph(f'<link href="{proj_url}">{proj_url}</link>',
-                                           _st('lk', fontSize=7.5, leading=10, textColor=COLOR_BLUE)))
-                story.append(Spacer(1, 3))
-            story.append(Spacer(1, 9))
+    # Sélection intelligente des projets personnels :
+    # 1. Sélection manuelle spécifique cochée par l'utilisateur
+    if selected_projects is not None:
+        projects_to_show = [p for p in all_projects if p.get('name') in selected_projects]
+    # 2. Section 'github_projects' cochée globalement
+    elif 'github_projects' in inc:
+        projects_to_show = all_projects[:6]
+    # 3. Par défaut (si aucune case optionnelle n'est cochée) :
+    # inclure automatiquement les projets les mieux adaptés à l'offre
+    elif not include_sections:
+        hl_names = suggestions.get('highlighted_project_names') or []
+        if hl_names:
+            projects_to_show = [p for p in all_projects if p.get('name') in hl_names]
+        else:
+            job_text = f"{job.name or ''} {job.cover_letter_text or ''}".lower()
+            if any(k in job_text for k in ['delphi', 'pascal']):
+                chosen = ['Delphi', 'jobs']
+            elif any(k in job_text for k in ['data', 'etl', 'donnee', 'données', 'sql', 'base']):
+                chosen = ['jobs', 'mini_etl_project', 'board-games-backend']
+            elif any(k in job_text for k in ['linux', 'systeme', 'système', 'devops', 'supervision', 'production', 'bash']):
+                chosen = ['jobs', 'mini_etl_project']
+            else:
+                chosen = ['jobs', 'board-games-backend']
+            projects_to_show = [p for p in all_projects if p.get('name') in chosen]
+    else:
+        projects_to_show = []
+
+    if projects_to_show:
+        story.append(Paragraph('PROJETS PERSONNELS & RÉALISATIONS', st_section))
+        story.append(HRFlowable(width='100%', thickness=0.3, color=COLOR_LGREY))
+        story.append(Spacer(1, 4))
+        for p in projects_to_show[:3]:
+            langs = p.get('languages') or ([p['primaryLanguage']] if p.get('primaryLanguage') else [])
+            lang_str = ', '.join(langs[:4]) if langs else ''
+            disp_name = p.get('displayName') or p.get('name')
+            proj_url = p.get('url') or p.get('githubUrl') or ''
+            title_line = disp_name + (f' [{lang_str}]' if lang_str else '')
+            story.append(Paragraph('\u2022 ' + title_line, st_jt))
+            desc = p.get('summary') or p.get('description') or ''
+            if desc:
+                story.append(Paragraph(desc[:220], st_body))
+            if proj_url:
+                story.append(Paragraph(f'<link href="{proj_url}">{proj_url}</link>',
+                                       _st('lk', fontSize=7.5, leading=10, textColor=COLOR_BLUE)))
+            story.append(Spacer(1, 3))
+        story.append(Spacer(1, 9))
 
     # Section Références (si cochée en mode avancé)
     if 'references' in inc or selected_references is not None:

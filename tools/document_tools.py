@@ -305,7 +305,44 @@ def convert_docx_to_pdf(docx_path: str | Path, pdf_path: str | Path) -> Path:
 
 
 def _build_cover_letter_pdf_paragraphs(job: Job) -> list[str]:
-    paragraphs = [p.strip() for p in re.split(r'\n\s*\n', job.cover_letter_text or '') if p.strip()]
+    raw_text = (job.cover_letter_text or '').replace('\r\n', '\n').replace('\r', '\n')
+
+    def _is_salutation_or_signoff(line: str) -> bool:
+        normalized = line.strip().lower()
+        return normalized.startswith(('madame', 'monsieur', 'cordialement', 'bien cordialement', 'veuillez agréer'))
+
+    def _is_soft_wrapped_line(previous_line: str, next_line: str) -> bool:
+        if not previous_line or not next_line:
+            return False
+        if previous_line.endswith('-'):
+            return True
+        if re.match(r"^[a-zà-öø-ÿ0-9'\"«(]", next_line):
+            return True
+        if _is_salutation_or_signoff(previous_line):
+            return False
+        return not re.search(r'[.!?;:]$', previous_line)
+
+    compact_lines: list[str] = []
+    for raw_line in raw_text.split('\n'):
+        line = re.sub(r'[ \t]+', ' ', raw_line).strip()
+        if not line:
+            if compact_lines and compact_lines[-1] != '':
+                compact_lines.append('')
+            continue
+
+        if compact_lines and compact_lines[-1] != '' and _is_soft_wrapped_line(compact_lines[-1], line):
+            if compact_lines[-1].endswith('-'):
+                compact_lines[-1] = compact_lines[-1][:-1] + line
+            else:
+                compact_lines[-1] = f'{compact_lines[-1]} {line}'
+        else:
+            compact_lines.append(line)
+
+    while compact_lines and compact_lines[-1] == '':
+        compact_lines.pop()
+
+    normalized_text = '\n'.join(compact_lines)
+    paragraphs = [p.strip() for p in re.split(r'\n\s*\n', normalized_text) if p.strip()]
     if paragraphs:
         return paragraphs
 
@@ -333,6 +370,26 @@ def _draw_paragraph(pdf, text: str, left: float, y: float, max_width: float, fon
 
 
 def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_date: datetime) -> bytes:
+    # Prefer DOCX -> PDF conversion when LibreOffice is available.
+    # This path preserves paragraph semantics better when copying text from PDF on macOS Preview.
+    if _find_soffice_binary():
+        try:
+            with TemporaryDirectory() as tmpdir:
+                tmpdir_path = Path(tmpdir)
+                output_docx_path = tmpdir_path / 'cover_letter.docx'
+                output_pdf_path = tmpdir_path / 'cover_letter.pdf'
+                replacements = build_cover_letter_context(job, letter_date)
+                replacements['[LM]'] = '\n\n'.join(_build_cover_letter_pdf_paragraphs(job))
+                render_cover_letter_docx(template_path, output_docx_path, replacements)
+                convert_docx_to_pdf(output_docx_path, output_pdf_path)
+                return output_pdf_path.read_bytes()
+        except (RuntimeError, FileNotFoundError, OSError, subprocess.SubprocessError) as exc:
+            try:
+                from flask import current_app
+                current_app.logger.warning(f'LibreOffice PDF path unavailable, fallback to ReportLab: {exc}')
+            except RuntimeError:
+                pass
+
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT, TA_RIGHT
     from reportlab.lib.pagesizes import A4
@@ -498,50 +555,20 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
     # ── Construire l'en-tête (fixe en haut) ────────────────────────────────────
     header_story = []
 
-    # Photo + coordonnées
-    # Prefer per-user uploaded photo if present
-    photo_path = None
-    try:
-        user_photo = Path(static_folder) / 'uploads' / 'users' / str(job.user_id) / 'photo.jpg'
-        if user_photo.exists():
-            photo_path = user_photo
-    except Exception:
-        photo_path = None
-    if photo_path is None:
-        photo_path = Path(static_folder) / 'Photo_CV.png'
-        if not photo_path.exists():
-            photo_path = Path(static_folder) / 'photo.jpg'
-
+    # Coordonnées expéditeur (pas de photo sur la LM, réservée au CV)
     name_cell = [
         Paragraph(SENDER_NAME, st_name),
-        Spacer(1, 7),
+        Spacer(1, 4),
         Paragraph(SENDER_STREET, st_contact),
         Paragraph(SENDER_CITY, st_contact),
-        Paragraph(f'☎ {SENDER_PHONE}', st_contact_icon),
-        Paragraph(f'✉ {SENDER_EMAIL}', st_contact_icon),
+        Paragraph(f'Tél.\u00a0: {SENDER_PHONE}', st_contact),
+        Paragraph(f'Email\u00a0: {SENDER_EMAIL}', st_contact),
     ]
 
-    if photo_path.exists():
-        try:
-            from PIL import Image as PILImage
-            pil_img = PILImage.open(str(photo_path))
-            orig_w, orig_h = pil_img.size
-            photo_height = PHOTO_WIDTH * orig_h / orig_w
-            photo_img = Image(str(photo_path), width=PHOTO_WIDTH, height=photo_height)
-            header_data  = [[name_cell, photo_img]]
-            header_cols  = [None, PHOTO_WIDTH + 0.2 * cm]
-        except Exception:
-            header_data  = [[name_cell]]
-            header_cols  = [None]
-    else:
-        header_data  = [[name_cell]]
-        header_cols  = [None]
-
-    header_table = Table(header_data, colWidths=header_cols)
+    header_table = Table([[name_cell]], colWidths=['100%'])
     header_table.setStyle(TableStyle([
-        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
-        ('ALIGN',         (0, 0), (0,  0),  'LEFT'),
-        ('ALIGN',         (1, 0), (1,  0),  'RIGHT'),
+        ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN',         (0, 0), (-1, -1), 'LEFT'),
         ('LEFTPADDING',   (0, 0), (-1, -1), 0),
         ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
         ('TOPPADDING',    (0, 0), (-1, -1), 0),
@@ -577,40 +604,100 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
     main_story = []
 
     # — Objet
-    subject_text = f'Objet\u00a0: Candidature au poste de {job.name or ""}'
+    title = (job.name or '').strip()
+    if title:
+        first_char = title[0].lower()
+        if first_char in 'aeiouyéèêëàâîïôûüh':
+            subject_text = f'Objet\u00a0: Candidature au poste d’{title}'
+        else:
+            subject_text = f'Objet\u00a0: Candidature au poste de {title}'
+    else:
+        subject_text = 'Objet\u00a0: Candidature'
     main_story.append(Paragraph(subject_text, st_subject))
     main_story.append(Spacer(1, 14))
 
     # Corps
-    paras = _build_cover_letter_pdf_paragraphs(job)
-    # Préfixer la salutation d'ouverture uniquement si l'IA ne l'a pas déjà incluse
-    if paras and not re.match(r'\s*Madame[,\s]|\s*Monsieur[,\s]', paras[0], re.IGNORECASE):
-        main_story.append(Paragraph('Madame, Monsieur,', st_body))
-        main_story.append(Spacer(1, 8))
-
-    for para_text in paras:
-        # éviter double salutation
-        if re.match(r'\s*Madame[,\s]|\s*Monsieur[,\s]', para_text, re.IGNORECASE):
-            para_text = re.sub(r'^(\s*Madame[,\s]*|\s*Monsieur[,\s]*)+', '', para_text, flags=re.IGNORECASE).strip()
-        main_story.append(Paragraph(para_text, st_body))
-
-    # Phrase de remerciement demandée par l'utilisateur
-    # main_story.append(Spacer(1, 12))
-    # main_story.append(Paragraph(
-    #     "Je vous remercie par avance pour l’attention portée à ma candidature et reste à votre disposition pour un entretien.",
-    #     st_body))
-    # main_story.append(Spacer(1, 10))
-    # # Formule de politesse finale
-    # main_story.append(Paragraph(
-    #     'Veuillez agréer, Madame, Monsieur, l\u2019expression de mes salutations distinguées.',
-    #     st_signoff))
-    # main_story.append(Spacer(1, 14))
-    main_story.append(Paragraph('Cordialement,', st_signoff))
-    # Signature finale (afficher 'Philippe Mourey' en gras)
-    # Signature finale : prioriser le nom présent dans le header (SENDER_NAME), sinon fallback
+    raw_paras = _build_cover_letter_pdf_paragraphs(job)
     author_display = SENDER_NAME or author or 'Philippe Mourey'
 
-    # main_story.append(Spacer(1, 10))
+    # Copie de travail des paragraphes
+    paras = list(raw_paras)
+
+    # 1. Normaliser et retirer la salutation initiale de paras si présente
+    if paras:
+        first = paras[0].strip()
+        if re.match(r'^(madame[,\s]+monsieur|madame|monsieur)[,\s.]*$', first, re.IGNORECASE):
+            paras.pop(0)
+        elif re.match(r'^(madame[,\s]+monsieur|madame|monsieur)[,\s.]*\n+', first, re.IGNORECASE):
+            paras[0] = re.sub(r'^(madame[,\s]+monsieur|madame|monsieur)[,\s.]*\n+', '', first, flags=re.IGNORECASE).strip()
+        elif re.match(r'^(madame[,\s]+monsieur|madame|monsieur)[,\s.]+\s*', first, re.IGNORECASE):
+            paras[0] = re.sub(r'^(madame[,\s]+monsieur|madame|monsieur)[,\s.]+\s*', '', first, flags=re.IGNORECASE).strip()
+
+    # 2. Nettoyer les signatures et formules de clôture redondantes en fin de paras
+    author_names = {author_display.lower(), (SENDER_NAME or '').lower(), 'philippe mourey'}
+    while paras:
+        last = paras[-1].strip()
+        last_lower = last.lower()
+
+        # Si le dernier élément est uniquement le nom de l'auteur
+        if last_lower in author_names:
+            paras.pop()
+            continue
+
+        # Si le dernier élément est uniquement une formule de politesse courte
+        if re.match(r'^(cordialement|bien cordialement|sincères salutations|sincèrement|avec mes salutations)[,\s.]*$', last, re.IGNORECASE):
+            paras.pop()
+            continue
+
+        # Si le dernier élément se termine par le nom de l'auteur sur une ligne dédiée
+        lines = [l.strip() for l in last.split('\n') if l.strip()]
+        if len(lines) > 1 and lines[-1].lower() in author_names:
+            if re.match(r'^(cordialement|bien cordialement|sincères salutations|sincèrement|avec mes salutations)[,\s.]*$', lines[-2], re.IGNORECASE):
+                remaining = '\n'.join(lines[:-2]).strip()
+            else:
+                remaining = '\n'.join(lines[:-1]).strip()
+            if remaining:
+                paras[-1] = remaining
+            else:
+                paras.pop()
+            continue
+
+        # Si la dernière ligne est une formule courte de politesse
+        if len(lines) > 1 and re.match(r'^(cordialement|bien cordialement|sincères salutations|sincèrement)[,\s.]*$', lines[-1], re.IGNORECASE):
+            remaining = '\n'.join(lines[:-1]).strip()
+            if remaining:
+                paras[-1] = remaining
+            else:
+                paras.pop()
+            continue
+
+        break
+
+    # Toujours ajouter la formule d'appel au début du corps
+    main_story.append(Paragraph('Madame, Monsieur,', st_body))
+    main_story.append(Spacer(1, 8))
+
+    # Ajouter les paragraphes du corps
+    for para_text in paras:
+        para_clean = para_text.strip()
+        if not para_clean:
+            continue
+        if re.match(r'^(madame[,\s]+monsieur|madame|monsieur)[,\s.]*$', para_clean, re.IGNORECASE):
+            continue
+        main_story.append(Paragraph(para_clean.replace('\n', '<br/>'), st_body))
+
+    # Formule de clôture & signature finale
+    has_formal_signoff = False
+    if paras:
+        last_body = paras[-1].lower()
+        if any(kw in last_body for kw in ['salutations', 'agréer', 'respectueuses', 'dévouées']):
+            has_formal_signoff = True
+
+    if not has_formal_signoff:
+        main_story.append(Spacer(1, 4))
+        main_story.append(Paragraph('Cordialement,', st_signoff))
+
+    main_story.append(Spacer(1, 6))
     main_story.append(Paragraph(author_display, st_author))
 
     # ── Mesurer les hauteurs ───────────────────────────────────────────────────

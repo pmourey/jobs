@@ -35,9 +35,35 @@
     "followers": 5,
     "following": 30,
     "picture": "https://avatars.githubusercontent.com/u/25690768?v=4",
-    "website": "https://philippe9146.wixsite.com/flask"
+    "website": "https://philippe9146.wixsite.com/flask",
+    "rqth": "Reconnaissance RQTH (bénéficiaire obligation d’emploi)"
   },
   "work": [
+    {
+      "name": "Projets Personnels & Veille Active",
+      "position": "Ingénieur Systèmes Linux & Développeur Python",
+      "url": "https://github.com/pmourey/jobs",
+      "startDate": "2023-11-01",
+      "endDate": "",
+      "summary": "Conception et maintenance d'architectures web et d'outils d'automatisation. Administration et sécurisation d'environnements Linux (Debian, Ubuntu), conteneurisation Docker, intégration d'APIs REST (France Travail, modèles d'IA générative) et automatisation de scripts d'exploitation.",
+      "highlights": [
+        "Linux (Debian, Ubuntu), Python, Flask, Bash, Docker, Git, REST APIs, IA (Gemini, Ollama), Sécurité"
+      ],
+      "location": "Saint-Laurent-du-Var, France",
+      "isCurrentRole": true,
+      "start": {
+        "year": 2023,
+        "month": 11,
+        "day": 1
+      },
+      "end": {
+        "year": null,
+        "month": null,
+        "day": null
+      },
+      "company": "Projets Personnels & Veille Active",
+      "website": "https://github.com/pmourey/jobs"
+    },
     {
       "name": "IDEA Informatique",
       "position": "Développeur Delphi",
@@ -293,140 +319,84 @@
   "volunteer": [],
   "education": [
     {
+      "institution": "ISTQB / CFTL (Comité Français des Tests Logiciels)",
+      "url": "https://www.istqb.org/",
+      "area": "Qualification logicielle & Démarches de test",
+      "studyType": "ISTQB® Certified Tester Foundation Level V4.0",
+      "startDate": "2024-01-01",
+      "endDate": "2024-06-01",
+      "description": "Méthodologies de test, conception des cas de test, validation et intégration continue (Syllabus v4.0)."
+    },
+    {
       "institution": "AFPA Nice",
       "url": "",
       "area": "Concepteur Développeur Informatique",
-      "studyType": "Titre professionnel niveau II",
+      "studyType": "Titre professionnel niveau II (Bac+4)",
       "startDate": "2016-03-01",
       "endDate": "2017-02-01",
-      "score": "",
-      "courses": [],
-      "description": "",
-      "activities": "",
-      "start": {
-        "year": 2016,
-        "month": 3
-      },
-      "end": {
-        "year": 2017,
-        "month": 2
-      },
-      "website": "",
-      "gpa": ""
+      "description": "Formation supérieure en conception logicielle, architectures n-tiers et bases de données."
     },
     {
       "institution": "GRETA de Noisy-le-Grand",
       "url": "",
-      "area": "Administration de sites internet et intranet / administrateur réseaux et systèmes",
-      "studyType": "",
+      "area": "Administration systèmes, réseaux et sites Internet/Intranet",
+      "studyType": "Certification professionnelle",
       "startDate": "1996-12-01",
       "endDate": "1997-06-01",
-      "score": "",
-      "courses": [],
-      "description": "",
-      "activities": "",
-      "start": {
-        "year": 1996,
-        "month": 12
-      },
-      "end": {
-        "year": 1997,
-        "month": 6
-      },
-      "website": "",
-      "gpa": ""
+      "description": "Administration systèmes Unix/Linux, protocoles TCP/IP et services réseaux."
     },
     {
       "institution": "Université de Dijon",
       "url": "",
       "area": "Mathématiques",
-      "studyType": "CAPES",
+      "studyType": "CAPES Mathématiques",
       "startDate": "1994-06-01",
       "endDate": "1994-06-01",
-      "score": "",
-      "courses": [],
-      "description": "",
-      "activities": "",
-      "start": {
-        "year": 1994,
-        "month": 6
-      },
-      "end": {
-        "year": 1994,
-        "month": 6
-      },
-      "website": "",
-      "gpa": ""
+      "description": "Admis au CAPES de Mathématiques."
     },
     {
-      "institution": "Université Bordeaux 1 Sciences Et Technologies",
+      "institution": "Université Bordeaux 1 Sciences et Technologies",
       "url": "",
-      "area": "Electronique, Electrotechnique et Automatique",
-      "studyType": "Master 1",
+      "area": "Électronique, Électrotechnique et Automatique (EEA)",
+      "studyType": "Maîtrise en Électronique (Bac+4 / Master 1)",
       "startDate": "1991-09-01",
-      "endDate": "1992-09-01",
-      "score": "",
-      "courses": [],
-      "description": "",
-      "activities": "",
-      "start": {
-        "year": 1991,
-        "month": 9
-      },
-      "end": {
-        "year": 1992,
-        "month": 9
-      },
-      "website": "",
-      "gpa": ""
+      "endDate": "1992-06-01",
+      "description": "Validation de la Maîtrise en Électronique (1992)."
     },
     {
-      "institution": "Ecole nationale supérieure d'Electronique, Informatique et de Radiocommunications de Bordeaux",
+      "institution": "ENSEIRB - École Nationale Supérieure d'Électronique, Informatique et Radiocommunications de Bordeaux",
       "url": "",
-      "area": "",
-      "studyType": "",
+      "area": "Formation d'ingénieur en électronique et informatique",
+      "studyType": "Cycle Ingénieur (admis sur concours)",
       "startDate": "1989-09-01",
       "endDate": "1991-06-01",
-      "score": "",
-      "courses": [],
-      "description": "",
-      "activities": "",
-      "start": {
-        "year": 1989,
-        "month": 9
-      },
-      "end": {
-        "year": 1991,
-        "month": 6
-      },
-      "website": "",
-      "gpa": ""
+      "description": "Admis sur concours national d'entrée aux grandes écoles après Classes Préparatoires (CPGE)."
     },
     {
-      "institution": "Classes préparatoires aux grandes écoles (Paris)",
+      "institution": "Classes Préparatoires aux Grandes Écoles (CPGE - Paris)",
       "url": "",
-      "area": "Maths Sup/Spé P'",
-      "studyType": "Deug",
+      "area": "Mathématiques et Physique",
+      "studyType": "Maths Sup / Maths Spé (P')",
       "startDate": "1987-09-01",
       "endDate": "1989-06-01",
-      "score": "",
-      "courses": [],
-      "description": "",
-      "activities": "",
-      "start": {
-        "year": 1987,
-        "month": 9
-      },
-      "end": {
-        "year": 1989,
-        "month": 6
-      },
-      "website": "",
-      "gpa": ""
+      "description": "Classes préparatoires scientifiques (Maths Sup / Spé P')."
     }
   ],
   "awards": [],
   "certificates": [
+    {
+      "name": "ISTQB® Certified Tester Foundation Level V4.0",
+      "date": "2024-06-01",
+      "url": "https://www.istqb.org/",
+      "issuer": "ISTQB / CFTL",
+      "summary": "Fondamentaux du test logiciel, niveaux et types de tests, gestion des anomalies et intégration continue.",
+      "fullDate": {
+        "year": 2024,
+        "month": 6,
+        "day": 1
+      },
+      "website": "https://www.istqb.org/"
+    },
     {
       "name": "GCIH - GIAC Certified Incident Handler",
       "date": "2013-02-28",
@@ -456,6 +426,19 @@
   ],
   "publications": [],
   "skills": [
+    {
+      "name": "Test logiciel (ISTQB)",
+      "level": "Avancé",
+      "rating": 4,
+      "yearsOfExperience": 3,
+      "keywords": [
+        "ISTQB",
+        "Tests unitaires",
+        "Tests fonctionnels",
+        "Validation",
+        "Recette"
+      ]
+    },
     {
       "name": "HTML/CSS",
       "level": "Intermediate",
@@ -585,380 +568,129 @@
   "projects": [
     {
       "name": "jobs",
-      "description": "",
-      "highlights": [],
-      "keywords": [],
-      "startDate": "",
-      "endDate": "",
+      "displayName": "jobs - Suivi de Candidatures & Automatisation DevOps/IA",
+      "description": "Application web Flask d'orchestration de candidatures, intégration des APIs France Travail et Google Gemini / Ollama, automatisation de scripts et génération de documents PDF (ReportLab).",
+      "summary": "Application web Flask d'orchestration de candidatures, intégration des APIs France Travail et Google Gemini / Ollama, automatisation de scripts et génération de documents PDF (ReportLab).",
+      "primaryLanguage": "Python",
+      "languages": [
+        "Python",
+        "Flask",
+        "Linux",
+        "Bash",
+        "SQLite",
+        "Docker",
+        "REST API"
+      ],
       "url": "https://github.com/pmourey/jobs",
-      "roles": [
-        "Developer"
-      ],
-      "entity": "Personal",
-      "type": "Application",
-      "displayName": "jobs",
-      "website": "",
-      "summary": "",
-      "primaryLanguage": "Python",
-      "languages": [
-        "Python",
-        "CSS",
-        "HTML",
-        "Shell"
-      ],
-      "libraries": [],
       "githubUrl": "https://github.com/pmourey/jobs",
-      "repositoryUrl": "https://github.com/pmourey/jobs",
-      "start": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "end": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "images": {
-
-      },
-      "videos": {
-
-      }
-    },
-    {
-      "name": "tennis",
-      "description": "",
-      "highlights": [],
-      "keywords": [],
-      "startDate": "",
-      "endDate": "",
-      "url": "https://github.com/pmourey/tennis",
       "roles": [
-        "Developer"
+        "Concepteur / Développeur"
       ],
       "entity": "Personal",
-      "type": "Application",
-      "displayName": "tennis",
-      "website": "",
-      "summary": "",
-      "primaryLanguage": "Python",
-      "languages": [
-        "Shell",
-        "JavaScript",
-        "HTML",
-        "CSS",
-        "Python"
-      ],
-      "libraries": [],
-      "githubUrl": "https://github.com/pmourey/tennis",
-      "repositoryUrl": "https://github.com/pmourey/tennis",
-      "start": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "end": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "images": {
-
-      },
-      "videos": {
-
-      }
+      "type": "Application"
     },
     {
-      "name": "DnD-5th-Edition-API",
-      "description": "",
-      "highlights": [],
-      "keywords": [],
-      "startDate": "",
-      "endDate": "",
-      "url": "https://github.com/codingame-team/DnD-5th-Edition-API",
-      "roles": [
-        "Developer"
-      ],
-      "entity": "Personal",
-      "type": "Application",
-      "displayName": "DnD-5th-Edition-API",
-      "website": "",
-      "summary": "",
+      "name": "mini_etl_project",
+      "displayName": "mini_etl_project - Pipeline ETL & Automatisation de Données",
+      "description": "Pipelines d'extraction, transformation et contrôle d'intégrité de flux de données hétérogènes en Python et SQL avec ordonnancement et journalisation de traitements par lots sous Linux.",
+      "summary": "Pipelines d'extraction, transformation et contrôle d'intégrité de flux de données hétérogènes en Python et SQL avec ordonnancement et journalisation de traitements par lots sous Linux.",
       "primaryLanguage": "Python",
       "languages": [
-        "Batchfile",
         "Python",
-        "HTML",
-        "Shell"
+        "SQL",
+        "Bash",
+        "Linux",
+        "ETL"
       ],
-      "libraries": [],
-      "githubUrl": "https://github.com/codingame-team/DnD-5th-Edition-API",
-      "repositoryUrl": "https://github.com/codingame-team/DnD-5th-Edition-API",
-      "start": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "end": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "images": {
-
-      },
-      "videos": {
-
-      }
-    },
-    {
-      "name": "board-games-frontend",
-      "description": "",
-      "highlights": [],
-      "keywords": [],
-      "startDate": "",
-      "endDate": "",
-      "url": "https://github.com/pmourey/board-games-frontend",
+      "url": "https://github.com/pmourey/mini_etl_project",
+      "githubUrl": "https://github.com/pmourey/mini_etl_project",
       "roles": [
-        "Developer"
+        "Développeur / Data Engineer"
       ],
       "entity": "Personal",
-      "type": "Application",
-      "displayName": "board-games-frontend",
-      "website": "",
-      "summary": "",
-      "primaryLanguage": "JavaScript",
-      "languages": [
-        "HTML",
-        "CSS",
-        "JavaScript"
-      ],
-      "libraries": [],
-      "githubUrl": "https://github.com/pmourey/board-games-frontend",
-      "repositoryUrl": "https://github.com/pmourey/board-games-frontend",
-      "start": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "end": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "images": {
-
-      },
-      "videos": {
-
-      }
+      "type": "Pipeline"
     },
     {
       "name": "board-games-backend",
-      "description": "Flask application for Tic Tac Toe React web app",
-      "highlights": [],
-      "keywords": [],
-      "startDate": "",
-      "endDate": "",
-      "url": "https://github.com/pmourey/board-games-backend",
-      "roles": [
-        "Developer"
-      ],
-      "entity": "Personal",
-      "type": "Application",
-      "displayName": "board-games-backend",
-      "website": "",
-      "summary": "Flask application for Tic Tac Toe React web app",
-      "primaryLanguage": "Python",
-      "languages": [
-        "Python"
-      ],
-      "libraries": [],
-      "githubUrl": "https://github.com/pmourey/board-games-backend",
-      "repositoryUrl": "https://github.com/pmourey/board-games-backend",
-      "start": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "end": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "images": {
-
-      },
-      "videos": {
-
-      }
-    },
-    {
-      "name": "laravel",
-      "description": "",
-      "highlights": [],
-      "keywords": [],
-      "startDate": "",
-      "endDate": "",
-      "url": "https://github.com/pmourey/laravel",
-      "roles": [
-        "Developer"
-      ],
-      "entity": "Personal",
-      "type": "Application",
-      "displayName": "laravel",
-      "website": "",
-      "summary": "",
-      "primaryLanguage": "PHP",
-      "languages": [
-        "PHP",
-        "JavaScript",
-        "CSS",
-        "HTML"
-      ],
-      "libraries": [],
-      "githubUrl": "https://github.com/pmourey/laravel",
-      "repositoryUrl": "https://github.com/pmourey/laravel",
-      "start": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "end": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "images": {
-
-      },
-      "videos": {
-
-      }
-    },
-    {
-      "name": "Fantastic-Bits",
-      "description": "",
-      "highlights": [],
-      "keywords": [],
-      "startDate": "",
-      "endDate": "",
-      "url": "https://github.com/codingame-team/Fantastic-Bits",
-      "roles": [
-        "Developer"
-      ],
-      "entity": "Personal",
-      "type": "Application",
-      "displayName": "Fantastic-Bits",
-      "website": "",
-      "summary": "",
-      "primaryLanguage": "Python",
-      "languages": [
-        "Python"
-      ],
-      "libraries": [],
-      "githubUrl": "https://github.com/codingame-team/Fantastic-Bits",
-      "repositoryUrl": "https://github.com/codingame-team/Fantastic-Bits",
-      "start": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "end": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "images": {
-
-      },
-      "videos": {
-
-      }
-    },
-    {
-      "name": "Delphi",
-      "description": "",
-      "highlights": [],
-      "keywords": [],
-      "startDate": "",
-      "endDate": "",
-      "url": "https://github.com/pmourey/Delphi",
-      "roles": [
-        "Developer"
-      ],
-      "entity": "Personal",
-      "type": "Application",
-      "displayName": "Delphi",
-      "website": "",
-      "summary": "",
-      "primaryLanguage": "Pascal",
-      "languages": [
-        "Pascal"
-      ],
-      "libraries": [],
-      "githubUrl": "https://github.com/pmourey/Delphi",
-      "repositoryUrl": "https://github.com/pmourey/Delphi",
-      "start": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "end": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "images": {
-
-      },
-      "videos": {
-
-      }
-    },
-    {
-      "name": "Flask",
-      "description": "",
-      "highlights": [],
-      "keywords": [],
-      "startDate": "",
-      "endDate": "",
-      "url": "https://github.com/codingame-team/Flask",
-      "roles": [
-        "Developer"
-      ],
-      "entity": "Personal",
-      "type": "Application",
-      "displayName": "Flask",
-      "website": "",
-      "summary": "",
+      "displayName": "board-games-backend - Architecture REST API Flask",
+      "description": "API RESTful modulaire développée sous Flask pour applications web, incluant gestion d'état, tests unitaires et découplage avec interfaces front-end.",
+      "summary": "API RESTful modulaire développée sous Flask pour applications web, incluant gestion d'état, tests unitaires et découplage avec interfaces front-end.",
       "primaryLanguage": "Python",
       "languages": [
         "Python",
-        "HTML",
-        "CSS"
+        "Flask",
+        "REST API",
+        "JSON",
+        "Git"
       ],
-      "libraries": [],
-      "githubUrl": "https://github.com/codingame-team/Flask",
-      "repositoryUrl": "https://github.com/codingame-team/Flask",
-      "start": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "end": {
-        "year": null,
-        "month": null,
-        "day": null
-      },
-      "images": {
-
-      },
-      "videos": {
-
-      }
+      "url": "https://github.com/pmourey/board-games-backend",
+      "githubUrl": "https://github.com/pmourey/board-games-backend",
+      "roles": [
+        "Backend Developer"
+      ],
+      "entity": "Personal",
+      "type": "API"
+    },
+    {
+      "name": "Competitive-Programming-CSES",
+      "displayName": "Competitive-Programming-CSES - Algorithmique & Optimisation",
+      "description": "Implémentation et optimisation de structures de données et algorithmes complexes (théorie des graphes, recherche opérationnelle, programmation dynamique) avec contraintes de performance mémoire et CPU.",
+      "summary": "Implémentation et optimisation de structures de données et algorithmes complexes (théorie des graphes, recherche opérationnelle, programmation dynamique) avec contraintes de performance mémoire et CPU.",
+      "primaryLanguage": "Python",
+      "languages": [
+        "Python",
+        "C++",
+        "Algorithmes",
+        "Optimisation"
+      ],
+      "url": "https://github.com/pmourey/Competitive-Programming-CSES",
+      "githubUrl": "https://github.com/pmourey/Competitive-Programming-CSES",
+      "roles": [
+        "Developer"
+      ],
+      "entity": "Personal",
+      "type": "Library"
+    },
+    {
+      "name": "Delphi",
+      "displayName": "Delphi - Applications Métier & Intégration Base de Données",
+      "description": "Composants applicatifs en Pascal Objet / Delphi pour environnements d'entreprise, maintenance évolutive et interfaçage avec bases de données relationnelles Oracle et SQL.",
+      "summary": "Composants applicatifs en Pascal Objet / Delphi pour environnements d'entreprise, maintenance évolutive et interfaçage avec bases de données relationnelles Oracle et SQL.",
+      "primaryLanguage": "Pascal",
+      "languages": [
+        "Pascal Objet",
+        "Delphi",
+        "Oracle",
+        "SQL"
+      ],
+      "url": "https://github.com/pmourey/Delphi",
+      "githubUrl": "https://github.com/pmourey/Delphi",
+      "roles": [
+        "Développeur"
+      ],
+      "entity": "Personal",
+      "type": "Application"
+    },
+    {
+      "name": "tennis",
+      "displayName": "tennis - Application d’Analyse & Visualisation Web",
+      "description": "Plateforme web de suivi de données sportives avec scripts d'automatisation, parsing de flux et interface utilisateur responsive.",
+      "summary": "Plateforme web de suivi de données sportives avec scripts d'automatisation, parsing de flux et interface utilisateur responsive.",
+      "primaryLanguage": "Python",
+      "languages": [
+        "Python",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Shell"
+      ],
+      "url": "https://github.com/pmourey/tennis",
+      "githubUrl": "https://github.com/pmourey/tennis",
+      "roles": [
+        "Fullstack Developer"
+      ],
+      "entity": "Personal",
+      "type": "Application"
     }
   ],
   "meta": {
