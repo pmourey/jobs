@@ -61,7 +61,11 @@ def chat_completion(messages: list[dict], model: str, base_url: str, api_key: st
     if cached is not None:
         return cached
 
-    url = base_url.rstrip('/') + '/v1/chat/completions'
+    clean_base = base_url.rstrip('/')
+    if 'generativelanguage.googleapis.com' in clean_base:
+        url = clean_base + '/v1beta/openai/chat/completions'
+    else:
+        url = clean_base + '/v1/chat/completions'
     headers = {
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json',

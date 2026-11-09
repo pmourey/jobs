@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /Users/display/PycharmProjects/jobs/venv/bin/activate
+source /Users/display/PycharmProjects/jobs/.venv/bin/activate
 
 # Définir la variable d'environnement FLASK_APP avec le nom de votre application Flask
 export FLASK_APP=flask_app.py

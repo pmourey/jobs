@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PID=$(pgrep -f "flask run")
+PID=$(pgrep -f "flask")
 
 if [ "x$PID" != "x" ]; then
   FLASK_RUN_PORT=$(lsof -i -P -n | grep LISTEN | grep $PID | awk '{print $9}' | cut -d: -f2)

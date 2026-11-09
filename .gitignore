@@ -1,2 +1,6 @@
 config.py
 jobs.sqlite3
+# ignore service account keys
+keys/
+*.json
+/Users/display/keys/
