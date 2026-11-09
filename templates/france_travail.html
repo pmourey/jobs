@@ -47,17 +47,39 @@
 							dernière extraction</em> sont retournées (sauf si vous cochez « Tout réimporter »).
 					</p>
 
-					{# Badges mots-clés ATS #}
+					{# Interactive ATS keywords widget #}
 					<div class="mb-3">
 						<label class="form-label fw-semibold">Mots-clés ATS de votre profil :</label>
-						<div class="d-flex flex-wrap gap-1">
-							{% for kw in ats_keywords %}
-							<span class="badge bg-info text-dark">{{ kw }}</span>
-							{% endfor %}
+						<div id="ats-keywords-container" class="d-flex flex-wrap gap-1 align-items-center">
+							{% if ats_badges %}
+								{% for b in ats_badges %}
+								<label class="badge {% if b.is_custom %}bg-success text-white{% else %}bg-info text-dark{% endif %} mb-0 d-flex align-items-center" style="cursor:pointer">
+									<input type="checkbox" name="ats_keywords" value="{{ b.name }}" {% if b.checked %}checked{% endif %} class="form-check-input me-1">
+									<span class="ats-label">{{ b.name }}</span>
+									<button type="button" class="btn-close btn-close-white btn-sm ms-2 remove-kw" aria-label="Supprimer" title="Retirer" style="display:none"></button>
+								</label>
+								{% endfor %}
+							{% else %}
+								{% for kw in ats_keywords %}
+								<label class="badge bg-info text-dark mb-0 d-flex align-items-center" style="cursor:pointer">
+									<input type="checkbox" name="ats_keywords" value="{{ kw }}" checked class="form-check-input me-1">
+									<span class="ats-label">{{ kw }}</span>
+									<button type="button" class="btn-close btn-close-white btn-sm ms-2 remove-kw" aria-label="Supprimer" title="Retirer" style="display:none"></button>
+								</label>
+								{% endfor %}
+							{% endif %}
 						</div>
+						<div class="mt-2 d-flex gap-2">
+							<input id="ats-new-input" type="text" class="form-control form-control-sm" placeholder="Ajouter un mot-clé" aria-label="Ajouter un mot-clé">
+							<button id="ats-add-btn" type="button" class="btn btn-sm btn-outline-primary">Ajouter</button>
+							<button id="ats-gemini-btn" type="button" class="btn btn-sm btn-outline-success">✨ Suggérer avec Gemini</button>
+							<button id="ats-select-all" type="button" class="btn btn-sm btn-outline-secondary">Tout sélectionner</button>
+							<button id="ats-deselect-all" type="button" class="btn btn-sm btn-outline-secondary">Tout désélectionner</button>
+						</div>
+						<div class="form-text">Cochez les mots-clés à utiliser pour l'extraction automatique. Vous pouvez en ajouter ou retirer avant de lancer l'extraction.</div>
 					</div>
 
-					<form method="post" action="{% if edit_search_id %}{{ url_for('ft_search_edit', search_id=edit_search_id) }}{% else %}{{ url_for('france_travail_search') }}{% endif %}">
+					<form id="auto-search-form" method="post" action="{% if edit_search_id %}{{ url_for('ft_search_edit', search_id=edit_search_id) }}{% else %}{{ url_for('france_travail_search') }}{% endif %}">
 						<input type="hidden" name="mode" value="auto">
 
 						<div class="row g-3 align-items-end">
@@ -83,12 +105,164 @@
 							</div>
 
 							<div class="col-md-4">
+								{% if edit_search_id %}
+								<div class="d-flex gap-2">
+									<button type="submit" name="run_search" value="0" class="btn btn-outline-primary flex-fill">
+										💾 Enregistrer
+									</button>
+									<button type="submit" name="run_search" value="1" class="btn btn-primary flex-fill">
+										🔄 Relancer
+									</button>
+								</div>
+								{% else %}
 								<button type="submit" class="btn btn-primary w-100">
 									🔄 Lancer l'extraction automatique
 								</button>
+								{% endif %}
 							</div>
 						</div>
 					</form>
+
+					<script>
+						(function(){
+							const container = document.getElementById('ats-keywords-container');
+							const addInput = document.getElementById('ats-new-input');
+							const addBtn = document.getElementById('ats-add-btn');
+							const selectAll = document.getElementById('ats-select-all');
+							const deselectAll = document.getElementById('ats-deselect-all');
+							const geminiBtn = document.getElementById('ats-gemini-btn');
+							const form = document.getElementById('auto-search-form');
+
+							if (geminiBtn) {
+								geminiBtn.addEventListener('click', async function(){
+									const origText = geminiBtn.innerHTML;
+									geminiBtn.disabled = true;
+									geminiBtn.innerHTML = '<span class=\"spinner-border spinner-border-sm me-1\"></span> Analyse Gemini...';
+									try {
+										const resp = await fetch('{{ url_for('ft_suggest_keywords') }}', {
+											method: 'POST',
+											headers: { 'Content-Type': 'application/json' }
+										});
+										const data = await resp.json();
+										if (data.status === 'ok' && Array.isArray(data.keywords)) {
+											data.keywords.forEach(kw => {
+												const exists = Array.from(container.querySelectorAll('input[name=\"ats_keywords\"]'))
+													.some(i => i.value.toLowerCase() === kw.toLowerCase());
+												if (!exists) {
+													const b = createBadge(kw);
+													b.classList.remove('bg-info');
+													b.classList.add('bg-success', 'text-white');
+													container.appendChild(b);
+												}
+											});
+										} else {
+											alert('Erreur lors de la suggestion : ' + (data.message || 'Réponse invalide'));
+										}
+									} catch(err) {
+										alert('Erreur réseau / API : ' + err.message);
+									} finally {
+										geminiBtn.disabled = false;
+										geminiBtn.innerHTML = origText;
+									}
+								});
+							}
+
+							function createBadge(keyword){
+								const label = document.createElement('label');
+								label.className = 'badge bg-info text-dark mb-0 d-flex align-items-center';
+								label.style.cursor = 'pointer';
+
+								const cb = document.createElement('input');
+								cb.type = 'checkbox';
+								cb.name = 'ats_keywords';
+								cb.value = keyword;
+								cb.checked = true;
+								cb.className = 'form-check-input me-1';
+
+								const span = document.createElement('span');
+								span.className = 'ats-label';
+								span.textContent = keyword;
+
+								const close = document.createElement('button');
+								close.type = 'button';
+								close.className = 'btn-close btn-close-white btn-sm ms-2 remove-kw';
+								close.title = 'Retirer';
+
+								close.addEventListener('click', function(e){
+									e.preventDefault();
+									label.remove();
+								});
+
+								label.appendChild(cb);
+								label.appendChild(span);
+								label.appendChild(close);
+								return label;
+							}
+
+							addBtn.addEventListener('click', function(){
+							const raw = (addInput.value || '').trim();
+							if(!raw) return;
+							// allow comma-separated multiple keywords
+							const parts = raw.split(',').map(s=>s.trim()).filter(Boolean);
+							parts.forEach(v=>{
+								const exists = Array.from(container.querySelectorAll('input[name="ats_keywords"]')).some(i=>i.value.toLowerCase()===v.toLowerCase());
+								if(exists) return;
+								const b = createBadge(v);
+								container.appendChild(b);
+							});
+							addInput.value='';
+							});
+
+							selectAll.addEventListener('click', function(){
+								Array.from(container.querySelectorAll('input[name="ats_keywords"]')).forEach(i=>i.checked=true);
+							});
+							deselectAll.addEventListener('click', function(){
+								Array.from(container.querySelectorAll('input[name="ats_keywords"]')).forEach(i=>i.checked=false);
+							});
+
+							const savedKeywordsBox = document.querySelector('.col-md-6 .d-flex.flex-wrap.gap-1.align-items-center');
+							if (savedKeywordsBox) {
+								savedKeywordsBox.addEventListener('click', function(e){
+									const removeBtn = e.target.closest('.remove-saved-kw');
+									if(!removeBtn) return;
+									const badge = removeBtn.closest('.saved-kw');
+									if(badge) badge.remove();
+								});
+							}
+
+							// enable remove buttons visibility on hover and deletion on click
+							container.addEventListener('click', function(e){
+								const removeBtn = e.target.closest('.remove-kw');
+								if(removeBtn){
+									e.preventDefault();
+									const badge = removeBtn.closest('label.badge');
+									if(badge) badge.remove();
+								}
+							});
+							container.addEventListener('mouseover', function(e){
+								const btn = e.target.closest('.badge')?.querySelector('.remove-kw');
+								if(btn) btn.style.display = 'inline-block';
+							});
+							container.addEventListener('mouseout', function(e){
+								const btn = e.target.closest('.badge')?.querySelector('.remove-kw');
+								if(btn) btn.style.display = 'none';
+							});
+
+							// Ensure that when submitting the auto form, current checkboxes in container are appended to the form
+							form.addEventListener('submit', function(){
+								// remove any existing hidden inputs we may have added earlier
+								Array.from(form.querySelectorAll('input[name="ats_keywords"]')).forEach(i=>i.remove());
+								// clone current checked checkboxes into the form
+								Array.from(container.querySelectorAll('input[name="ats_keywords"]')).forEach(i=>{
+									if(i.checked){
+										const h = document.createElement('input');
+										h.type='hidden'; h.name='ats_keywords'; h.value = i.value;
+										form.appendChild(h);
+									}
+								});
+							});
+						})();
+					</script>
 				</div>
 			</div>
 		</div>
@@ -110,8 +284,23 @@
 							{# Mots-clés #}
 							<div class="col-md-6">
 								<label for="mots_cles" class="form-label">Mots-clés</label>
-								<input type="text" class="form-control" id="mots_cles" name="mots_cles"
-									placeholder="ex : Python DevOps Linux…" value="{{ prefill_mots_cles or '' }}">
+								<div class="input-group">
+									<input type="text" class="form-control" id="mots_cles" name="mots_cles"
+										placeholder="ex : Python, DevOps, Linux (séparez par des virgules)" value="{{ prefill_mots_cles or '' }}">
+									<button id="manual-gemini-btn" type="button" class="btn btn-outline-success">✨ Suggérer avec Gemini</button>
+								</div>
+								{% if prefill_ats_keywords %}
+								<div class="mt-2 d-flex flex-wrap gap-1 align-items-center">
+									<span class="text-muted small">Mots-clés enregistrés :</span>
+									{% for kw in prefill_ats_keywords %}
+									<label class="badge bg-secondary d-inline-flex align-items-center gap-1 mb-0 saved-kw">
+										<input type="checkbox" name="ats_keywords" value="{{ kw }}" checked class="form-check-input m-0">
+										<span>{{ kw }}</span>
+										<button type="button" class="btn-close btn-close-white btn-sm ms-1 remove-saved-kw" aria-label="Supprimer" title="Retirer"></button>
+									</label>
+									{% endfor %}
+								</div>
+								{% endif %}
 								<div class="form-text">Laissez vide pour ne pas filtrer par mot-clé.</div>
 							</div>
 
@@ -132,7 +321,7 @@
 								<label for="mode_travail" class="form-label">Mode de travail</label>
 								<select class="form-select" id="mode_travail" name="mode_travail">
 									{% for key, label in work_modes.items() %}
-									<option value="{{ key }}">{{ label }}</option>
+									<option value="{{ key }}" {% if (prefill_mode_travail or '') == key %}selected{% endif %}>{{ label }}</option>
 									{% endfor %}
 								</select>
 							</div>
@@ -157,7 +346,7 @@
 							<div class="col-12">
 								<div class="form-check">
 									<input class="form-check-input" type="checkbox" name="entreprises_adaptees"
-										id="entreprises_adaptees">
+										id="entreprises_adaptees" {% if prefill_entreprises_adaptees %}checked{% endif %}>
 									<label class="form-check-label" for="entreprises_adaptees">
 										Handi-engagés / Entreprises adaptées uniquement
 									</label>
@@ -167,19 +356,85 @@
 							<div class="col-md-6">
 								<label for="provider" class="form-label">Source / Fournisseur</label>
 								<select class="form-select" id="provider" name="provider">
-									<option value="france_travail" selected>France Travail (par défaut)</option>
-									<option value="greenhouse">Greenhouse</option>
-									<option value="lever">Lever</option>
-									<option value="ashby">Ashby</option>
-									<option value="teamtailor">Teamtailor</option>
+									<option value="france_travail" {% if (prefill_provider or 'france_travail') == 'france_travail' %}selected{% endif %}>France Travail (par défaut)</option>
+									<option value="greenhouse" {% if prefill_provider == 'greenhouse' %}selected{% endif %}>Greenhouse</option>
+									<option value="lever" {% if prefill_provider == 'lever' %}selected{% endif %}>Lever</option>
+									<option value="ashby" {% if prefill_provider == 'ashby' %}selected{% endif %}>Ashby</option>
+									<option value="teamtailor" {% if prefill_provider == 'teamtailor' %}selected{% endif %}>Teamtailor</option>
 								</select>
 								<div class="form-text">Choisissez une source externe pour tester d'autres flux d'offres.</div>
 							</div>
 							<div class="col-md-6 d-flex align-items-end">
+								{% if edit_search_id %}
+								<div class="d-flex gap-2 w-100">
+									<button type="submit" name="run_search" value="0" class="btn btn-outline-success flex-fill">
+										💾 Enregistrer
+									</button>
+									<button type="submit" name="run_search" value="1" class="btn btn-success flex-fill">
+										🔍 Relancer
+									</button>
+								</div>
+								{% else %}
 								<button type="submit" class="btn btn-success w-100">
 									🔍 Rechercher les offres
 								</button>
+								{% endif %}
 							</div>
+							<script>
+								(function(){
+									const manForm = document.querySelector('#tab-manual form');
+									if(!manForm) return;
+
+									const manualGeminiBtn = document.getElementById('manual-gemini-btn');
+									if (manualGeminiBtn) {
+										manualGeminiBtn.addEventListener('click', async function(){
+											const origText = manualGeminiBtn.innerHTML;
+											manualGeminiBtn.disabled = true;
+											manualGeminiBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Gemini...';
+											try {
+												const resp = await fetch('{{ url_for('ft_suggest_keywords') }}', {
+													method: 'POST',
+													headers: { 'Content-Type': 'application/json' }
+												});
+												const data = await resp.json();
+												if (data.status === 'ok' && Array.isArray(data.keywords)) {
+													const input = document.getElementById('mots_cles');
+													const cur = (input.value || '').trim();
+													const existing = cur ? cur.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean) : [];
+													const toAdd = data.keywords.filter(k => !existing.includes(k.toLowerCase()));
+													if (toAdd.length > 0) {
+														input.value = cur ? cur + ', ' + toAdd.join(', ') : toAdd.join(', ');
+													}
+												} else {
+													alert('Erreur lors de la suggestion : ' + (data.message || 'Réponse invalide'));
+												}
+											} catch(err) {
+												alert('Erreur réseau / API : ' + err.message);
+											} finally {
+												manualGeminiBtn.disabled = false;
+												manualGeminiBtn.innerHTML = origText;
+											}
+										});
+									}
+
+									// On submit du formulaire manuel, si le champ mots_cles contient des virgules,
+									// découper et ajouter des inputs cachés 'ats_keywords' pour que le backend les reçoive de la même façon que le mode automatique.
+									manForm.addEventListener('submit', function(e){
+										// remove previous hidden ats_keywords we may have added
+										Array.from(manForm.querySelectorAll('input[name="ats_keywords"][data-generated]')).forEach(i=>i.remove());
+										const mots = (manForm.querySelector('#mots_cles')?.value || '').trim();
+										if(!mots) return true; // allow submit
+										const parts = mots.split(',').map(s=>s.trim()).filter(Boolean);
+										if(parts.length<=1) return true; // nothing to split
+										parts.forEach(p=>{
+											const h = document.createElement('input'); h.type='hidden'; h.name='ats_keywords'; h.value = p; h.setAttribute('data-generated','1');
+											manForm.appendChild(h);
+										});
+										// Keep original mots_cles value as-is (server may still read it)
+										return true;
+									});
+								})();
+							</script>
 						</div>
 					</form>
 				</div>

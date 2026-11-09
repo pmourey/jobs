@@ -285,7 +285,35 @@ class FtSearch(db.Model):
 
     @property
     def params(self) -> dict:
-        return _json.loads(self.search_params_json or '{}')
+        params = _json.loads(self.search_params_json or '{}')
+        if not isinstance(params, dict):
+            params = {}
+
+        # If only the free-text query is present, derive the saved ATS keywords
+        # from it so edit forms can still rebuild the keyword badges.
+        if params.get('mots_cles') and not params.get('ats_keywords'):
+            try:
+                raw = str(params['mots_cles'])
+                parts = [p.strip() for p in re.split(r'[,\s]+', raw) if p.strip()]
+                params['ats_keywords'] = parts
+            except Exception:
+                pass
+
+        # Fallback: older searches or partial edits may have lost the keyword
+        # list in search_params_json, but the visible search_info still carries it.
+        # Reconstruct it so the edit form can be prefilled correctly.
+        if not params.get('mots_cles') and not params.get('ats_keywords') and self.search_info:
+            try:
+                m = re.search(r'Mots-clés\s*:\s*[«"](?P<kw>[^»"]+)[»"]', self.search_info)
+                if m:
+                    kw = m.group('kw').strip()
+                    if kw:
+                        params['mots_cles'] = kw
+                        params['ats_keywords'] = [p.strip() for p in re.split(r'[,\s]+', kw) if p.strip()]
+            except Exception:
+                pass
+
+        return params
 
     @property
     def unavailable(self) -> set:

@@ -47,6 +47,7 @@ from user_agents import parse
 from user_agents.parsers import UserAgent
 from validators import url
 from werkzeug.security import generate_password_hash  # , check_password_hash
+from werkzeug.utils import secure_filename
 
 from Controller import (check, check_password_and_upgrade,
                         get_session_by_login, get_user_by_id,
@@ -64,7 +65,9 @@ from tools.document_tools import (build_cover_letter_pdf_filename,
                                   resolve_cover_letter_template_path)
 from tools.france_travail import (ATS_KEYWORDS_PROFILE, CONTRACT_TYPES,
                                   DEPARTMENTS, WORK_MODES, search_auto_from_cv,
-                                  search_offers)
+                                  search_offers, generate_keywords_with_gemini,
+                                  compute_offer_matching, enrich_offers_with_matching,
+                                  evaluate_offer_with_gemini)
 from tools.send_emails import send_email
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -228,6 +231,133 @@ def _resolve_user_cv_data(user_id: int) -> dict:
         return None
     return None
 
+
+def _list_user_cvs(user_id: int) -> tuple[list[dict], dict]:
+    """Retourne les CV disponibles pour un utilisateur et les métadonnées associées."""
+    cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    cvs_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = cvs_dir / 'cvs_meta.json'
+    meta = {}
+    if meta_path.exists():
+        try:
+            meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+        except Exception:
+            meta = {}
+
+    files: list[dict] = []
+    for path in sorted(cvs_dir.iterdir()):
+        if not path.is_file() or path.name == 'cvs_meta.json':
+            continue
+        files.append({
+            'name': path.name,
+            'label': path.stem.replace('_', ' ').replace('-', ' ').strip() or path.name,
+        })
+    return files, meta
+
+
+def _load_user_cv_details(user_id: int) -> tuple[list[dict], dict[str, dict]]:
+    """Construit les données nécessaires aux vues de gestion/fusion des CV."""
+    cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    cvs_dir.mkdir(parents=True, exist_ok=True)
+    json_files: list[dict] = []
+    json_details: dict[str, dict] = {}
+
+    for path in sorted(cvs_dir.glob('*.json')):
+        if path.name == 'cvs_meta.json':
+            continue
+        try:
+            data = _json.loads(path.read_text(encoding='utf-8'))
+        except Exception:
+            data = {}
+        details = {}
+        for section in ('basics', 'work', 'education', 'skills', 'projects', 'certificates', 'references', 'languages', 'volunteer'):
+            value = data.get(section)
+            if isinstance(value, list):
+                items = []
+                for idx, item in enumerate(value):
+                    if isinstance(item, dict):
+                        label = item.get('position') or item.get('name') or item.get('title') or item.get('summary') or str(item)
+                    else:
+                        label = str(item)
+                    items.append({'idx': idx, 'label': label})
+                details[section] = items
+            elif value:
+                details[section] = [{'idx': 0, 'label': str(value)}]
+        json_details[path.name] = details
+        json_files.append({
+            'name': path.name,
+            'label': path.stem.replace('_', ' ').replace('-', ' ').strip() or path.name,
+            'path': f'uploads/users/{user_id}/cvs/{path.name}',
+            'is_json': True,
+            'preview': (data.get('basics', {}) or {}).get('label', ''),
+        })
+
+    # include PDFs too for completeness
+    for path in sorted(cvs_dir.glob('*.pdf')):
+        json_files.append({
+            'name': path.name,
+            'label': path.stem.replace('_', ' ').replace('-', ' ').strip() or path.name,
+            'path': f'uploads/users/{user_id}/cvs/{path.name}',
+            'is_json': False,
+            'preview': '',
+        })
+
+    return json_files, json_details
+
+
+def _normalize_keyword_list(values) -> list[str]:
+    """Nettoie une liste de mots-clés en supprimant les doublons et les vides."""
+    seen = set()
+    cleaned: list[str] = []
+    for value in values or []:
+        kw = str(value).strip()
+        if not kw:
+            continue
+        key = kw.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(kw)
+    return cleaned
+
+
+def _keywords_to_query(value) -> str | None:
+    """Convertit des mots-clés saisis ou sélectionnés en requête texte pour l'API."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        raw_parts = [part.strip() for part in value.split(',')]
+    else:
+        raw_parts = [str(part).strip() for part in value]
+    keywords = _normalize_keyword_list(raw_parts)
+    return ' '.join(keywords) if keywords else None
+
+
+def _format_keywords_label(value) -> str | None:
+    """Retourne une représentation lisible des mots-clés pour l'UI."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        parts = [part.strip() for part in value.split(',')]
+    else:
+        parts = [str(part).strip() for part in value]
+    keywords = _normalize_keyword_list(parts)
+    return ', '.join(keywords) if keywords else None
+
+
+def _parse_form_date(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    for fmt in ('%Y-%m-%d', '%Y-%m-%dT%H:%M', '%Y-%m-%dT%H:%M:%S'):
+        try:
+            return datetime.strptime(value, fmt)
+        except Exception:
+            continue
+    try:
+        return datetime.fromisoformat(value)
+    except Exception:
+        return None
+
 @app.route('/get_ip')
 def get_ip():
     # Obtenir l'adresse IP du client
@@ -243,6 +373,49 @@ def get_ip():
     server_ip = gethostbyname(server_hostname)
 
     return f"Adresse IP du client : {client_ip}\nAdresse IP du serveur : {server_ip}"
+
+
+@app.route('/new', methods=['GET', 'POST'])
+@is_connected
+def new():
+    """Créer une nouvelle candidature."""
+    user = get_user_by_id(session['login_id'])
+    if request.method == 'POST':
+        form = request.form
+        form_data = {
+            'name': form.get('name', '').strip(),
+            'company': form.get('company', '').strip(),
+            'url': form.get('url', '').strip(),
+            'zipCode': form.get('zipCode', '').strip(),
+            'contact': form.get('contact', '').strip(),
+            'email': form.get('email', '').strip(),
+            'cover_letter_text': form.get('cover_letter_text', '').strip(),
+        }
+        if not form_data['name'] or not form_data['company']:
+            flash('Le titre et l’entreprise sont obligatoires.', 'error')
+            return render_template('new.html', user=user, form_data=form_data)
+
+        job = Job(
+            name=form_data['name'],
+            url=form_data['url'],
+            zipCode=form_data['zipCode'],
+            company=form_data['company'],
+            contact=form_data['contact'],
+            date=datetime.now(),
+            email=form_data['email'],
+            user_id=session['login_id'],
+        )
+        job.cover_letter_text = form_data['cover_letter_text'] or None
+        db.session.add(job)
+        db.session.commit()
+
+        success, error = handle_file_upload(job.id)
+        if not success:
+            flash(error, 'error')
+        flash('Candidature créée.', 'success')
+        return redirect(url_for('show_all'))
+
+    return render_template('new.html', user=user, form_data=None)
 
 
 @app.route('/user_cv_default', methods=['GET'])
@@ -630,6 +803,192 @@ def show_accounts():
     return render_template('accounts.html', accounts=accounts, user=user)
 
 
+@app.route('/update_account/<int:id>', methods=['GET', 'POST'])
+@is_connected
+def update_account(id):
+    """Affiche et met à jour un compte utilisateur."""
+    current_user = get_user_by_id(session['login_id'])
+    user = User.query.get_or_404(id)
+    is_owner = current_user.id == user.id
+    if not (is_owner or current_user.is_admin):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('welcome'))
+
+    cvs_files, cvs_meta = _list_user_cvs(user.id)
+    if request.method == 'POST':
+        if 'allow_view_offers' in request.form and is_owner:
+            user.allow_view_offers = True
+        elif is_owner:
+            user.allow_view_offers = False
+
+        if current_user.is_admin and not is_owner:
+            role = request.form.get('role')
+            if role == 'Administrateur':
+                user.role = 0
+            elif role == 'Utilisateur':
+                user.role = 1
+
+        user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        cvs_dir = user_dir / 'cvs'
+        cvs_dir.mkdir(parents=True, exist_ok=True)
+        meta_path = cvs_dir / 'cvs_meta.json'
+
+        if is_owner and 'profile_photo' in request.files:
+            photo = request.files.get('profile_photo')
+            if photo and photo.filename:
+                photo_path = user_dir / 'photo.jpg'
+                photo.save(photo_path)
+
+        if is_owner and 'cv_json' in request.files:
+            cv_json = request.files.get('cv_json')
+            if cv_json and cv_json.filename:
+                filename = secure_filename(cv_json.filename) or 'cv.json'
+                if not filename.lower().endswith('.json'):
+                    filename += '.json'
+                target = cvs_dir / filename
+                raw = cv_json.read()
+                try:
+                    parsed = parse_json_cv(raw)
+                    target.write_text(_json.dumps(parsed, ensure_ascii=False, indent=2), encoding='utf-8')
+                    meta = cvs_meta or {}
+                    meta['_default'] = filename
+                    meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+                except Exception as exc:
+                    flash(f'CV JSON invalide : {exc}', 'error')
+                    return redirect(url_for('update_account', id=user.id))
+
+        db.session.commit()
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.accept_mimetypes.best == 'application/json':
+            return jsonify({'ok': True})
+        flash('Compte mis à jour.', 'success')
+        return redirect(url_for('update_account', id=user.id))
+
+    cvs_files, cvs_meta = _list_user_cvs(user.id)
+    return render_template(
+        'update_account.html',
+        user=user,
+        current_user_id=current_user.id,
+        cvs_files=cvs_files,
+        cvs_meta=cvs_meta,
+    )
+
+
+@app.route('/manage_cvs/<int:user_id>', methods=['GET'])
+@is_connected
+def manage_cvs_view(user_id):
+    """Vue de gestion des CVs de l'utilisateur."""
+    current_user = get_user_by_id(session['login_id'])
+    if not (current_user.is_admin or current_user.id == user_id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('welcome'))
+    user = User.query.get_or_404(user_id)
+    files, json_details = _load_user_cv_details(user_id)
+    json_files = [f for f in files if f['is_json']]
+    sections = ['basics', 'work', 'education', 'skills', 'projects', 'certificates', 'references', 'languages', 'volunteer']
+    return render_template(
+        'manage_cvs.html',
+        user=user,
+        user_id=user_id,
+        files=files,
+        json_files=json_files,
+        json_details=json_details,
+        sections=sections,
+    )
+
+
+@app.route('/manage_cvs/<int:user_id>', methods=['POST'])
+@is_connected
+def manage_cvs(user_id):
+    """Actions simples de gestion des CVs (défaut/suppression)."""
+    current_user = get_user_by_id(session['login_id'])
+    if not (current_user.is_admin or current_user.id == user_id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('welcome'))
+
+    action = request.form.get('action', '').strip()
+    filename = request.form.get('file', '').strip()
+    cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    cvs_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = cvs_dir / 'cvs_meta.json'
+    meta = {}
+    if meta_path.exists():
+        try:
+            meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+        except Exception:
+            meta = {}
+
+    target = cvs_dir / filename if filename else None
+    if action == 'set_default' and filename:
+        if target and target.exists():
+            meta['_default'] = filename
+            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+            flash('CV par défaut mis à jour.', 'success')
+    elif action == 'delete' and target and target.exists():
+        try:
+            target.unlink()
+            if meta.get('_default') == filename:
+                meta.pop('_default', None)
+                meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+            flash('CV supprimé.', 'success')
+        except Exception as exc:
+            flash(f'Impossible de supprimer le fichier : {exc}', 'error')
+    else:
+        flash('Action CV inconnue.', 'warning')
+
+    return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+
+@app.route('/merge_cvs/<int:user_id>', methods=['POST'])
+@is_connected
+def merge_cvs(user_id):
+    """Fusionne deux CV JSON en un nouveau fichier."""
+    current_user = get_user_by_id(session['login_id'])
+    if not (current_user.is_admin or current_user.id == user_id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('welcome'))
+
+    cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    cvs_dir.mkdir(parents=True, exist_ok=True)
+    json_paths = [p for p in cvs_dir.glob('*.json') if p.name != 'cvs_meta.json']
+    if not json_paths:
+        flash('Aucun CV JSON disponible pour la fusion.', 'warning')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    selections = {}
+    for key, value in request.form.items():
+        if key.startswith('section_') and value:
+            selections[key.removeprefix('section_')] = value
+
+    try:
+        merged = merge_cv_jsons(json_paths, selections)
+        out_name = f'merged_cv_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.json'
+        out_path = cvs_dir / out_name
+        out_path.write_text(_json.dumps(merged, ensure_ascii=False, indent=2), encoding='utf-8')
+        meta_path = cvs_dir / 'cvs_meta.json'
+        meta = {}
+        if meta_path.exists():
+            try:
+                meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+            except Exception:
+                meta = {}
+        meta['_default'] = out_name
+        meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+        flash('CV fusionné avec succès.', 'success')
+    except Exception as exc:
+        flash(f'Erreur lors de la fusion des CVs : {exc}', 'error')
+
+    return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+
+@app.route('/edit_cv/<int:user_id>')
+@is_connected
+def edit_cv(user_id):
+    """Alias compatible vers la gestion des CVs."""
+    return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+
 @app.route('/delete_session/<int:id>', methods=['POST'])
 @is_connected
 @is_admin
@@ -647,6 +1006,40 @@ def delete_session(id):
         db.session.delete(session_obj)
         db.session.commit()
     return '', 200
+
+
+@app.route('/delete/<int:id>', methods=['GET'])
+@is_connected
+def delete_job(id):
+    """Supprime une candidature depuis la page de suivi."""
+    job = Job.query.get_or_404(id)
+    current = get_user_by_id(session['login_id'])
+    if not (current.is_admin or current.id == job.user_id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('show_all'))
+
+    try:
+        capture_path = Path(app.static_folder) / 'images' / f'capture_{job.id}.pdf'
+        if capture_path.exists():
+            capture_path.unlink()
+    except Exception as exc:
+        app.logger.warning(f'Impossible de supprimer le fichier capture pour la candidature #{job.id}: {exc}')
+
+    try:
+        generated_dir = Path(app.static_folder) / 'uploads' / 'users' / str(job.user_id) / 'generated'
+        if generated_dir.exists():
+            for candidate in generated_dir.glob(f'*{job.id}*.pdf'):
+                try:
+                    candidate.unlink()
+                except Exception as exc:
+                    app.logger.warning(f'Impossible de supprimer le PDF généré {candidate}: {exc}')
+    except Exception as exc:
+        app.logger.warning(f'Impossible de nettoyer les PDFs générés pour la candidature #{job.id}: {exc}')
+
+    db.session.delete(job)
+    db.session.commit()
+    flash('Candidature supprimée.', 'success')
+    return redirect(url_for('show_all'))
 
 
 @app.route('/delete_sessions', methods=['GET', 'POST'])
@@ -857,6 +1250,40 @@ def show_all():
                            cv_skills=cv_skills, cv_references=cv_references, cv_projects=cv_projects)
 
 
+@app.route('/update/<int:id>', methods=['GET', 'POST'])
+@is_connected
+def update(id):
+    """Modifier une candidature existante."""
+    job = Job.query.get_or_404(id)
+    current = get_user_by_id(session['login_id'])
+    if not (current.is_admin or current.id == job.user_id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('show_all'))
+
+    if request.method == 'POST':
+        form = request.form
+        job.name = form.get('name', job.name)
+        job.url = form.get('url', job.url)
+        job.zipCode = form.get('zipCode', job.zipCode)
+        job.company = form.get('company', job.company)
+        job.contact = form.get('contact', job.contact)
+        job.email = form.get('email', job.email)
+        job.applicationDate = _parse_form_date(form.get('applicationDate')) or job.applicationDate
+        job.relaunchDate = _parse_form_date(form.get('relaunchDate'))
+        job.refusalDate = _parse_form_date(form.get('refusalDate'))
+        if 'cover_letter_text' in form:
+            job.cover_letter_text = form.get('cover_letter_text') or None
+        db.session.commit()
+
+        success, error = handle_file_upload(job.id)
+        if not success:
+            flash(error, 'error')
+        flash('Candidature mise à jour.', 'success')
+        return redirect(url_for('show_all'))
+
+    return render_template('update.html', job=job)
+
+
 @app.route('/generate_cover_letter_pdf/<int:id>', endpoint='generate_cover_letter_pdf')
 @is_connected
 def generate_cover_letter_pdf(id):
@@ -879,6 +1306,17 @@ def generate_cover_letter_pdf(id):
         mimetype='application/pdf',
         as_attachment=True,
         download_name=build_cover_letter_pdf_filename(job),
+    )
+
+
+def _ft_ats_prefix(enabled: bool = True) -> str:
+    """Préfixe d'instructions ATS pour optimiser la compatibilité avec les systèmes de filtrage."""
+    if not enabled:
+        return ''
+    return (
+        "Optimisation ATS activée : intègre de manière naturelle et pertinente les mots-clés techniques, "
+        "les intitulés standards du marché et les compétences recherchées par les systèmes de filtrage automatique (ATS) "
+        "afin de maximiser le score de correspondance du profil avec l'offre d'emploi.\n\n"
     )
 
 
@@ -1244,7 +1682,8 @@ def generate_cv_pdf(id):
 def preview_lm_ai(id):
     """Génère une lettre de motivation par IA et retourne le texte au format JSON."""
     job = Job.query.get_or_404(id)
-    github_token = app.config.get('GITHUB_TOKEN', '')
+    enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
+    github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
     payload = request.get_json(force=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
     ats_mode = bool(payload.get('ats_mode', False))
@@ -1270,7 +1709,6 @@ def preview_lm_ai(id):
         'publications': '📚 Publications',
     }
     try:
-        # Allow overriding CV data via default_cv property (client may pass the filename stored for the job owner)
         default_cv = payload.get('default_cv')
         if not default_cv:
             try:
@@ -1306,37 +1744,20 @@ def preview_lm_ai(id):
         if default_cv:
             resolved = _resolve_default_cv_data(job.user_id, default_cv)
 
-        # expose resolved name for debugging / client
         resolved_name = default_cv if (default_cv and resolved) else (default_cv if default_cv and not resolved else None)
         app.logger.info(f"preview_lm_ai: resolved default_cv='{resolved_name}' for user_id={job.user_id} job_id={id}")
-        # If external AI is disabled (or no token), produce a lightweight local fallback text
-        enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
-        if not enable_ai or not github_token:
-            # Build a simple, useful LM fallback from job and CV basics
-            basics = (resolved or {}).get('basics', {}) if resolved else {}
-            candidate_name = basics.get('name') or ''
-            summary = basics.get('summary') or ''
-            skills = ', '.join([s.get('name') if isinstance(s, dict) else str(s) for s in (resolved or {}).get('skills', [])[:6]])
-            intro = f"Madame, Monsieur,\n\nJe vous propose ma candidature pour le poste '{job.name}' chez {job.company}."
-            body = ''
-            if summary:
-                body += '\n\n' + summary
-            if skills:
-                body += '\n\nCompétences clés : ' + skills
-            closing = '\n\nJe reste à votre disposition pour un entretien.\n\nCordialement,\n' + (candidate_name or '')
-            text = intro + body + closing
-        else:
-            text = get_ai_cover_letter_text(
-                job=job, github_token=github_token,
-                additional_prompt=additional_prompt, include_sections=include_sections,
-                selected_education=selected_education,
-                selected_certificates=selected_certificates,
-                selected_skills=selected_skills,
-                selected_references=selected_references,
-                selected_projects=selected_projects,
-                selected_premium_modules=selected_premium_modules,
-                cv_data=resolved,
-            )
+
+        text = get_ai_cover_letter_text(
+            job=job, github_token=github_token,
+            additional_prompt=additional_prompt, include_sections=include_sections,
+            selected_education=selected_education,
+            selected_certificates=selected_certificates,
+            selected_skills=selected_skills,
+            selected_references=selected_references,
+            selected_projects=selected_projects,
+            selected_premium_modules=selected_premium_modules,
+            cv_data=resolved,
+        )
         resp = {
             'text': text,
             'active_section_labels': [_section_labels[s] for s in include_sections if s in _section_labels],
@@ -1372,1114 +1793,6 @@ def save_lm_text(id):
     return jsonify({'ok': True})
 
 
-@app.route('/new/', methods=['GET', 'POST'])
-@is_connected
-@is_editor_or_admin
-def new():
-    if request.method == 'POST':
-        email: str = request.form.get('email', '')
-        if not (request.form.get('name') and request.form.get('company')):
-            flash('Veuillez remplir tous les champs obligatoires (Offre et Entreprise)', 'error')
-            user = get_user_by_id(session['login_id'])
-            # return the form with previously entered values
-            return render_template('new.html', form_data=request.form, user=user)
-        elif email and not check(app.config['REGEX'], email):
-            flash(f'E-mail invalide : {email}', 'error')
-            user = get_user_by_id(session['login_id'])
-            return render_template('new.html', form_data=request.form, user=user)
-        else:
-            # Create job
-            job = Job(name=request.form.get('name'), url=request.form.get('url'),
-                      zipCode=request.form.get('zipCode'), company=request.form.get('company'),
-                      contact=request.form.get('contact'), date=datetime.now(), email=email,
-                      user_id=session['login_id'])
-            # Save cover letter text if provided
-            cover_text = request.form.get('cover_letter_text')
-            if cover_text:
-                job.cover_letter_text = cover_text
-            db.session.add(job)
-            db.session.commit()
-
-            # Handle file upload (capture and cover letter)
-            success, error_msg = handle_file_upload(job.id)
-            if not success:
-                flash(error_msg, 'error')
-                user = get_user_by_id(session['login_id'])
-                # in case of error, show new form with previous values
-                return render_template('new.html', form_data=request.form, user=user)
-
-            # set flags
-            if success and 'capture_file' in request.files and request.files['capture_file'].filename:
-                job.is_capture = 1
-            db.session.commit()
-
-            flash('Record was successfully added')
-            return redirect(url_for('show_all'))
-    else:
-        user = get_user_by_id(session['login_id'])
-        return render_template('new.html', form_data=None, user=user)
-
-
-@app.route('/toggle_expired/<int:id>', methods=['POST'])
-@is_connected
-@is_editor_or_admin
-def toggle_expired(id):
-    job = Job.query.get_or_404(id)
-    job.active = not job.active
-    db.session.commit()
-    return '', 200
-
-
-@app.route('/delete/<int:id>', methods=['GET', 'POST'])
-@is_connected
-@is_editor_or_admin
-def delete(id):
-    app.logger.debug(f'Delete job #{id}')
-    if request.method == 'GET':
-        job = Job.query.get_or_404(id)
-        app.logger.debug(f'Job debug: {job}')
-        db.session.delete(job)
-        db.session.commit()
-        flash(f'Job offer \"{job.name}\" from  \"{job.contact}\" was deleted!')
-        return redirect(url_for('show_all'))
-
-
-@app.route('/delete_account/<int:id>', methods=['GET', 'POST'])
-@is_connected
-@is_admin
-def delete_account(id):
-    app.logger.debug(f'Delete user #{id}')
-    if request.method == 'GET':
-        user = User.query.get_or_404(id)
-        app.logger.debug(f'User debug: {user}')
-        db.session.delete(user)
-        db.session.commit()
-        flash(f'User \"{user.username}\" has been deleted!')
-        return redirect(url_for('show_accounts'))
-
-
-@app.route('/update_account/<int:id>', methods=['GET', 'POST'])
-@is_connected
-def update_account(id):
-    """Permet à un administrateur de changer le rôle d'un utilisateur,
-    et à un utilisateur propriétaire de modifier ses propres options (allow_view_offers)
-    et d'uploader son CV JSON. Les administrateurs NE PEUVENT PAS modifier
-    l'option de partage `allow_view_offers` pour d'autres comptes.
-    """
-    user: User = User.query.get_or_404(id)
-    current = get_user_by_id(session['login_id'])
-
-    # autorisation : soit admin, soit le propriétaire du compte
-    if not (current.is_admin or current.id == user.id):
-        flash('Action non autorisée.', 'error')
-        return redirect(url_for('show_accounts'))
-
-    if request.method == 'POST':
-        # Rôle : uniquement modifiable par un administrateur
-        if current.is_admin:
-            roles = ['Administrateur', 'Utilisateur']
-            selected = request.form.get('role')
-            # map role label to enum value (ADMIN=0, USER=1)
-            if selected == 'Administrateur':
-                user.role = 0
-            else:
-                user.role = 1
-
-        # L'option allow_view_offers ne peut être changée que par le propriétaire
-        if current.id == user.id:
-            user.allow_view_offers = True if request.form.get('allow_view_offers') in ('on', 'true', '1') else False
-
-        # Handle CV JSON upload (file input name 'cv_json') - only owner can upload
-        if current.id == user.id and 'cv_json' in request.files and request.files['cv_json'].filename:
-            f = request.files['cv_json']
-            # accept only JSON mime/extension
-            if not f.filename.lower().endswith('.json'):
-                flash('Veuillez fournir un fichier JSON avec l’extension .json.', 'error')
-                return redirect(url_for('update_account', id=user.id))
-            # Read and validate JSON content before saving
-            try:
-                raw = f.read()
-                import json as _json
-                parsed = _json.loads(raw)
-            except Exception as exc:
-                app.logger.debug(f'Invalid CV JSON upload for user {user.id}: {exc}')
-                flash('Fichier JSON invalide. Vérifiez le contenu et réessayez.', 'error')
-                return redirect(url_for('update_account', id=user.id))
-            # Persist pretty-printed JSON into user's directory
-            user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id)
-            user_dir.mkdir(parents=True, exist_ok=True)
-            orig_path = user_dir / 'cv_original.json'
-            with open(orig_path, 'w', encoding='utf-8') as fh:
-                fh.write(_json.dumps(parsed, ensure_ascii=False, indent=2))
-
-        # Handle PDF upload from account page (input name 'cv_pdf')
-        if current.id == user.id and 'cv_pdf' in request.files and request.files['cv_pdf'].filename:
-            fpdf = request.files['cv_pdf']
-            if not fpdf.filename.lower().endswith('.pdf'):
-                flash('Veuillez fournir un fichier PDF.', 'error')
-                return redirect(url_for('update_account', id=user.id))
-            cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id) / 'cvs'
-            cvs_dir.mkdir(parents=True, exist_ok=True)
-            dest = cvs_dir / fpdf.filename
-            try:
-                fpdf.save(str(dest))
-            except Exception as exc:
-                flash(f"Erreur lors de l'enregistrement du PDF : {exc}", 'error')
-                return redirect(url_for('update_account', id=user.id))
-            # update metadata
-            meta_path = cvs_dir / 'cvs_meta.json'
-            try:
-                meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
-            except Exception:
-                meta = {}
-            meta.setdefault(fpdf.filename, fpdf.filename)
-            if '_default' not in meta:
-                meta['_default'] = fpdf.filename
-            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-        # Handle profile photo upload (input name 'profile_photo')
-        if current.id == user.id and 'profile_photo' in request.files and request.files['profile_photo'].filename:
-            pf = request.files['profile_photo']
-            # accept common image extensions
-            if not any(pf.filename.lower().endswith(ext) for ext in ('.png', '.jpg', '.jpeg')):
-                flash('Veuillez fournir une image (png/jpg).', 'error')
-                return redirect(url_for('update_account', id=user.id))
-            photo_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id)
-            photo_dir.mkdir(parents=True, exist_ok=True)
-            dest_photo = photo_dir / 'photo.jpg'
-            try:
-                pf.save(str(dest_photo))
-                flash('Photo de profil enregistrée.', 'success')
-            except Exception as exc:
-                app.logger.error(f'Failed to save profile photo for user {user.id}: {exc}')
-                flash(f"Erreur lors de l'enregistrement de la photo : {exc}", 'error')
-                return redirect(url_for('update_account', id=user.id))
-
-        db.session.add(user)
-        db.session.commit()
-        flash('Record was successfully updated')
-        # redirect to accounts for admins, to profile for owner
-        if current.is_admin and current.id != user.id:
-            return redirect(url_for('show_accounts'))
-        return redirect(url_for('welcome'))
-
-    else:
-        # Pass current user id so template can hide/share controls
-        # Also provide list of uploaded CVs and metadata so the template can offer a "CV par défaut" selector
-        cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id) / 'cvs'
-        import json as _json
-        meta = {}
-        files = []
-        if cvs_dir.exists():
-            meta_path = cvs_dir / 'cvs_meta.json'
-            try:
-                meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
-            except Exception:
-                meta = {}
-            for p in sorted(cvs_dir.iterdir()):
-                if p.is_file():
-                    files.append({'name': p.name, 'label': meta.get(p.name, p.name)})
-
-        return render_template('update_account.html', user=user, current_user_id=current.id,
-                               cvs_files=files, cvs_meta=meta)
-
-
-@app.route('/import_cv', methods=['POST'])
-@is_connected
-def import_cv():
-    """Endpoint pour importer un CV via upload JSON ou via URL (LinkedIn/FT).
-    - Form fields possibles: 'cv_json' file, 'cv_url' text, 'user_id' hidden.
-    """
-    current = get_user_by_id(session['login_id'])
-    target_id = int(request.form.get('user_id', current.id))
-    if target_id != current.id and not current.is_admin:
-        flash('Action non autorisée.', 'error')
-        return redirect(url_for('update_account', id=target_id))
-
-    import json as _json
-
-    # Handle JSON upload
-    if 'cv_json' in request.files and request.files['cv_json'].filename:
-        f = request.files['cv_json']
-        raw = f.read()
-        try:
-            parsed = parse_json_cv(raw)
-        except Exception as exc:
-            # If AJAX, return JSON error
-            if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept','').startswith('application/json'):
-                return jsonify({'ok': False, 'message': f'JSON invalide: {exc}'}), 400
-            flash(f'JSON invalide: {exc}', 'error')
-            return redirect(url_for('update_account', id=target_id))
-        # Save pretty JSON
-        user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(target_id)
-        user_dir.mkdir(parents=True, exist_ok=True)
-        orig_path = user_dir / 'cv_original.json'
-        with open(orig_path, 'w', encoding='utf-8') as fh:
-            import json as _json
-            fh.write(_json.dumps(parsed, ensure_ascii=False, indent=2))
-        # Respond differently for AJAX vs normal form
-        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept','').startswith('application/json'):
-            return jsonify({'ok': True, 'message': 'CV JSON importé avec succès.'}), 200
-        flash('CV JSON importé avec succès.', 'success')
-        return redirect(url_for('update_account', id=target_id))
-
-    # Handle PDF upload (LinkedIn exported PDF)
-    if 'cv_pdf' in request.files and request.files['cv_pdf'].filename:
-        f = request.files['cv_pdf']
-        filename = f.filename
-        # ensure directory
-        cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(target_id) / 'cvs'
-        cvs_dir.mkdir(parents=True, exist_ok=True)
-        dest = cvs_dir / filename
-        try:
-            f.save(str(dest))
-        except Exception as exc:
-            flash(f"Erreur lors de l'enregistrement du PDF : {exc}", 'error')
-            return redirect(url_for('update_account', id=target_id))
-        # Try to parse LinkedIn PDF into structured JSON using tools.cv_tools
-        parse_debug_msgs = []
-        try:
-            from tools.cv_tools import parse_linkedin_pdf_to_json
-            parsed_out = cvs_dir / 'cv_linkedin_parsed.json'
-            msg = f'Attempting parse_linkedin_pdf_to_json for {dest} -> {parsed_out}'
-            app.logger.info(msg)
-            parse_debug_msgs.append(msg)
-            try:
-                parsed_ok = parse_linkedin_pdf_to_json(dest, parsed_out)
-            except Exception as e:
-                app.logger.exception(f'parse_linkedin_pdf_to_json raised: {e}')
-                parse_debug_msgs.append(f'parse_linkedin_pdf_to_json raised: {e}')
-                parsed_ok = False
-
-            # Fallback: if parser returned False or did not create file, try the bundled linkedin-resume-parser CLI
-            if not parsed_ok or not parsed_out.exists():
-                try:
-                    import subprocess, sys
-                    msg = 'Primary parser failed or produced no output — trying linkedin-resume-parser CLI fallback'
-                    app.logger.info(msg)
-                    parse_debug_msgs.append(msg)
-                    # Call the CLI module provided in linkedin-resume-parser package
-                    cmd = [sys.executable, '-m', 'linkedin_resume_parser.cli', str(dest), '-o', str(parsed_out)]
-                    app.logger.debug(f'Running fallback command: {cmd}')
-                    parse_debug_msgs.append(f'Running fallback command: {cmd}')
-                    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
-                    app.logger.debug(f'fallback stdout: {proc.stdout[:300]}')
-                    app.logger.debug(f'fallback stderr: {proc.stderr[:300]}')
-                    parse_debug_msgs.append(f'fallback stdout: {proc.stdout[:300]}')
-                    parse_debug_msgs.append(f'fallback stderr: {proc.stderr[:300]}')
-                    parsed_ok = parsed_out.exists()
-                    # If subprocess fallback failed due to module not found (module not installed in venv),
-                    # try an in-process fallback using the local package present in the workspace.
-                    if not parsed_ok and b"ModuleNotFoundError" in (proc.stderr or b""):
-                        try:
-                            app.logger.info('Subprocess fallback reported ModuleNotFoundError — attempting in-process parser import')
-                            parse_debug_msgs.append('Subprocess fallback ModuleNotFoundError — trying in-process import')
-                            # Attempt to import the local workspace package by adding its parent dir to sys.path
-                            import importlib, sys
-                            pkg_path = Path(__file__).parent / 'linkedin-resume-parser'
-                            if str(pkg_path) not in sys.path:
-                                sys.path.insert(0, str(pkg_path))
-                            # Now import the parser module
-                            lrp = importlib.import_module('linkedin_resume_parser.parser')
-                            resume_dict = lrp.parse_pdf(str(dest))
-                            # write JSON
-                            parsed_out.write_text(_json.dumps(resume_dict, ensure_ascii=False, indent=2), encoding='utf-8')
-                            parsed_ok = parsed_out.exists()
-                            parse_debug_msgs.append('In-process parser produced output' if parsed_ok else 'In-process parser produced no output')
-                        except Exception as e:
-                            app.logger.exception(f'In-process linkedin parser failed: {e}')
-                            parse_debug_msgs.append(f'In-process linkedin parser failed: {e}')
-                            parsed_ok = False
-                except Exception as e:
-                    app.logger.exception(f'Fallback CLI parse failed: {e}')
-                    parse_debug_msgs.append(f'Fallback CLI parse failed: {e}')
-                    parsed_ok = False
-
-            if parsed_ok and parsed_out.exists():
-                parsed_name = parsed_out.name
-            else:
-                parsed_name = None
-        except Exception:
-            app.logger.exception('Unexpected error while attempting LinkedIn PDF parse')
-            parse_debug_msgs.append('Unexpected error while attempting LinkedIn PDF parse')
-            parsed_name = None
-
-        # update metadata file
-        meta_path = cvs_dir / 'cvs_meta.json'
-        try:
-            meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
-        except Exception:
-            meta = {}
-        meta.setdefault(filename, filename)
-        # register parsed json if available
-        if parsed_name:
-            meta.setdefault(parsed_name, parsed_name)
-        if '_default' not in meta:
-            # prefer parsed JSON as default, else the uploaded PDF
-            meta['_default'] = parsed_name or filename
-        meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-        # If this was an AJAX/fetch request, return JSON so the frontend can handle it
-        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept','').startswith('application/json'):
-            return jsonify({'ok': True, 'message': 'CV PDF importé avec succès.', 'pdf': filename, 'parsed_json': parsed_name, 'parse_log': parse_debug_msgs}), 200
-        flash('CV PDF importé avec succès.', 'success')
-        return redirect(url_for('update_account', id=target_id))
-
-    # Handle URL import
-    cv_url = request.form.get('cv_url', '').strip()
-    if cv_url:
-        # basic source detection
-        try:
-            if 'linkedin.com' in cv_url:
-                cv = fetch_linkedin_profile(cv_url)
-            else:
-                # try to fetch raw JSON
-                import requests
-                r = requests.get(cv_url, timeout=5)
-                r.raise_for_status()
-                cv = parse_json_cv(r.content)
-        except Exception as exc:
-            flash(f'Import via URL échoué : {exc}', 'error')
-            return redirect(url_for('update_account', id=target_id))
-        # persist minimal cv dict as JSON
-        user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(target_id)
-        user_dir.mkdir(parents=True, exist_ok=True)
-        orig_path = user_dir / 'cv_original.json'
-        with open(orig_path, 'w', encoding='utf-8') as fh:
-            import json as _json
-            fh.write(_json.dumps(cv, ensure_ascii=False, indent=2))
-        flash('CV importé depuis URL avec succès.', 'success')
-        return redirect(url_for('update_account', id=target_id))
-
-    flash('Aucun fichier ni URL fourni pour l\'import.', 'error')
-    return redirect(url_for('update_account', id=target_id))
-
-
-@app.route('/manage_cvs/<int:user_id>', methods=['POST'])
-@is_connected
-def manage_cvs(user_id):
-    """Rename, set default or delete uploaded CVs (PDF or JSON)."""
-    current = get_user_by_id(session['login_id'])
-    if user_id != current.id and not current.is_admin:
-        flash('Action non autorisée.', 'error')
-        return redirect(url_for('update_account', id=user_id))
-
-    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
-    meta_path = user_dir / 'cvs_meta.json'
-    if not user_dir.exists():
-        flash('Aucun CV trouvé.', 'error')
-        return redirect(url_for('update_account', id=user_id))
-
-    # load metadata
-    import json as _json
-    try:
-        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
-    except Exception:
-        meta = {}
-
-    # actions: rename, set_default, delete
-    action = request.form.get('action')
-    file = request.form.get('file')
-    if not file:
-        flash('Fichier non spécifié', 'error')
-        return redirect(url_for('update_account', id=user_id))
-
-    file_path = user_dir / file
-    if action == 'delete':
-        try:
-            if file_path.exists():
-                file_path.unlink()
-            if file in meta:
-                del meta[file]
-            # if default was this, remove
-            if meta.get('_default') == file:
-                meta.pop('_default', None)
-            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-            flash('Fichier supprimé', 'success')
-        except Exception as e:
-            flash(f'Erreur suppression: {e}', 'error')
-    elif action == 'set_default':
-        meta['_default'] = file
-        meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-        flash('CV par défaut mis à jour', 'success')
-    elif action == 'rename':
-        newname = request.form.get('newname', '').strip()
-        if not newname:
-            flash('Nouveau nom vide', 'error')
-        else:
-            meta[file] = newname
-            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-            flash('Nom mis à jour', 'success')
-    else:
-        flash('Action inconnue', 'error')
-
-    return redirect(url_for('update_account', id=user_id))
-
-
-@app.route('/edit_cv/<int:user_id>', methods=['GET', 'POST'])
-@is_connected
-def edit_cv(user_id):
-    current = get_user_by_id(session['login_id'])
-    if user_id != current.id and not current.is_admin:
-        flash('Action non autorisée.', 'error')
-        return redirect(url_for('show_all'))
-    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id)
-    orig_path = user_dir / 'cv_original.json'
-    if request.method == 'POST':
-        content = request.form.get('cv_text', '').strip()
-        try:
-            import json as _json
-            parsed = _json.loads(content)
-        except Exception as exc:
-            flash(f'JSON invalide : {exc}', 'error')
-            return render_template('edit_cv.html', user_id=user_id, cv_text=content)
-        user_dir.mkdir(parents=True, exist_ok=True)
-        with open(orig_path, 'w', encoding='utf-8') as fh:
-            fh.write(_json.dumps(parsed, ensure_ascii=False, indent=2))
-        flash('CV sauvegardé.', 'success')
-        return redirect(url_for('update_account', id=user_id))
-    else:
-        if orig_path.exists():
-            text = orig_path.read_text(encoding='utf-8')
-        else:
-            text = ''
-        return render_template('edit_cv.html', user_id=user_id, cv_text=text)
-
-
-@app.route('/manage_cvs_view/<int:user_id>', methods=['GET'])
-@is_connected
-def manage_cvs_view(user_id):
-    """Affiche l'interface de gestion des CV (PDF + JSON) et propose la fusion."""
-    current = get_user_by_id(session['login_id'])
-    if user_id != current.id and not current.is_admin:
-        flash('Action non autorisée.', 'error')
-        return redirect(url_for('update_account', id=user_id))
-
-    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
-    if not user_dir.exists():
-        flash('Aucun CV trouvé pour cet utilisateur.', 'info')
-        return redirect(url_for('update_account', id=user_id))
-
-    # load metadata
-    import json as _json
-    meta_path = user_dir / 'cvs_meta.json'
-    try:
-        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
-    except Exception:
-        meta = {}
-
-    files = []
-    for p in sorted(user_dir.iterdir()):
-        if p.is_file():
-            files.append({
-                'name': p.name,
-                'path': f'uploads/users/{user_id}/cvs/{p.name}',
-                'is_json': p.suffix.lower() == '.json',
-                'label': meta.get(p.name, p.name),
-            })
-
-    # Build list of JSON files (for merging) but only originals (LinkedIn export or GitConnected)
-    def _is_original_json(name: str) -> bool:
-        ln = name.lower()
-        if ln.startswith('cv_merged'):
-            return False
-        # heuristics: linkedin parsed exports, gitconnected, original resume files
-        if 'linkedin' in ln or 'gitconnected' in ln or ln.endswith('_resume.json') or ln == 'cv_original.json':
-            return True
-        # also accept filenames that contain 'profile' + 'resume'
-        if 'resume' in ln or 'profile' in ln:
-            return True
-        return False
-
-    json_files = [f for f in files if f['is_json'] and _is_original_json(f['name'])]
-
-    # Sections to propose selection for
-    sections = ['basics', 'work', 'education', 'skills', 'projects', 'certificates', 'references', 'languages', 'volunteer']
-
-    # Validate that listed json_files are valid JSON, annotate a preview snippet
-    # and build detailed per-section items for granular selection in the template
-    import json as _json
-    json_details = {}
-    for jf in list(json_files):
-        try:
-            p = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs' / jf['name']
-            txt = p.read_text(encoding='utf-8')
-            parsed = _json.loads(txt)
-            # preview: for basics or first keys
-            preview = ''
-            if isinstance(parsed.get('basics'), dict):
-                preview = parsed.get('basics', {}).get('label') or parsed.get('basics', {}).get('name','')
-            if not preview:
-                for k in ('work','education','skills'):
-                    v = parsed.get(k)
-                    if v:
-                        if isinstance(v, list) and len(v)>0:
-                            first = v[0]
-                            if isinstance(first, dict):
-                                preview = first.get('position') or first.get('name') or str(first)
-                            else:
-                                preview = str(first)
-                            break
-            jf['preview'] = preview
-
-            # Build per-section item lists for granular selection
-            details = {}
-            for sec in ('work','education','skills','projects','certificates','references'):
-                items = parsed.get(sec) or []
-                normalized = []
-                if isinstance(items, list):
-                    for i, it in enumerate(items):
-                        if isinstance(it, dict):
-                            label = it.get('position') or it.get('name') or it.get('institution') or it.get('title') or str(it)
-                        else:
-                            label = str(it)
-                        normalized.append({'idx': i, 'label': label})
-                details[sec] = normalized
-            json_details[jf['name']] = details
-        except Exception:
-            json_files.remove(jf)
-
-    return render_template('manage_cvs.html', user=get_user_by_id(session['login_id']),
-                           files=files, json_files=json_files, sections=sections, user_id=user_id,
-                           json_details=json_details)
-
-
-@app.route('/merge_cvs_editor/<int:user_id>', methods=['GET', 'POST'])
-@is_connected
-def merge_cvs_editor(user_id):
-    """Advanced merge editor: compare two source JSON side-by-side and pick items per section.
-    - GET: show selector to choose left/right source (defaults to first two originals)
-    - POST: receives picks and performs merge similarly to /merge_cvs
-    """
-    current = get_user_by_id(session['login_id'])
-    if user_id != current.id and not current.is_admin:
-        flash('Action non autorisée.', 'error')
-        return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
-    if not user_dir.exists():
-        flash('Aucun CV trouvé pour cet utilisateur.', 'error')
-        return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-    # collect original json files
-    def is_orig(n: str) -> bool:
-        ln = n.lower()
-        return (not ln.startswith('cv_merged')) and ('linkedin' in ln or 'gitconnected' in ln or ln.endswith('_resume.json') or ln=='cv_original.json' or 'resume' in ln or 'profile' in ln)
-
-    json_paths = [p for p in sorted(user_dir.iterdir()) if p.is_file() and p.suffix.lower()=='.json' and is_orig(p.name)]
-    json_names = [p.name for p in json_paths]
-
-    sections = ['work','education','skills','projects','certificates','references']
-
-    if request.method == 'GET':
-        left = request.args.get('left') or (json_names[0] if len(json_names)>0 else None)
-        right = request.args.get('right') or (json_names[1] if len(json_names)>1 else None)
-        # load details for each
-        import json as _json
-        left_details = {}
-        right_details = {}
-        for p in json_paths:
-            if p.name==left:
-                left_details = _json.loads(p.read_text(encoding='utf-8'))
-            if p.name==right:
-                right_details = _json.loads(p.read_text(encoding='utf-8'))
-        return render_template('merge_cvs_editor.html', user=get_user_by_id(session['login_id']), user_id=user_id,
-                               json_names=json_names, left=left, right=right, sections=sections,
-                               left_details=left_details, right_details=right_details)
-
-    # POST: perform merge from selections
-    # reuse merge_cvs behavior: accept section_* for whole-section replacement and pick__{filename}__{section}[] for granular
-    selections = {}
-    for key, val in request.form.items():
-        if key.startswith('section_') and val:
-            selections[key.replace('section_','')] = val
-
-    # perform base merge using existing utility
-    json_paths_all = [p for p in sorted(user_dir.iterdir()) if p.is_file() and p.suffix.lower()=='.json']
-    try:
-        merged = merge_cv_jsons(json_paths_all, selections)
-    except Exception as exc:
-        app.logger.error(f'merge_cvs_editor error: {exc}')
-        flash(f'Erreur lors de la fusion: {exc}', 'error')
-        return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-    # then apply granular picks similar to merge_cvs
-    import json as _json
-    for sec in sections:
-        combined = []
-        for p in json_paths_all:
-            fname = p.name
-            field = f'pick__{fname}__{sec}[]'
-            picks = request.form.getlist(field)
-            if picks:
-                try:
-                    src = _json.loads(p.read_text(encoding='utf-8'))
-                    items = src.get(sec) or []
-                    for idx in picks:
-                        try:
-                            i = int(idx)
-                            if 0 <= i < len(items):
-                                combined.append(items[i])
-                        except Exception:
-                            continue
-                except Exception:
-                    continue
-        if combined:
-            seen = set()
-            uniq = []
-            for it in combined:
-                key = _json.dumps(it, sort_keys=True)
-                if key not in seen:
-                    seen.add(key)
-                    uniq.append(it)
-            merged[sec] = uniq
-
-    # Save merged
-    import time
-    fname = f'cv_merged_editor_{int(time.time())}.json'
-    dest = user_dir / fname
-    try:
-        dest.write_text(_json.dumps(merged, ensure_ascii=False, indent=2), encoding='utf-8')
-    except Exception as exc:
-        app.logger.error(f'Failed to write merged CV editor: {exc}')
-        flash(f'Impossible de sauvegarder le CV fusionné: {exc}', 'error')
-        return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-    # update meta
-    meta_path = user_dir / 'cvs_meta.json'
-    try:
-        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
-    except Exception:
-        meta = {}
-    meta.setdefault(fname, fname)
-    meta['_default'] = fname
-    meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-
-    flash(f'CV fusionné créé: {fname}', 'success')
-    return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-
-@app.route('/merge_cvs/<int:user_id>', methods=['POST'])
-@is_connected
-def merge_cvs(user_id):
-    """Exécute la fusion des CV JSON selon les sélections envoyées par le formulaire."""
-    current = get_user_by_id(session['login_id'])
-    if user_id != current.id and not current.is_admin:
-        return jsonify({'error': 'Action non autorisée.'}), 403
-
-    user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
-    if not user_dir.exists():
-        flash('Aucun CV JSON trouvé.', 'error')
-        return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-    # Collect JSON files available
-    json_paths = [p for p in sorted(user_dir.iterdir()) if p.is_file() and p.suffix.lower() == '.json']
-    if not json_paths:
-        flash('Aucun fichier JSON à fusionner.', 'error')
-        return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-    # Build selections per section from form (e.g. form fields named section_basics, section_work, ...)
-    selections = {}
-    for key, val in request.form.items():
-        if key.startswith('section_') and val:
-            section = key.replace('section_', '')
-            selections[section] = val
-
-    # Ensure selections reference allowed original files only
-    def _is_original_json_local(name: str) -> bool:
-        ln = name.lower()
-        if ln.startswith('cv_merged'):
-            return False
-        if 'linkedin' in ln or 'gitconnected' in ln or ln.endswith('_resume.json') or ln == 'cv_original.json':
-            return True
-        if 'resume' in ln or 'profile' in ln:
-            return True
-        return False
-
-    allowed = {p.name for p in json_paths if _is_original_json_local(p.name)}
-    for sec, fname in list(selections.items()):
-        if fname and fname not in allowed:
-            flash(f'Fichier sélectionné non autorisé pour la fusion: {fname}', 'error')
-            return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-    # call merge util
-    try:
-        merged = merge_cv_jsons(json_paths, selections)
-    except Exception as exc:
-        app.logger.error(f'merge_cvs error: {exc}')
-        flash(f'Erreur lors de la fusion: {exc}', 'error')
-        return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-    # Handle granular picks: for each sec and filename, gather picked indices
-    # Expected form field names: pick__{filename}__{section}[] -> list of indices as strings
-    granular_sections = ['work','education','skills','projects','certificates','references']
-    import json as _json
-    for sec in granular_sections:
-        # collect per-file picks
-        combined = []
-        for p in json_paths:
-            fname = p.name
-            field = f'pick__{fname}__{sec}[]'
-            picks = request.form.getlist(field)
-            if picks:
-                # load source JSON
-                try:
-                    src = _json.loads(p.read_text(encoding='utf-8'))
-                    items = src.get(sec) or []
-                    for idx in picks:
-                        try:
-                            i = int(idx)
-                            if 0 <= i < len(items):
-                                combined.append(items[i])
-                        except Exception:
-                            continue
-                except Exception:
-                    continue
-        if combined:
-            # deduplicate simple: keep first occurrence by stringified content
-            seen = set()
-            uniq = []
-            for it in combined:
-                key = _json.dumps(it, sort_keys=True)
-                if key not in seen:
-                    seen.add(key)
-                    uniq.append(it)
-            merged[sec] = uniq
-
-    # Save merged as new JSON file
-    import json as _json, time
-    fname = f'cv_merged_{int(time.time())}.json'
-    dest = user_dir / fname
-    try:
-        dest.write_text(_json.dumps(merged, ensure_ascii=False, indent=2), encoding='utf-8')
-    except Exception as exc:
-        app.logger.error(f'Failed to write merged CV: {exc}')
-        flash(f'Impossible de sauvegarder le CV fusionné: {exc}', 'error')
-        return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-    # Try to generate a PDF for convenience and save alongside JSON
-    try:
-        pdf_bytes = generate_tailored_cv_pdf_bytes(merged)
-        pdf_name = fname.replace('.json', '.pdf')
-        pdf_path = user_dir / pdf_name
-        with open(pdf_path, 'wb') as pf:
-            pf.write(pdf_bytes)
-    except Exception as exc:
-        app.logger.debug(f'PDF generation skipped or failed for merged CV: {exc}')
-
-    # update metadata
-    meta_path = user_dir / 'cvs_meta.json'
-    try:
-        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
-    except Exception:
-        meta = {}
-    meta.setdefault(fname, fname)
-    # if pdf was created, set it as default preview
-    if 'pdf_name' in locals():
-        meta.setdefault(pdf_name, pdf_name)
-        meta['_default'] = pdf_name
-    else:
-        meta['_default'] = fname  # set merged as default by convenience
-    meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-
-    flash(f'CV fusionné créé: {fname}', 'success')
-    return redirect(url_for('manage_cvs_view', user_id=user_id))
-
-
-@app.route('/update/<int:id>', methods=['GET', 'POST'])
-@is_connected
-@is_editor_or_admin
-def update(id):
-    job: Job = Job.query.get_or_404(id)
-    def _parse_form_date(value: Optional[str], original: Optional[datetime] = None) -> Optional[datetime]:
-        """Parse a date/time coming from the form.
-        - Si value est vide, retourne None.
-        - Si le formulaire envoie uniquement une date (YYYY-MM-DD, sans heure),
-          on préserve l'heure de 'original' pour ne pas écraser le composant horaire
-          déjà stocké en base.
-        - Accepte aussi les formats datetime-local complets.
-        """
-        if not value:
-            return None
-        v = value.strip()
-        # Formats avec heure : on les utilise tels quels
-        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
-            try:
-                return datetime.strptime(v, fmt)
-            except Exception:
-                continue
-        # Format date seule (YYYY-MM-DD) : préserver l'heure originale si disponible
-        try:
-            parsed_date = datetime.strptime(v, "%Y-%m-%d")
-            if original is not None:
-                return parsed_date.replace(hour=original.hour, minute=original.minute,
-                                           second=original.second, microsecond=original.microsecond)
-            return parsed_date
-        except Exception:
-            pass
-        # Dernier recours : fromisoformat
-        try:
-            return datetime.fromisoformat(v)
-        except Exception:
-            pass
-        return None
-
-    if request.method == 'POST':
-        job.name = request.form.get('name')
-        job.url = request.form.get('url')
-        job.zipCode = request.form.get('zipCode')
-        job.company = request.form.get('company')
-        job.contact = request.form.get('contact')
-        job.email = request.form.get('email')
-
-        application_date: str = request.form.get('applicationDate')
-        app.logger.debug(f'application_date raw: {application_date}')
-        job.applicationDate = _parse_form_date(application_date, original=job.applicationDate)
-
-        relaunch_date: str = request.form.get('relaunchDate')
-        job.relaunchDate = _parse_form_date(relaunch_date, original=job.relaunchDate)
-
-        refusal_date: str = request.form.get('refusalDate')
-        job.refusalDate = _parse_form_date(refusal_date, original=job.refusalDate)
-
-        # cover letter text
-        cover_text = request.form.get('cover_letter_text')
-        job.cover_letter_text = cover_text if cover_text else None
-
-        # Handle file upload
-        success, error_msg = handle_file_upload(job.id)
-        if not success:
-            flash(error_msg, 'error')
-            return render_template('update.html', job=job)
-
-        if success and 'capture_file' in request.files and request.files['capture_file'].filename:
-            job.is_capture = 1
-
-        db.session.commit()
-        flash('Record was successfully updated')
-        return redirect(url_for('show_all'))
-    else:
-        return render_template('update.html', job=job)
-
-
-@app.before_request
-def create_tables():
-    db.create_all()
-    # Migration douce : ajoute les colonnes ajoutées post-création si elles n'existent pas encore
-    from sqlalchemy import text as _text
-    with db.engine.connect() as _conn:
-        _cols = [row[1] for row in _conn.execute(_text("PRAGMA table_info(job)"))]
-        if 'ft_offer_id' not in _cols:
-            _conn.execute(_text("ALTER TABLE job ADD COLUMN ft_offer_id VARCHAR(30)"))
-            _conn.commit()
-        # Ajouter la nouvelle colonne opt-in allow_view_offers sur la table user si absent
-        _user_cols = [row[1] for row in _conn.execute(_text("PRAGMA table_info(user)"))]
-        if 'allow_view_offers' not in _user_cols:
-            try:
-                _conn.execute(_text("ALTER TABLE user ADD COLUMN allow_view_offers BOOLEAN DEFAULT 0"))
-                _conn.commit()
-            except Exception:
-                # Certaines versions SQLite n'acceptent pas BOOLEAN, retomber sur INTEGER
-                try:
-                    _conn.execute(_text("ALTER TABLE user ADD COLUMN allow_view_offers INTEGER DEFAULT 0"))
-                    _conn.commit()
-                except Exception:
-                    pass
-
-
-@app.before_request
-def validate_session():
-    if 'login_id' in session:
-        user_session = Session.query.filter_by(login_id=session['login_id'], end=None).first()
-        if not user_session:
-            session.clear()
-            flash('Votre session a été fermée par un administrateur.', 'warning')
-            return redirect(url_for('login'))
-
-@app.before_request
-def create_captures_dir():
-    directory_path = f'{os.path.dirname(__file__)}/static/images'
-    if not os.path.exists(directory_path):
-        try:
-            os.mkdir(directory_path)
-            print(f"Directory {directory_path} created successfully.")
-        except Exception as e:
-            print(f"Error creating directory: {e}")
-
-@app.route('/lucky')
-def upload_form():
-    return render_template('upload.html', result=None)
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    result = None
-    result_file = None
-
-    if 'file' not in request.files:
-        result = 'Aucun fichier n\'a été téléchargé.'
-    else:
-        file = request.files['file']
-
-        if file.filename == '':
-            result = 'Aucun fichier sélectionné.'
-        else:
-            # Sauvegarder le fichier d'entrée
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-            file.save(file_path)
-
-            # Traitement du fichier
-            sleep(5)
-            result_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'result.csv')
-            # result_df.to_csv(result_file_path, index=False)
-
-            result = 'Le fichier "{}" a été traité avec succès (Test avec sleep de 5s).'.format(file.filename)
-            result_file = result_file_path
-
-    return render_template('upload.html', result=result, result_file=result_file)
-
-@app.route('/download/<filename>')
-def download_file(filename):
-    return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename), as_attachment=True)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# France Travail – Recherche d'offres
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _ft_ats_prefix(ats_mode: bool) -> str:
-    """Retourne le préfixe ATS à injecter dans le prompt IA si le mode est activé."""
-    if not ats_mode:
-        return ''
-    return (
-        "MODE ATS ACTIVÉ – Optimise ce document pour être correctement traité par les systèmes "
-        "ATS (Applicant Tracking System) des recruteurs. Règles strictes : "
-        "(1) Utilise EXACTEMENT les mots-clés et formulations de l'offre d'emploi. "
-        "(2) Structure le contenu avec des sections et sous-sections claires (pas de colonnes multiples). "
-        "(3) Chaque point d'expérience doit commencer par un verbe d'action fort "
-        "(Développé, Conçu, Déployé, Optimisé, Géré, Mis en place, Piloté…). "
-        "(4) Évite les tableaux complexes, graphiques et icônes dans le contenu textuel. "
-        "(5) Le titre doit correspondre mot pour mot à l'intitulé du poste visé.\n\n"
-    )
-
-
-@app.route('/france_travail')
-@is_connected
-def france_travail():
-    user = get_user_by_id(session['login_id'])
-    last_extraction = AppSetting.get('ft_last_extraction')
-    # Construire dynamiquement la liste de mots-clés ATS à partir du CV de l'utilisateur
-    try:
-        # Prefer the connected user's default CV when building ATS keywords for the edit page
-        cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
-        derived = []
-        # titre / label du CV
-        label = (cv_data.get('basics', {}) or {}).get('label')
-        if label:
-            derived.append(label)
-        # noms de compétences (skills)
-        for s in (cv_data.get('skills', []) or [])[:8]:
-            name = s.get('name') if isinstance(s, dict) else str(s)
-            if name:
-                derived.append(name)
-        # postes récents
-        for w in (cv_data.get('work', []) or [])[:6]:
-            pos = (w.get('position') or w.get('summary') or '')
-            if pos:
-                derived.append(pos)
-    except Exception:
-        derived = []
-
-    # Combiner les mots-clés dérivés et la liste statique tout en évitant les doublons
-    seen = set()
-    ats_list = []
-    for kw in (derived + ATS_KEYWORDS_PROFILE):
-        if not kw:
-            continue
-        k = kw.strip()
-        if k and k not in seen:
-            ats_list.append(k)
-            seen.add(k)
-        if len(ats_list) >= 16:
-            break
-
-    return render_template(
-        'france_travail.html',
-        user=user,
-        contract_types=CONTRACT_TYPES,
-        work_modes=WORK_MODES,
-        departments=DEPARTMENTS,
-        ats_keywords=ats_list,
-        last_extraction=last_extraction,
-        default_dept=app.config.get('FT_DEFAULT_DEPT', '06'),
-    )
-
-
-@app.route('/france_travail/edit/<int:search_id>')
-@is_connected
-def france_travail_edit_page(search_id):
-    """Affiche le formulaire de recherche prérempli pour éditer une recherche existante.
-    Le formulaire est le même que la page `france_travail`, mais les champs sont préremplis
-    et la soumission POST ira vers `/france_travail/search/<id>/edit`.
-    """
-    user = get_user_by_id(session['login_id'])
-    ft_search = FtSearch.query.get_or_404(search_id)
-    if ft_search.user_id != session['login_id']:
-        flash('Action non autorisée.', 'error')
-        return redirect(url_for('ft_searches'))
-    params = ft_search.params or {}
-    # map params to prefill variables expected by the template
-    prefill = {
-        'prefill_mode': params.get('mode', 'manual'),
-        'prefill_mots_cles': params.get('mots_cles') or '',
-        'prefill_types_contrat': params.get('types_contrat') or [],
-        'prefill_departement': params.get('departement') or app.config.get('FT_DEFAULT_DEPT', '06'),
-        'prefill_mode_travail': params.get('mode_travail') or '',
-        'prefill_entreprises_adaptees': bool(params.get('entreprises_adaptees', False)),
-        'prefill_provider': params.get('provider') or 'france_travail',
-        'edit_search_id': ft_search.id,
-        'search_info': ft_search.search_info,
-    }
-    # Même logique que la page principale : construire une liste ATS dérivée du CV
-    try:
-        # Prefer the connected user's default CV when building ATS keywords for the edit page
-        cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
-        derived = []
-        label = (cv_data.get('basics', {}) or {}).get('label')
-        if label:
-            derived.append(label)
-        for s in (cv_data.get('skills', []) or [])[:8]:
-            name = s.get('name') if isinstance(s, dict) else str(s)
-            if name:
-                derived.append(name)
-        for w in (cv_data.get('work', []) or [])[:6]:
-            pos = (w.get('position') or w.get('summary') or '')
-            if pos:
-                derived.append(pos)
-    except Exception:
-        derived = []
-
-    seen = set()
-    ats_list = []
-    for kw in (derived + ATS_KEYWORDS_PROFILE):
-        if not kw:
-            continue
-        k = kw.strip()
-        if k and k not in seen:
-            ats_list.append(k)
-            seen.add(k)
-        if len(ats_list) >= 16:
-            break
-
-    return render_template(
-        'france_travail.html',
-        user=user,
-        contract_types=CONTRACT_TYPES,
-        work_modes=WORK_MODES,
-        departments=DEPARTMENTS,
-        ats_keywords=ats_list,
-        last_extraction=AppSetting.get('ft_last_extraction'),
-        default_dept=app.config.get('FT_DEFAULT_DEPT', '06'),
-        **prefill,
-    )
-
-
 @app.route('/france_travail/search', methods=['POST'])
 @is_connected
 def france_travail_search():
@@ -2511,23 +1824,37 @@ def france_travail_search():
                         min_creation_date = datetime.fromisoformat(last_str)
                     except Exception:
                         pass
+            # Collect any user-selected ATS keywords from the form
+            user_selected_ats = _normalize_keyword_list(request.form.getlist('ats_keywords'))
+            combined_extra = _normalize_keyword_list(user_selected_ats)
+
             offers = search_auto_from_cv(
                 client_id=client_id,
                 client_secret=client_secret,
                 cv_data=cv_data,
                 departement=departement,
                 min_creation_date=min_creation_date,
+                extra_keywords=combined_extra or None,
             )
             # Mémoriser la date d'extraction automatique
             AppSetting.set('ft_last_extraction', datetime.utcnow().isoformat())
             depuis = f" depuis le {min_creation_date.strftime('%d/%m/%Y')}" if min_creation_date else ""
             search_info = f"Mode automatique{depuis} – {len(offers)} offre(s) trouvée(s)"
-            search_params = {'mode': 'auto', 'departement': departement}
+            if combined_extra:
+                search_info += f" – Mots-clés : «{_format_keywords_label(combined_extra)}»"
+            search_params = {
+                'mode': 'auto',
+                'departement': departement,
+                'mots_cles': _keywords_to_query(user_selected_ats) or None,
+                'ats_keywords': user_selected_ats or None,
+            }
         else:
-            mots_cles          = request.form.get('mots_cles', '').strip() or None
+            mots_cles_raw      = request.form.get('mots_cles', '').strip() or None
+            user_keywords      = _normalize_keyword_list(request.form.getlist('ats_keywords'))
             types_contrat      = request.form.getlist('types_contrat') or None
             mode_travail       = request.form.get('mode_travail', '') or None
             entreprises_adapt  = request.form.get('entreprises_adaptees') == 'on'
+            mots_cles          = _keywords_to_query(user_keywords) or _keywords_to_query(mots_cles_raw) or mots_cles_raw
             # Allow selecting an alternative provider (greenhouse, lever, ashby, teamtailor)
             provider_name = request.form.get('provider', 'france_travail')
             if provider_name and provider_name != 'france_travail':
@@ -2565,6 +1892,7 @@ def france_travail_search():
                 'mode': 'manual', 'mots_cles': mots_cles, 'types_contrat': types_contrat,
                 'departement': departement, 'mode_travail': mode_travail,
                 'entreprises_adaptees': entreprises_adapt,
+                'ats_keywords': user_keywords or None,
             }
 
     except Exception as exc:
@@ -2573,6 +1901,9 @@ def france_travail_search():
         return redirect(url_for('france_travail'))
 
     # Sauvegarde persistante du résultat pour consultation ultérieure
+    cv_data_user = _resolve_user_cv_data(user.id) or load_cv_data(app.static_folder)
+    offers = enrich_offers_with_matching(offers, cv_data_user, sort_by_score=True)
+
     ft_search = FtSearch(
         user_id=session['login_id'],
         search_info=search_info,
@@ -2582,6 +1913,168 @@ def france_travail_search():
     db.session.add(ft_search)
     db.session.commit()
     return redirect(url_for('ft_search_view', search_id=ft_search.id))
+
+
+@app.route('/france_travail', methods=['GET'])
+@app.route('/france_travail/', methods=['GET'])
+@is_connected
+def france_travail():
+    """Affiche le formulaire de recherche France Travail."""
+    user = get_user_by_id(session['login_id'])
+    try:
+        cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
+        derived = []
+        label = (cv_data.get('basics', {}) or {}).get('label')
+        if label:
+            derived.append(label)
+        for s in (cv_data.get('skills', []) or [])[:8]:
+            name = s.get('name') if isinstance(s, dict) else str(s)
+            if name:
+                derived.append(name)
+        for w in (cv_data.get('work', []) or [])[:6]:
+            pos = (w.get('position') or w.get('summary') or '')
+            if pos:
+                derived.append(pos)
+    except Exception:
+        derived = []
+
+    seen = set()
+    ats_list = []
+    for kw in derived:
+        if not kw:
+            continue
+        k = kw.strip()
+        if k and k not in seen:
+            ats_list.append(k)
+            seen.add(k)
+        if len(ats_list) >= 16:
+            break
+
+    ats_badges = [{'name': k, 'checked': True, 'is_custom': False} for k in ats_list]
+
+    return render_template(
+        'france_travail.html',
+        user=user,
+        contract_types=CONTRACT_TYPES,
+        work_modes=WORK_MODES,
+        departments=DEPARTMENTS,
+        ats_keywords=ats_list,
+        ats_badges=ats_badges,
+        last_extraction=AppSetting.get('ft_last_extraction'),
+        default_dept=app.config.get('FT_DEFAULT_DEPT', '06'),
+        prefill_mode='manual',
+        prefill_mots_cles='',
+        prefill_types_contrat=[],
+        prefill_departement=app.config.get('FT_DEFAULT_DEPT', '06'),
+        prefill_mode_travail='',
+        prefill_entreprises_adaptees=False,
+        prefill_provider='france_travail',
+        prefill_ats_keywords=[],
+        edit_search_id=None,
+        search_info=None,
+    )
+
+
+@app.route('/france_travail/edit/<int:search_id>')
+@is_connected
+def france_travail_edit_page(search_id):
+    """Affiche le formulaire France Travail prérempli pour une recherche existante."""
+    user = get_user_by_id(session['login_id'])
+    ft_search = FtSearch.query.get_or_404(search_id)
+    if ft_search.user_id != session['login_id']:
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('ft_searches'))
+
+    params = ft_search.params or {}
+    saved_ats_keywords = _normalize_keyword_list(params.get('ats_keywords') or [])
+    prefill_mots_cles = params.get('mots_cles') or ''
+    if not prefill_mots_cles and saved_ats_keywords:
+        prefill_mots_cles = _format_keywords_label(saved_ats_keywords) or ''
+    if not saved_ats_keywords and prefill_mots_cles:
+        saved_ats_keywords = _normalize_keyword_list(re.split(r'[,\s]+', prefill_mots_cles))
+
+    try:
+        cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
+        derived = []
+        label = (cv_data.get('basics', {}) or {}).get('label')
+        if label:
+            derived.append(label)
+        for s in (cv_data.get('skills', []) or [])[:8]:
+            name = s.get('name') if isinstance(s, dict) else str(s)
+            if name:
+                derived.append(name)
+        for w in (cv_data.get('work', []) or [])[:6]:
+            pos = (w.get('position') or w.get('summary') or '')
+            if pos:
+                derived.append(pos)
+    except Exception:
+        derived = []
+
+    seen = set()
+    suggested_ats_keywords = []
+    for kw in derived:
+        if not kw:
+            continue
+        k = kw.strip()
+        if k and k not in seen:
+            suggested_ats_keywords.append(k)
+            seen.add(k)
+        if len(suggested_ats_keywords) >= 16:
+            break
+
+    cv_base_set = {k.lower() for k in suggested_ats_keywords}
+
+    ats_badges = []
+    seen_badge = set()
+    # 1. Tous les mots-clés sauvegardés pour cette recherche (sélectionnés)
+    for kw in saved_ats_keywords:
+        k_clean = kw.strip()
+        if not k_clean or k_clean.lower() in seen_badge:
+            continue
+        seen_badge.add(k_clean.lower())
+        ats_badges.append({
+            'name': k_clean,
+            'checked': True,
+            'is_custom': (k_clean.lower() not in cv_base_set),
+        })
+
+    # 2. Mots-clés de base du profil CV non sélectionnés dans cette recherche
+    for kw in suggested_ats_keywords:
+        k_clean = kw.strip()
+        if not k_clean or k_clean.lower() in seen_badge:
+            continue
+        seen_badge.add(k_clean.lower())
+        ats_badges.append({
+            'name': k_clean,
+            'checked': False,
+            'is_custom': False,
+        })
+
+    # Fallback ats_keywords (liste de noms) pour compatibilité
+    ats_keywords = [b['name'] for b in ats_badges if b['checked']] or suggested_ats_keywords
+
+    return render_template(
+        'france_travail.html',
+        user=user,
+        contract_types=CONTRACT_TYPES,
+        work_modes=WORK_MODES,
+        departments=DEPARTMENTS,
+        ats_keywords=ats_keywords,
+        ats_badges=ats_badges,
+        last_extraction=AppSetting.get('ft_last_extraction'),
+        default_dept=app.config.get('FT_DEFAULT_DEPT', '06'),
+        prefill_mode=params.get('mode', 'manual'),
+        prefill_mots_cles=prefill_mots_cles,
+        prefill_types_contrat=params.get('types_contrat') or [],
+        prefill_departement=params.get('departement') or app.config.get('FT_DEFAULT_DEPT', '06'),
+        prefill_mode_travail=params.get('mode_travail') or '',
+        prefill_entreprises_adaptees=bool(params.get('entreprises_adaptees', False)),
+        prefill_provider=params.get('provider') or 'france_travail',
+        prefill_ats_keywords=saved_ats_keywords,
+        suggested_ats_keywords=suggested_ats_keywords,
+        edit_search_id=ft_search.id,
+        search_info=ft_search.search_info,
+    )
 
 
 @app.route('/france_travail/searches')
@@ -2616,11 +2109,22 @@ def ft_search_view(search_id):
     """Affiche les résultats d'une recherche sauvegardée."""
     user = get_user_by_id(session['login_id'])
     ft_search = FtSearch.query.get_or_404(search_id)
+    raw_offers = ft_search.offers or []
+    # Si les offres n'ont pas encore de score de matching, les enrichir et mémoriser
+    if raw_offers and ('match_score' not in raw_offers[0]):
+        try:
+            cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
+            raw_offers = enrich_offers_with_matching(raw_offers, cv_data, sort_by_score=True)
+            ft_search.offers = raw_offers
+            db.session.commit()
+        except Exception as exc:
+            app.logger.warning(f"Could not compute matching on the fly: {exc}")
+
     return render_template(
         'offers_candidates.html',
         user=user,
         search=ft_search,
-        offers=ft_search.offers,
+        offers=raw_offers,
         search_info=ft_search.search_info,
         search_id=search_id,
         added_ids=_ft_added_ids(session.get('login_id')),
@@ -2795,21 +2299,31 @@ def ft_search_refresh(search_id):
             offers = search_auto_from_cv(
                 client_id=client_id, client_secret=client_secret,
                 cv_data=cv_data, departement=p.get('departement'),
+                extra_keywords=_normalize_keyword_list(p.get('ats_keywords') or []) or None,
             )
             search_info = f"Mode automatique (actualisé) – {len(offers)} offre(s)"
+            kw_label = _format_keywords_label(p.get('ats_keywords') or p.get('mots_cles'))
+            if kw_label:
+                search_info += f" – Mots-clés : «{kw_label}»"
         else:
+            mots_cles = p.get('mots_cles')
+            if not mots_cles:
+                mots_cles = _keywords_to_query(p.get('ats_keywords') or [])
             offers = search_offers(
                 client_id=client_id, client_secret=client_secret,
-                mots_cles=p.get('mots_cles'), types_contrat=p.get('types_contrat'),
+                mots_cles=mots_cles, types_contrat=p.get('types_contrat'),
                 departement=p.get('departement'), mode_travail=p.get('mode_travail'),
                 entreprises_adaptees=bool(p.get('entreprises_adaptees', False)),
             )
-            kw = p.get('mots_cles') or '(tous)'
+            kw = mots_cles or '(tous)'
             search_info = f"Mode manuel – Mots-clés : «{kw}» – {len(offers)} offre(s) (actualisé)"
     except Exception as exc:
         app.logger.error(f'FT refresh error: {exc}')
         flash(f'Erreur lors de la réactualisation : {exc}', 'error')
         return redirect(url_for('ft_search_view', search_id=search_id))
+
+    cv_data_user = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
+    offers = enrich_offers_with_matching(offers, cv_data_user, sort_by_score=True)
 
     ft_search.offers      = offers
     ft_search.search_info = search_info
@@ -2818,6 +2332,36 @@ def ft_search_refresh(search_id):
     db.session.commit()
     flash(f'Résultats actualisés – {len(offers)} offre(s) trouvée(s).', 'success')
     return redirect(url_for('ft_search_view', search_id=search_id))
+
+
+@app.route('/france_travail/suggest_keywords', methods=['POST'])
+@is_connected
+def ft_suggest_keywords():
+    """Génère avec Gemini des mots-clés de recherche France Travail adaptés au profil CV."""
+    try:
+        user_id = session.get('login_id')
+        cv_data = _resolve_user_cv_data(user_id) or load_cv_data(app.static_folder)
+        keywords = generate_keywords_with_gemini(cv_data)
+        return jsonify({'status': 'ok', 'keywords': keywords})
+    except Exception as exc:
+        app.logger.error(f'Error generating keywords with Gemini: {exc}')
+        return jsonify({'status': 'error', 'message': str(exc)}), 500
+
+
+@app.route('/france_travail/evaluate_offer_match', methods=['POST'])
+@is_connected
+def ft_evaluate_offer_match():
+    """Analyse détaillée du matching d'une offre via Gemini (style recruteur LinkedIn)."""
+    try:
+        payload = request.get_json() or {}
+        offer = payload.get('offer') or {}
+        user_id = session.get('login_id')
+        cv_data = _resolve_user_cv_data(user_id) or load_cv_data(app.static_folder)
+        analysis = evaluate_offer_with_gemini(offer, cv_data)
+        return jsonify({'status': 'ok', 'analysis': analysis})
+    except Exception as exc:
+        app.logger.error(f'Error evaluating offer with Gemini: {exc}')
+        return jsonify({'status': 'error', 'message': str(exc)}), 500
 
 
 @app.route('/france_travail/search/<int:search_id>/toggle_unavailable', methods=['POST'])
@@ -2947,7 +2491,12 @@ def ft_search_edit(search_id):
         # build search_params dict
         sp = {}
         sp['mode'] = form.get('mode') or 'manual'
-        sp['mots_cles'] = form.get('mots_cles') or None
+        form_keywords = _normalize_keyword_list(form.getlist('ats_keywords'))
+        mots_cles_text = form.get('mots_cles') or None
+        if not form_keywords and mots_cles_text:
+            form_keywords = _normalize_keyword_list(mots_cles_text.split(','))
+        sp['mots_cles'] = mots_cles_text or _keywords_to_query(form_keywords) or None
+        sp['ats_keywords'] = form_keywords or None
         sp['types_contrat'] = form.getlist('types_contrat') or None
         sp['departement'] = form.get('departement') or None
         sp['mode_travail'] = form.get('mode_travail') or None
@@ -2956,22 +2505,46 @@ def ft_search_edit(search_id):
         data['search_params'] = sp
     search_info = data.get('search_info')
     search_params = data.get('search_params') or data.get('search_params_json')
+    current_params = ft_search.params or {}
     if search_info is not None:
         ft_search.search_info = search_info
     if search_params is not None:
         # accept dict or JSON string
         if isinstance(search_params, dict):
-            ft_search.search_params_json = _json.dumps(search_params, ensure_ascii=False)
+            merged_params = dict(current_params)
+            merged_params.update(search_params)
+            ft_search.search_params_json = _json.dumps(merged_params, ensure_ascii=False)
         else:
             try:
                 parsed = _json.loads(search_params)
-                ft_search.search_params_json = _json.dumps(parsed, ensure_ascii=False)
+                if isinstance(parsed, dict):
+                    merged_params = dict(current_params)
+                    merged_params.update(parsed)
+                    ft_search.search_params_json = _json.dumps(merged_params, ensure_ascii=False)
+                else:
+                    return jsonify({'error': 'Paramètres JSON invalides'}), 400
             except Exception:
                 return jsonify({'error': 'Paramètres JSON invalides'}), 400
+    if search_info is None and request.form:
+        # Recompute the visible label from the saved params so the keywords
+        # remain visible in the searches list and detail page after editing.
+        params = ft_search.params or current_params
+        offer_count = len(ft_search.offers or [])
+        if params.get('mode') == 'auto':
+            kw_label = _format_keywords_label(params.get('ats_keywords') or params.get('mots_cles'))
+            ft_search.search_info = f"Mode automatique – {offer_count} offre(s)"
+            if kw_label:
+                ft_search.search_info += f" – Mots-clés : «{kw_label}»"
+        else:
+            kw_label = params.get('mots_cles') or _format_keywords_label(params.get('ats_keywords'))
+            ft_search.search_info = f"Mode manuel – Mots-clés : «{kw_label or '(tous)'}» – {offer_count} offre(s)"
     db.session.commit()
     # If this was an AJAX/JSON request, return JSON as before
     if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({'ok': True, 'id': ft_search.id}), 200
+    # If user chose to re-run/refresh search immediately with updated keywords
+    if request.form.get('run_search') == '1':
+        return ft_search_refresh(ft_search.id)
     # Otherwise assume a normal form POST and redirect to the search view with a flash
     flash('Recherche mise à jour.', 'success')
     return redirect(url_for('ft_search_view', search_id=ft_search.id))

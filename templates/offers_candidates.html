@@ -40,16 +40,24 @@
 	<div class="alert alert-info">Aucune offre trouv&eacute;e pour ces crit&egrave;res.</div>
 	{% else %}
 
-	<div class="d-flex gap-3 mb-3 small text-muted flex-wrap">
-		<span><span class="badge bg-success">✓ Ajoutée</span> candidature déjà dans le suivi</span>
-		<span><span class="badge bg-warning text-dark">⚠ Indisponible</span> offre signalée comme expirée</span>
+	<div class="d-flex align-items-center justify-content-between gap-3 mb-3 flex-wrap">
+		<div class="d-flex gap-3 small text-muted flex-wrap align-items-center">
+			<span><span class="badge bg-success">✓ Ajoutée</span> candidature déjà dans le suivi</span>
+			<span><span class="badge bg-warning text-dark">⚠ Indisponible</span> offre signalée comme expirée</span>
+		</div>
+		<div class="btn-group btn-group-sm" role="group" aria-label="Filtres matching">
+			<button type="button" class="btn btn-outline-secondary active" id="filter-all-btn" onclick="filterMatching('all')">Toutes ({{ offers|length }})</button>
+			<button type="button" class="btn btn-outline-success" id="filter-high-btn" onclick="filterMatching('high')">🎯 Match élevé (≥ 70%)</button>
+			<button type="button" class="btn btn-outline-primary" id="filter-medium-btn" onclick="filterMatching('medium')">🎯 Match modéré (≥ 45%)</button>
+		</div>
 	</div>
 
 	<div class="table-responsive">
-		<table class="table table-hover align-middle">
+		<table class="table table-hover align-middle" id="ftOffersTable">
 			<thead class="table-dark">
 				<tr>
 					<th>Date</th>
+					<th class="text-center" style="min-width: 100px;">Matching</th>
 					<th>Intitulé</th>
 					<th>Entreprise</th>
 					<th>Lieu</th>
@@ -63,8 +71,25 @@
 				{% for offer in offers %}
 				{% set is_added = offer.id in added_ids %}
 				{% set is_unavail = offer.id in unavailable_ids %}
-				<tr class="{% if is_unavail %}table-secondary{% elif is_added %}table-light{% endif %}">
+				{% set sc = offer.match_score | default(0) %}
+				{% set lvl = offer.matching.level if offer.matching else ('high' if sc >= 70 else ('medium' if sc >= 45 else 'low')) %}
+				<tr class="offer-row {% if is_unavail %}table-secondary{% elif is_added %}table-light{% endif %}" data-score="{{ sc }}" data-level="{{ lvl }}">
 					<td class="text-nowrap small">{{ offer.dateCreation }}</td>
+					<td class="text-center text-nowrap">
+						{% if sc >= 70 %}
+						<span class="badge bg-success py-1 px-2 fw-semibold" title="{{ offer.matching.summary if offer.matching else 'Forte adéquation avec votre profil' }}">
+							🎯 {{ sc }}%
+						</span>
+						{% elif sc >= 45 %}
+						<span class="badge bg-primary py-1 px-2 fw-semibold" title="{{ offer.matching.summary if offer.matching else 'Adéquation modérée avec votre profil' }}">
+							🎯 {{ sc }}%
+						</span>
+						{% else %}
+						<span class="badge bg-secondary py-1 px-2 text-white" title="{{ offer.matching.summary if offer.matching else 'Faible adéquation' }}">
+							{{ sc }}%
+						</span>
+						{% endif %}
+					</td>
 					<td>
 						<strong>{{ offer.intitule }}</strong>
 						{% if offer.entrepriseAdaptee %}
@@ -154,10 +179,64 @@
 		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 	}
 
+	function filterMatching(type) {
+		document.querySelectorAll('.btn-group button').forEach(btn => btn.classList.remove('active'));
+		const targetBtn = document.getElementById('filter-' + type + '-btn');
+		if (targetBtn) targetBtn.classList.add('active');
+
+		const rows = document.querySelectorAll('#ftOffersTable tbody tr.offer-row');
+		rows.forEach(row => {
+			const score = parseInt(row.getAttribute('data-score') || '0', 10);
+			if (type === 'all') {
+				row.style.display = '';
+			} else if (type === 'high') {
+				row.style.display = score >= 70 ? '' : 'none';
+			} else if (type === 'medium') {
+				row.style.display = score >= 45 ? '' : 'none';
+			}
+		});
+	}
+
 	function openOfferModal(idx) {
 		const o = FT_OFFERS[idx]; if (!o) return;
 		document.getElementById('offerModalLabel').textContent = o.intitule || "D\u00e9tail de l'offre";
+		
+		const m = o.matching || {};
+		const sc = o.match_score || m.score || 0;
+		const lvl = m.level || (sc >= 70 ? 'high' : (sc >= 45 ? 'medium' : 'low'));
+		const badgeColor = lvl === 'high' ? 'success' : (lvl === 'medium' ? 'primary' : 'secondary');
+
 		let b = '';
+
+		// ── Bandeau d'adéquation Matching façon LinkedIn ─────────────────────────
+		b += '<div class="card border-' + badgeColor + ' bg-light mb-3">';
+		b += '  <div class="card-body py-2 px-3">';
+		b += '    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">';
+		b += '      <div>';
+		b += '        <span class="badge bg-' + badgeColor + ' fs-6 me-2">🎯 ' + sc + '% de correspondance</span>';
+		b += '        <span class="text-dark fw-semibold">' + escHtml(m.summary || 'Analyse d\'adéquation avec votre profil') + '</span>';
+		b += '      </div>';
+		b += '      <button type="button" class="btn btn-sm btn-outline-dark" id="btnGeminiDetail" onclick="analyzeOfferWithGemini(' + idx + ')">';
+		b += '        ✨ Avis détaillé Gemini';
+		b += '      </button>';
+		b += '    </div>';
+
+		if (m.matched_skills && m.matched_skills.length) {
+			b += '    <div class="mt-2 small">';
+			b += '      <strong class="text-success">✓ Vos atouts clés :</strong> ';
+			b += m.matched_skills.map(s => '<span class="badge bg-success-subtle text-success border border-success me-1">' + escHtml(s) + '</span>').join('');
+			b += '    </div>';
+		}
+		if (m.missing_skills && m.missing_skills.length) {
+			b += '    <div class="mt-1 small">';
+			b += '      <strong class="text-muted">Compétences secondaires de l\'offre :</strong> ';
+			b += m.missing_skills.map(s => '<span class="badge bg-light text-muted border me-1">' + escHtml(s) + '</span>').join('');
+			b += '    </div>';
+		}
+		b += '    <div id="geminiDetailedAnalysis" class="mt-2 p-2 bg-white rounded border small" style="display:none"></div>';
+		b += '  </div>';
+		b += '</div>';
+
 		b += '<div class="row mb-3">';
 		b += '<div class="col-md-6"><strong>Entreprise :</strong> ' + (escHtml(o.entreprise) || '\u2013');
 		if (o.entrepriseAdaptee) b += ' <span class="badge bg-info text-dark ms-1">\u267f</span>';
@@ -183,6 +262,45 @@
 		const el = document.getElementById('offerModalExtLink');
 		if (el) { el.href = o.url || '#'; el.style.display = o.url ? '' : 'none'; }
 		new bootstrap.Modal(document.getElementById('offerModal')).show();
+	}
+
+	async function analyzeOfferWithGemini(idx) {
+		const o = FT_OFFERS[idx]; if (!o) return;
+		const box = document.getElementById('geminiDetailedAnalysis');
+		const btn = document.getElementById('btnGeminiDetail');
+		if (!box || !btn) return;
+
+		btn.disabled = true;
+		btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Analyse...';
+		box.style.display = 'block';
+		box.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span> Gemini analyse l\'offre par rapport à votre profil...</span>';
+
+		try {
+			const resp = await fetch('{{ url_for("ft_evaluate_offer_match") }}', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ offer: o })
+			});
+			const data = await resp.json();
+			if (data.status === 'ok' && data.analysis) {
+				const a = data.analysis;
+				let out = '<div><strong class="text-primary">Avis du recruteur IA :</strong> ' + escHtml(a.verdict || '') + '</div>';
+				if (a.strengths && a.strengths.length) {
+					out += '<div class="mt-1"><strong class="text-success">Forces à valoriser :</strong> ' + a.strengths.map(s => '<span class="badge bg-success-subtle text-success border border-success me-1">' + escHtml(s) + '</span>').join('') + '</div>';
+				}
+				if (a.missing_or_to_develop && a.missing_or_to_develop.length) {
+					out += '<div class="mt-1"><strong class="text-warning text-dark">Points à compenser :</strong> ' + a.missing_or_to_develop.map(s => '<span class="badge bg-warning-subtle text-dark border border-warning me-1">' + escHtml(s) + '</span>').join('') + '</div>';
+				}
+				box.innerHTML = out;
+			} else {
+				box.innerHTML = '<span class="text-danger">Impossible d\'obtenir l\'analyse détaillée.</span>';
+			}
+		} catch (err) {
+			box.innerHTML = '<span class="text-danger">Erreur : ' + escHtml(err.message) + '</span>';
+		} finally {
+			btn.disabled = false;
+			btn.innerHTML = '✨ Avis détaillé Gemini';
+		}
 	}
 </script>
 
