@@ -56,14 +56,14 @@
 		<table class="table table-hover align-middle" id="ftOffersTable">
 			<thead class="table-dark">
 				<tr>
-					<th>Date</th>
-					<th class="text-center" style="min-width: 100px;">Matching</th>
-					<th>Intitulé</th>
-					<th>Entreprise</th>
-					<th>Lieu</th>
-					<th>Contrat</th>
-					<th>Mode</th>
-					<th>Salaire</th>
+					<th class="sortable" data-sort-type="date" onclick="sortOffersTable(0, 'date')">Date <span class="sort-indicator" aria-hidden="true"></span></th>
+					<th class="sortable text-center" data-sort-type="number" style="min-width: 100px;" onclick="sortOffersTable(1, 'number')">Matching <span class="sort-indicator" aria-hidden="true"></span></th>
+					<th class="sortable" data-sort-type="text" onclick="sortOffersTable(2, 'text')">Intitulé <span class="sort-indicator" aria-hidden="true"></span></th>
+					<th class="sortable" data-sort-type="text" onclick="sortOffersTable(3, 'text')">Entreprise <span class="sort-indicator" aria-hidden="true"></span></th>
+					<th class="sortable" data-sort-type="text" onclick="sortOffersTable(4, 'text')">Lieu <span class="sort-indicator" aria-hidden="true"></span></th>
+					<th class="sortable" data-sort-type="text" onclick="sortOffersTable(5, 'text')">Contrat <span class="sort-indicator" aria-hidden="true"></span></th>
+					<th class="sortable" data-sort-type="text" onclick="sortOffersTable(6, 'text')">Mode <span class="sort-indicator" aria-hidden="true"></span></th>
+					<th class="sortable" data-sort-type="text" onclick="sortOffersTable(7, 'text')">Salaire <span class="sort-indicator" aria-hidden="true"></span></th>
 					<th class="text-center">Actions</th>
 				</tr>
 			</thead>
@@ -173,6 +173,7 @@
 	const FT_OFFERS = {{ offers | tojson | safe }};
 	const FT_ADDED_IDS = {{ added_ids | list | tojson | safe }};
 	const FT_UNAVAIL_IDS = {{ unavailable_ids | list | tojson | safe }};
+	let currentOfferSort = { column: 0, direction: 'desc' };
 
 	function escHtml(s) {
 		if (!s) return '';
@@ -196,6 +197,53 @@
 			}
 		});
 	}
+
+	function sortOffersTable(columnIndex, type, forcedDirection) {
+		const table = document.getElementById('ftOffersTable');
+		if (!table) return;
+		const tbody = table.querySelector('tbody');
+		const header = table.querySelectorAll('thead th')[columnIndex];
+		if (!tbody || !header) return;
+
+		const direction = forcedDirection || (
+			currentOfferSort.column === columnIndex && currentOfferSort.direction === 'desc'
+				? 'asc'
+				: 'desc'
+		);
+		currentOfferSort = { column: columnIndex, direction: direction };
+
+		const rows = Array.from(tbody.querySelectorAll('tr.offer-row'));
+		const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
+		const valueFor = row => {
+			if (type === 'number') return Number(row.getAttribute('data-score') || 0);
+			return (row.cells[columnIndex]?.textContent || '').trim();
+		};
+		rows.sort((left, right) => {
+			const a = valueFor(left);
+			const b = valueFor(right);
+			let comparison;
+			if (type === 'date') {
+				comparison = String(a).localeCompare(String(b));
+			} else if (type === 'number') {
+				comparison = a - b;
+			} else {
+				comparison = collator.compare(String(a), String(b));
+			}
+			return direction === 'asc' ? comparison : -comparison;
+		});
+		rows.forEach(row => tbody.appendChild(row));
+
+		table.querySelectorAll('thead th.sortable').forEach(th => {
+			th.removeAttribute('aria-sort');
+			const indicator = th.querySelector('.sort-indicator');
+			if (indicator) indicator.textContent = '';
+		});
+		header.setAttribute('aria-sort', direction === 'asc' ? 'ascending' : 'descending');
+		const indicator = header.querySelector('.sort-indicator');
+		if (indicator) indicator.textContent = direction === 'asc' ? ' ▲' : ' ▼';
+	}
+
+	document.addEventListener('DOMContentLoaded', () => sortOffersTable(0, 'date', 'desc'));
 
 	function openOfferModal(idx) {
 		const o = FT_OFFERS[idx]; if (!o) return;

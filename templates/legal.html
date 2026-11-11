@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+
+{% block main %}
+<main class="container py-5">
+    <div class="mb-4">
+        <h1 class="display-6">Mentions, confidentialité et conditions d'utilisation</h1>
+        <p class="text-muted mb-0">Informations générales pour les utilisateurs du service.</p>
+    </div>
+
+    <div class="alert alert-warning">
+        <strong>Information importante :</strong> ce document constitue une base d'information pour ce projet.
+        Il doit être adapté et validé juridiquement avant toute exploitation commerciale, notamment pour définir
+        l'identité du responsable de traitement, les durées de conservation et les coordonnées de contact.
+    </div>
+
+    <section class="mb-4">
+        <h2 class="h4">1. Éditeur et propriété intellectuelle</h2>
+        <p>
+            Le site et son code sont édités par Philippe Mourey. Le code source est disponible sur
+            <a href="https://github.com/pmourey/jobs">GitHub</a>, selon la licence indiquée dans le dépôt
+            lorsqu'elle est applicable. Les textes, visuels, marques, modèles de documents et éléments
+            graphiques du site ne peuvent pas être réutilisés sans autorisation lorsqu'ils sont protégés.
+        </p>
+    </section>
+
+    <section class="mb-4">
+        <h2 class="h4">2. Fonctionnement du service</h2>
+        <p>
+            Le service permet de gérer des candidatures, rechercher des offres, importer un CV et générer
+            des documents d'aide à la candidature. Les suggestions générées automatiquement doivent être
+            relues et validées par l'utilisateur avant envoi à un recruteur.
+        </p>
+        <p>
+            L'utilisateur s'engage à fournir des informations exactes, à protéger ses identifiants et à ne
+            pas importer de données pour lesquelles il ne dispose pas d'une autorisation. Le service peut
+            évoluer, être interrompu pour maintenance ou dépendre de services tiers (messagerie, France Travail,
+            fournisseur IA).
+        </p>
+    </section>
+
+    <section class="mb-4">
+        <h2 class="h4">3. Données traitées</h2>
+        <p>Selon les fonctionnalités utilisées, le site peut traiter :</p>
+        <ul>
+            <li>les données de compte : nom d'utilisateur, adresse e-mail, mot de passe haché et validation du compte ;</li>
+            <li>les coordonnées, CV, candidatures, contacts recruteurs et documents importés ou générés ;</li>
+            <li>les données techniques de session, comme l'adresse IP et les informations du navigateur ;</li>
+            <li>les recherches et résultats d'offres demandés par l'utilisateur.</li>
+        </ul>
+        <p>
+            Ces données sont utilisées pour fournir le service, sécuriser les comptes, générer les documents
+            demandés et permettre le suivi des candidatures. Elles ne doivent être transmises à un fournisseur
+            externe que lorsque la fonctionnalité utilisée le nécessite et selon sa configuration.
+        </p>
+    </section>
+
+    <section class="mb-4">
+        <h2 class="h4">4. IA, sous-traitants et transferts</h2>
+        <p>
+            L'assistance IA peut être configurée avec Ollama en local ou avec un fournisseur compatible.
+            En mode local, les prompts restent sur l'environnement configuré. En mode distant, les contenus
+            envoyés peuvent être traités par le fournisseur choisi : l'utilisateur ou l'administrateur doit
+            vérifier ses conditions, sa localisation des données et ses garanties contractuelles.
+        </p>
+        <p>
+            Les e-mails, l'API France Travail et les autres intégrations sont également des services distincts.
+            Leurs propres politiques de confidentialité s'appliquent aux données qu'ils reçoivent.
+        </p>
+    </section>
+
+    <section class="mb-4">
+        <h2 class="h4">5. Droits RGPD</h2>
+        <p>
+            Sous réserve des conditions prévues par le RGPD, la personne concernée peut demander l'accès,
+            la rectification, l'effacement, la limitation du traitement, la portabilité ou s'opposer à
+            certains traitements. Elle peut aussi définir des directives relatives à ses données après son décès
+            lorsque le droit applicable le prévoit.
+        </p>
+        <p>
+            Pour exercer ces droits, utilisez le contact indiqué par l'exploitant du service et précisez
+            l'adresse du compte concerné. Une vérification d'identité peut être demandée. Une réclamation
+            peut être adressée à la CNIL ou à l'autorité de contrôle compétente.
+        </p>
+    </section>
+
+    <section class="mb-4">
+        <h2 class="h4">6. Sécurité et conservation</h2>
+        <p>
+            Le service applique des contrôles d'accès, des mots de passe hachés, des sessions contrôlées,
+            une validation des fichiers importés et une séparation des répertoires utilisateurs. Aucun système
+            connecté à Internet ne garantit toutefois une sécurité absolue : les secrets et fichiers de
+            configuration ne doivent pas être publiés.
+        </p>
+        <p>
+            Les données sont conservées pendant la durée nécessaire au fonctionnement du compte et aux finalités
+            demandées, selon la politique de conservation définie par l'exploitant. Les durées précises doivent
+            être publiées avant une mise en production commerciale.
+        </p>
+    </section>
+
+    <section>
+        <h2 class="h4">7. Cookies et contact</h2>
+        <p class="mb-0">
+            Le site utilise principalement les mécanismes nécessaires à l'authentification et aux sessions.
+            Si des outils de mesure d'audience ou des cookies non nécessaires sont ajoutés, un mécanisme
+            d'information et de consentement devra être mis en place. Pour toute question, contactez l'éditeur
+            ou l'exploitant à l'adresse publiée dans la version commerciale du service.
+        </p>
+    </section>
+</main>
+{% endblock main %}

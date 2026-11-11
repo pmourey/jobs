@@ -302,11 +302,283 @@ def _model_infer(messages: list, model: str, base_url: str, api_key: str, *,
         raise
 
 
+def get_candidate_name_for_job(job: Job) -> str:
+    """Retourne le nom complet du candidat propriétaire de l'offre."""
+    if not job or not getattr(job, 'user_id', None):
+        return ''
+    try:
+        from flask import current_app
+        static_folder = current_app.static_folder
+    except Exception:
+        static_folder = str(Path(__file__).parent.parent / 'static')
+
+    try:
+        info = get_user_contact_info(job.user_id, static_folder)
+        if info.get('name'):
+            return info['name']
+    except Exception:
+        pass
+
+    try:
+        from Model import User
+        u = User.query.get(job.user_id)
+        if u and u.username:
+            return u.username
+    except Exception:
+        pass
+    return ''
+
+
 def build_cv_pdf_filename(job: Job) -> str:
     from tools.document_tools import sanitize_filename_part
-    company = sanitize_filename_part(job.company)
-    title = sanitize_filename_part(job.name)
-    return f'CV Philippe Mourey - {company} - {title}.pdf'
+    company = sanitize_filename_part(job.company) or 'Entreprise'
+    title = sanitize_filename_part(job.name) or 'Poste'
+    candidate_name = get_candidate_name_for_job(job)
+    if candidate_name:
+        candidate_part = sanitize_filename_part(candidate_name)
+        return f'CV {candidate_part} - {company} - {title}.pdf'
+    return f'CV - {company} - {title}.pdf'
+
+
+def get_user_contact_info(user_id: int, static_folder: str | Path | None = None) -> dict:
+    """Extrait les coordonnées de contact (nom, email, téléphone, adresse, code postal, ville)
+    depuis le CV par défaut de l'utilisateur ou son compte.
+    """
+    if static_folder is None:
+        try:
+            from flask import current_app
+            static_folder = current_app.static_folder
+        except Exception:
+            from pathlib import Path
+            static_folder = str(Path(__file__).parent.parent / 'static')
+
+    user = None
+    try:
+        from Model import User
+        user = User.query.get(user_id)
+    except Exception:
+        pass
+
+    cvs_dir = user_cvs_dir(static_folder, user_id)
+    basics = {}
+    cv_file = None
+
+    if cvs_dir.exists():
+        meta_path = cvs_dir / 'cvs_meta.json'
+        if meta_path.exists():
+            try:
+                meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+                default = meta.get('_default')
+                if default and (cvs_dir / default).exists():
+                    target = cvs_dir / default
+                    if target.suffix.lower() == '.json':
+                        basics = _json.loads(target.read_text(encoding='utf-8')).get('basics', {}) or {}
+                        cv_file = default
+            except Exception:
+                pass
+        if not basics:
+            for candidate_name in ('cv_gitconnected.json', 'cv_linkedin_parsed.json'):
+                p = cvs_dir / candidate_name
+                if p.exists():
+                    try:
+                        basics = _json.loads(p.read_text(encoding='utf-8')).get('basics', {}) or {}
+                        if basics:
+                            cv_file = candidate_name
+                            break
+                    except Exception:
+                        pass
+        if not basics:
+            for p in sorted(cvs_dir.glob('*.json')):
+                if p.name != 'cvs_meta.json':
+                    try:
+                        basics = _json.loads(p.read_text(encoding='utf-8')).get('basics', {}) or {}
+                        if basics:
+                            cv_file = p.name
+                            break
+                    except Exception:
+                        pass
+
+    # Fallback to static/cv.json ONLY for user_id == 1
+    if not basics and user_id == 1:
+        cv_path = Path(static_folder) / 'cv.json'
+        if cv_path.exists():
+            try:
+                basics = _json.loads(cv_path.read_text(encoding='utf-8')).get('basics', {}) or {}
+                cv_file = 'cv.json'
+            except Exception:
+                pass
+
+    name = (basics.get('name') or (user.username if user else '')).strip()
+    email = (basics.get('email') or (user.email if user else '')).strip()
+    phone = str(basics.get('phone') or '').strip()
+
+    loc = basics.get('location') or {}
+    if isinstance(loc, dict):
+        street = loc.get('address') or loc.get('streetAddress') or basics.get('address') or ''
+        postal_code = loc.get('postalCode') or loc.get('postal_code') or basics.get('postalCode') or ''
+        city = loc.get('city') or loc.get('locality') or loc.get('town') or basics.get('city') or ''
+    else:
+        street = basics.get('address') or ''
+        postal_code = basics.get('postalCode') or ''
+        city = basics.get('city') or ''
+
+    if not street and basics.get('address'):
+        street = str(basics.get('address')).strip()
+
+    return {
+        'user_id': user_id,
+        'name': str(name),
+        'email': str(email),
+        'phone': str(phone),
+        'street': str(street).strip(),
+        'postal_code': str(postal_code).strip(),
+        'city': str(city).strip(),
+        'cv_file': cv_file,
+    }
+
+
+def validate_user_contact_info(user_id: int, static_folder: str | Path | None = None) -> tuple[bool, list[str], dict]:
+    """Vérifie que les coordonnées obligatoires du candidat (nom, email, tél, adresse, ville) sont renseignées."""
+    info = get_user_contact_info(user_id, static_folder)
+    missing = []
+    if not info.get('name'):
+        missing.append('Nom complet')
+    if not info.get('email') or '@' not in info.get('email'):
+        missing.append('Adresse email')
+    if not info.get('phone'):
+        missing.append('Numéro de téléphone')
+    if not info.get('street'):
+        missing.append('Adresse postale')
+    if not info.get('city') and not info.get('postal_code'):
+        missing.append('Ville')
+
+    is_complete = len(missing) == 0
+    return is_complete, missing, info
+
+
+def save_user_contact_info(user_id: int, contact_data: dict, static_folder: str | Path | None = None) -> bool:
+    """Sauvegarde ou met à jour les coordonnées du candidat dans son CV JSON par défaut et dans la table User."""
+    if static_folder is None:
+        try:
+            from flask import current_app
+            static_folder = current_app.static_folder
+        except Exception:
+            static_folder = str(Path(__file__).parent.parent / 'static')
+
+    cvs_dir = user_cvs_dir(static_folder, user_id)
+    cvs_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = cvs_dir / 'cvs_meta.json'
+    meta = {}
+    if meta_path.exists():
+        try:
+            meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+        except Exception:
+            meta = {}
+
+    target_filename = meta.get('_default')
+    target_path = None
+    if target_filename and (cvs_dir / target_filename).exists() and target_filename.endswith('.json'):
+        target_path = cvs_dir / target_filename
+    else:
+        for p in ('cv_gitconnected.json', 'cv_linkedin_parsed.json'):
+            if (cvs_dir / p).exists():
+                target_path = cvs_dir / p
+                target_filename = p
+                break
+        if not target_path:
+            jsons = [p for p in cvs_dir.glob('*.json') if p.name != 'cvs_meta.json']
+            if jsons:
+                target_path = jsons[0]
+                target_filename = target_path.name
+            else:
+                target_filename = 'cv_gitconnected.json'
+                target_path = cvs_dir / target_filename
+
+    cv_data = {}
+    if target_path.exists():
+        try:
+            cv_data = _json.loads(target_path.read_text(encoding='utf-8'))
+        except Exception:
+            cv_data = {}
+
+    if not isinstance(cv_data, dict):
+        cv_data = {}
+
+    basics = cv_data.setdefault('basics', {})
+    if contact_data.get('name') is not None:
+        basics['name'] = contact_data['name'].strip()
+    if contact_data.get('email') is not None:
+        basics['email'] = contact_data['email'].strip()
+    if contact_data.get('phone') is not None:
+        basics['phone'] = contact_data['phone'].strip()
+
+    loc = basics.setdefault('location', {})
+    if not isinstance(loc, dict):
+        loc = {}
+        basics['location'] = loc
+
+    street = contact_data.get('street', '').strip()
+    postal_code = contact_data.get('postal_code', '').strip()
+    city = contact_data.get('city', '').strip()
+
+    if street:
+        loc['address'] = street
+        basics['address'] = street
+    if postal_code:
+        loc['postalCode'] = postal_code
+        basics['postalCode'] = postal_code
+    if city:
+        loc['city'] = city
+        basics['city'] = city
+
+    target_path.write_text(_json.dumps(cv_data, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    if not meta.get('_default') or meta.get('_default') != target_filename:
+        meta['_default'] = target_filename
+        meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    if user_id == 1:
+        static_cv = Path(static_folder) / 'cv.json'
+        if static_cv.exists():
+            try:
+                s_cv = _json.loads(static_cv.read_text(encoding='utf-8'))
+                s_basics = s_cv.setdefault('basics', {})
+                if contact_data.get('name'):
+                    s_basics['name'] = contact_data['name'].strip()
+                if contact_data.get('email'):
+                    s_basics['email'] = contact_data['email'].strip()
+                if contact_data.get('phone'):
+                    s_basics['phone'] = contact_data['phone'].strip()
+                s_loc = s_basics.setdefault('location', {})
+                if street:
+                    s_loc['address'] = street
+                    s_basics['address'] = street
+                if postal_code:
+                    s_loc['postalCode'] = postal_code
+                    s_basics['postalCode'] = postal_code
+                if city:
+                    s_loc['city'] = city
+                    s_basics['city'] = city
+                static_cv.write_text(_json.dumps(s_cv, ensure_ascii=False, indent=2), encoding='utf-8')
+            except Exception:
+                pass
+
+    try:
+        from Model import User, db
+        u = User.query.get(user_id)
+        if u and contact_data.get('email'):
+            new_email = contact_data['email'].strip()
+            if new_email and u.email != new_email:
+                u.email = new_email
+                db.session.commit()
+    except Exception:
+        try:
+            from Model import db
+            db.session.rollback()
+        except Exception:
+            pass
+
+    return True
 
 
 def user_cvs_dir(static_folder: str | Path, user_id: int) -> Path:
@@ -866,12 +1138,13 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
         base_url = current_app.config.get('GITHUB_MODELS_BASE_URL', 'https://models.github.ai/inference')
         model_name = current_app.config.get('GITHUB_MODELS_MODEL', 'openai/gpt-4.1')
         static_folder = current_app.static_folder
-        author_name = current_app.config.get('GMAIL_FULLNAME', 'Philippe Mourey')
+        is_user_1 = getattr(job, 'user_id', None) == 1
+        author_name = current_app.config.get('GMAIL_FULLNAME', '') if is_user_1 else ''
     except Exception:
         base_url = 'https://models.github.ai/inference'
         model_name = 'openai/gpt-4.1'
         static_folder = str(Path(__file__).parent.parent / 'static')
-        author_name = 'Philippe Mourey'
+        author_name = ''
 
     # Charger cv_data pour les sections optionnelles
     if cv_data is None:
@@ -992,13 +1265,20 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
         + "\n\n".join(context_parts)
     )
 
-    # Determine display name for signature: prefer cv_data.basics.name then author_name
+    # Determine display name for signature: prefer cv_data.basics.name then candidate name from job, then author_name
     author_display = None
     try:
         basics = cv_data.get('basics', {}) if isinstance(cv_data, dict) else {}
-        author_display = basics.get('name') or author_name
+        author_display = basics.get('name')
     except Exception:
-        author_display = author_name
+        author_display = None
+    if not author_display and job:
+        try:
+            author_display = get_candidate_name_for_job(job)
+        except Exception:
+            pass
+    if not author_display:
+        author_display = author_name or 'Candidat'
 
     if not github_token:
         title = job.name or 'ce poste'
@@ -1097,7 +1377,18 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
             return str(v)
 
     basics = cv_data.get('basics', {}) if isinstance(cv_data, dict) else {}
-    SENDER_NAME = _safe_str(basics.get('name')) or 'PHILIPPE MOUREY'
+    SENDER_NAME = _safe_str(basics.get('name'))
+    if not SENDER_NAME:
+        try:
+            from Model import User
+            if job and getattr(job, 'user_id', None):
+                u = User.query.get(job.user_id)
+                if u and u.username:
+                    SENDER_NAME = u.username
+        except Exception:
+            pass
+    SENDER_NAME = SENDER_NAME or 'Candidat'
+
     # 'location' or 'address' may be composite objects. Extract street-like and city-like parts
     def _extract_street_city(v):
         if not v:
@@ -1107,9 +1398,7 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
         if isinstance(v, dict):
             # try common keys for street/address and city/postal
             street_keys = ('streetAddress', 'street_address', 'street', 'address', 'formatted')
-            city_keys = ('city', 'locality', 'town', 'region', 'postalCode', 'postal_code', 'postal')
             street = ''
-            city = ''
             for k in street_keys:
                 if k in v and v.get(k):
                     street = v.get(k)
@@ -1123,7 +1412,7 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
                 if k in v and v.get(k):
                     city_parts.append(str(v.get(k)))
                     break
-            city = ', '.join(city_parts).strip()
+            city = ' '.join(city_parts).strip()
             return (_safe_str(street) or '', _safe_str(city) or '')
         # list or other
         try:
@@ -1133,16 +1422,31 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
 
     addr_src = basics.get('address') or basics.get('location')
     street_val, city_val = _extract_street_city(addr_src)
-    # Build a single address line and avoid duplicating city if already included
-    addr_str = _safe_str(basics.get('address') or basics.get('location'))
-    SENDER_STREET = street_val or (addr_str if addr_str else '1880, route de Saint Jeannet')
-    # If addr_str already contains the city substring, avoid repeating it
+    addr_str = _safe_str(basics.get('address') or (addr_src.get('address') if isinstance(addr_src, dict) else ''))
+    SENDER_STREET = street_val or (addr_str if addr_str else '')
     if city_val and addr_str and str(city_val).strip() and str(city_val).strip() in addr_str:
         SENDER_CITY = ''
     else:
-        SENDER_CITY = city_val or _safe_str(basics.get('city')) or '06700 Saint Laurent du Var'
-    SENDER_PHONE = _safe_str(basics.get('phone')) or '06 89 15 08 56'
-    SENDER_EMAIL = _safe_str(basics.get('email')) or 'philippe.mourey@gmail.com'
+        SENDER_CITY = city_val or _safe_str(basics.get('city')) or ''
+    location = basics.get('location') if isinstance(basics.get('location'), dict) else {}
+    postal_code = _safe_str(
+        basics.get('postalCode') or basics.get('postal_code')
+        or location.get('postalCode') or location.get('postal_code')
+    ).strip()
+    if postal_code and postal_code not in SENDER_CITY:
+        SENDER_CITY = f'{postal_code} {SENDER_CITY}'.strip()
+    SENDER_PHONE = _safe_str(basics.get('phone')) or ''
+    SENDER_EMAIL = _safe_str(basics.get('email'))
+    if not SENDER_EMAIL:
+        try:
+            from Model import User
+            if job and getattr(job, 'user_id', None):
+                u = User.query.get(job.user_id)
+                if u and u.email:
+                    SENDER_EMAIL = u.email
+        except Exception:
+            pass
+    SENDER_EMAIL = SENDER_EMAIL or ''
     PHOTO_WIDTH = 2.5 * cm
 
     COLOR_DARK = rl_colors.HexColor('#1a1a2e')

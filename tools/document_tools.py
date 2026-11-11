@@ -401,7 +401,8 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
 
     try:
         from flask import current_app
-        author = current_app.config.get('GMAIL_FULLNAME', '')
+        is_user_1 = getattr(job, 'user_id', None) == 1
+        author = current_app.config.get('GMAIL_FULLNAME', '') if is_user_1 else ''
         static_folder = current_app.static_folder
     except Exception:
         author = ''
@@ -465,8 +466,18 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
                         basics = _json.loads(candidate.read_text(encoding='utf-8')).get('basics', {}) or {}
                     except Exception:
                         basics = {}
-        # fallback to static/cv.json
-        if not basics:
+        if not basics and user_cvs_dir.exists():
+            for c_name in ('cv_gitconnected.json', 'cv_linkedin_parsed.json'):
+                c_path = user_cvs_dir / c_name
+                if c_path.exists():
+                    try:
+                        basics = _json.loads(c_path.read_text(encoding='utf-8')).get('basics', {}) or {}
+                        if basics:
+                            break
+                    except Exception:
+                        pass
+        # Fallback to static/cv.json ONLY for user 1
+        if not basics and job.user_id == 1:
             cv_path = Path(static_folder) / 'cv.json'
             if cv_path.exists():
                 import json as _json
@@ -474,11 +485,27 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
     except Exception:
         basics = {}
 
-    SENDER_NAME = _safe_str(basics.get('name')) or (author or 'PHILIPPE MOUREY')
+    user_obj = None
+    try:
+        from Model import User
+        user_obj = User.query.get(job.user_id)
+    except Exception:
+        pass
+
+    SENDER_NAME = _safe_str(basics.get('name')) or (user_obj.username if user_obj else '') or (author if getattr(job, 'user_id', None) == 1 else '') or 'Candidat'
     addr_str = _address_str(basics.get('address') or basics.get('location'))
-    SENDER_STREET = addr_str or '1880, route de Saint Jeannet'
+    SENDER_STREET = addr_str or ''
     # Avoid duplicating the city when it is already included in the address string
     city_val = _safe_str(basics.get('city'))
+    location = basics.get('location') if isinstance(basics.get('location'), dict) else {}
+    if not city_val:
+        city_val = _safe_str(location.get('city'))
+    postal_code = _safe_str(
+        basics.get('postalCode') or basics.get('postal_code')
+        or location.get('postalCode') or location.get('postal_code')
+    ).strip()
+    if postal_code and postal_code not in city_val:
+        city_val = f'{postal_code} {city_val}'.strip()
     def _norm(s: str) -> str:
         return re.sub(r'[^0-9a-zA-Z]+', '', s or '').strip().lower()
 
@@ -502,7 +529,7 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
                     duplicate_city = True
                 else:
                     # also consider postal code presence: extract 5-digit postal code from city_val
-                    m = _re.search(r'\\b(\\d{5})\\b', str(city_val))
+                    m = _re.search(r'\b(\d{5})\b', str(city_val))
                     if m and m.group(1) in str(addr_str):
                         duplicate_city = True
     except Exception:
@@ -511,9 +538,9 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
     if duplicate_city:
         SENDER_CITY = ''
     else:
-        SENDER_CITY = city_val or '06700 Saint Laurent du Var'
-    SENDER_PHONE   = _safe_str(basics.get('phone')) or '06 89 15 08 56'
-    SENDER_EMAIL   = _safe_str(basics.get('email')) or 'philippe.mourey@gmail.com'
+        SENDER_CITY = city_val or ''
+    SENDER_PHONE   = _safe_str(basics.get('phone')) or ''
+    SENDER_EMAIL   = _safe_str(basics.get('email')) or (user_obj.email if user_obj else '')
     PHOTO_WIDTH    = 2.5 * cm
 
     COLOR_DARK  = colors.HexColor('#1a1a2e')
@@ -587,8 +614,23 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
     if job.zipCode:
         recip_lines.append(Paragraph(job.zipCode, st_recip))
     recip_lines.append(Spacer(1, 12))
-    recip_lines.append(Paragraph(
-        f'Saint Laurent du Var, le {format_french_date(letter_date)}', st_date))
+    city_for_date = ''
+    if isinstance(basics.get('location'), dict):
+        city_for_date = _safe_str(basics.get('location', {}).get('city'))
+    if not city_for_date:
+        city_for_date = _safe_str(basics.get('city'))
+    if not city_for_date and addr_str:
+        m_city = re.search(r'\b\d{5}\s+([A-Za-zÀ-ÖØ-öø-ÿ\-\s]+)', addr_str)
+        if m_city:
+            city_for_date = m_city.group(1).strip()
+    if not city_for_date and SENDER_CITY:
+        city_for_date = re.sub(r'^\s*\d{5}\s*', '', SENDER_CITY).strip()
+
+    if city_for_date:
+        date_str = f'{city_for_date}, le {format_french_date(letter_date)}'
+    else:
+        date_str = f'Le {format_french_date(letter_date)}'
+    recip_lines.append(Paragraph(date_str, st_date))
 
     recip_table = Table([[recip_lines]], colWidths=['100%'])
     recip_table.setStyle(TableStyle([
@@ -618,7 +660,7 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
 
     # Corps
     raw_paras = _build_cover_letter_pdf_paragraphs(job)
-    author_display = SENDER_NAME or author or 'Philippe Mourey'
+    author_display = SENDER_NAME or (user_obj.username if user_obj else '') or (author if getattr(job, 'user_id', None) == 1 else '') or 'Candidat'
 
     # Copie de travail des paragraphes
     paras = list(raw_paras)
@@ -733,7 +775,7 @@ def generate_cover_letter_pdf_bytes(job: Job, template_path: str | Path, letter_
         topMargin=tm,
         bottomMargin=bm,
         title=build_cover_letter_pdf_filename(job),
-        author=author or SENDER_NAME,
+        author=author_display or SENDER_NAME,
     )
     doc.build(final_story)
     return buffer.getvalue()

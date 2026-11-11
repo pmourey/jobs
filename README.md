@@ -1,215 +1,98 @@
-# Suivi de Candidatures
+# Suivi de candidatures
 
-Application Flask de suivi de candidatures avec authentification, gestion des rôles, génération de documents (LM/CV) et assistants IA pour personnaliser les candidatures.
+Application web Flask pour organiser une recherche d'emploi, suivre ses candidatures et préparer des documents personnalisés. Une page publique présente le service avant connexion ; les fonctionnalités de gestion sont accessibles après création et validation d'un compte.
 
-## Démo
+## Pour les utilisateurs
+
+### Ce que le service permet
+
+- **Centraliser ses candidatures** : entreprise, poste, contact, dates, statut, relances et notes.
+- **Retrouver ses documents** : CV source, CV générés, lettres de motivation et captures PDF.
+- **Préparer chaque candidature** : génération d'une lettre PDF et personnalisation du CV à partir du profil et de l'offre.
+- **Utiliser une assistance IA** : suggestions de contenu, aperçu et génération de CV/lettre ; les résultats doivent toujours être relus avant envoi.
+- **Rechercher des offres** : France Travail et, selon la configuration, des job boards compatibles.
+- **Garder le contrôle** : les candidatures sont privées par défaut ; le partage avec d'autres utilisateurs est une option explicite.
+- **Gérer son compte** : validation e-mail, changement/récupération du mot de passe, coordonnées, CV et photo.
+
+La page d'accueil publique est disponible sur `/`. Les informations de confidentialité et les conditions d'utilisation sont accessibles sur `/legal`.
+
+## Démonstration
 
 [https://pmourey.pythonanywhere.com/](https://pmourey.pythonanywhere.com/)
 
-## Fonctionnalités principales
+## Démarrage local
 
-- Gestion des candidatures : création, modification, suppression, archivage (actif/clos), suivi des dates et du texte de lettre.
-- Authentification complète : inscription, validation e-mail, connexion/déconnexion, changement et récupération de mot de passe.
-- Gestion des rôles : Administrateur, Utilisateur (anciennement "Éditeur"). Les valeurs de rôle ont été normalisées ; un script de migration est fourni pour convertir d'anciennes valeurs.
-- Administration des comptes et sessions : sessions actives, sessions fermées, fermeture/suppression unitaire ou en lot.
-- Génération de lettre de motivation PDF côté serveur via ReportLab (sans Word ni LibreOffice en production).
-- Personnalisation IA du CV : aperçu des suggestions, sélection fine des sections, génération et sauvegarde d'un CV PDF.
-- Génération IA de lettre de motivation : prévisualisation, ajustement via prompt complémentaire, sauvegarde dans la candidature.
-- Upload de capture de candidature (PDF) avec validation côté serveur.
+### Prérequis
 
-## Nouveautés récentes
+- Python 3.10 ou plus récent ;
+- pip ;
+- un compte Gmail et un mot de passe d'application si les e-mails sont activés ;
+- des identifiants France Travail pour la recherche d'offres en mode réel ;
+- un fournisseur IA local ou distant si l'assistance IA est activée.
 
-- Ajout de l'endpoint de génération LM PDF : /generate_cover_letter_pdf/<id>
-- Ajout du flux CV IA :
-  - /preview_cv_data/<id> (aperçu JSON)
-  - /save_cv_pdf/<id> (génération + sauvegarde dans static/uploads)
-  - /generate_cv_pdf/<id> (téléchargement du CV sauvegardé ou fallback dynamique)
-- Stockage des CV générés : désormais, les CV PDF générés par l'IA sont sauvegardés par utilisateur sous `static/uploads/users/{user_id}/generated/`.
-- Import de CV JSON utilisateur : chaque utilisateur peut uploader son CV source (GitConnected JSON) depuis son profil. Le fichier est validé côté serveur (JSON parsé) et sauvegardé sous `static/uploads/users/{user_id}/cv_original.json`.
-- Ajout du flux LM IA :
-  - /preview_lm_ai/<id> (génération de texte)
-  - /save_lm_text/<id> (persistance en base)
-- Ajout de la suppression/fermeture de sessions en lot : /delete_sessions (POST JSON)
-- Messages de validation formulaire renforcés sur /new/ (champs requis, e-mail invalide, conservation des valeurs saisies)
-- Option de partage des offres : chaque utilisateur peut activer `allow_view_offers` dans son profil pour autoriser les autres utilisateurs à consulter ses offres (opt-in). Par défaut, un utilisateur ne voit que ses propres candidatures.
-- UI : dans la page Candidatures, un sélecteur permet d'afficher les candidatures d'un autre utilisateur (si celui-ci a autorisé le partage). Par défaut la vue montre uniquement les offres de l'utilisateur connecté.
-- Téléchargement CV : le bouton "⬇️ PDF" télécharge maintenant le CV depuis le répertoire utilisateur (`static/uploads/users/{user_id}/generated`) quand présent.
-- Validation JSON côté serveur : l'upload du CV JSON est parsé et validé avant sauvegarde ; un message d'erreur est retourné si le JSON est invalide.
-
-## Prérequis
-
-- Python 3.10+
-- Pip
-- Compte Gmail + mot de passe d'application (si envoi d'e-mails activé)
-- Optionnel : IA locale via Ollama (gratuit) ou clé API d'un provider OpenAI-compatible
-
-LibreOffice est optionnel et utile surtout pour des conversions locales de templates legacy .dot. Le rendu PDF principal est géré en Python.
-
-## Installation
-
-1. Cloner le dépôt
+### Installation
 
 ```bash
 git clone <repository-url>
 cd jobs
-```
-
-2. Installer les dépendances
-
-```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-```
-
-3. Créer la configuration locale
-
-```bash
 cp config_template.py config.py
 ```
 
-4. Renseigner les variables dans config.py
-
-- SMTP_SERVER, SMTP_PORT, GMAIL_USER, GMAIL_APP_PWD
-- SECRET_KEY
-- SQLALCHEMY_DATABASE_URI
-- Configuration IA (au choix) :
-  - **Option A — IA locale (Ollama, recommandé pour usage gratuit)**  
-    - `GITHUB_TOKEN = 'ollama-local'` (valeur factice)
-    - `GITHUB_MODELS_BASE_URL = 'http://localhost:11434'`
-    - `GITHUB_MODELS_MODEL = 'llama3.1:8b'`
-    - `ENABLE_REMOTE_IA = True`
-    - `OLLAMA_LOCAL_TUNING = IMAC_64GB_OLLAMA_TUNING`
-  - **Option B — Provider distant OpenAI-compatible**
-    - `GITHUB_TOKEN = '<API_KEY>'`
-    - `GITHUB_MODELS_BASE_URL = 'https://api.openai.com'` (exemple)
-    - `GITHUB_MODELS_MODEL = '<model>'`
-    - `ENABLE_REMOTE_IA = True`
-  - **Option C — Désactiver les appels IA distants**
-    - `ENABLE_REMOTE_IA = False` (fallback local CV/LM)
-
-## IA locale gratuite avec Ollama
-
-> GitHub Models (`models.github.ai`) est retiré. Pour continuer à utiliser les endpoints IA du projet (`/preview_cv_data`, `/preview_lm_ai`), utilisez Ollama local ou un provider externe.
-
-1. Installer Ollama (macOS)
-
-```bash
-brew install ollama
-```
-
-2. Démarrer le serveur Ollama
-
-```bash
-ollama serve
-```
-
-3. Télécharger un modèle
-
-```bash
-ollama pull llama3.1:8b
-```
-
-4. Vérifier l'API locale (OpenAI-compatible)
-
-```bash
-curl -s http://localhost:11434/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ollama-local" \
-  -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"Dis bonjour en français"}]}'
-```
-
-5. Redémarrer Flask
+Renseignez ensuite `SECRET_KEY`, `SQLALCHEMY_DATABASE_URI`, les paramètres SMTP et, si nécessaire, les identifiants France Travail et IA. Ne commitez jamais `config.py`, les mots de passe, les tokens ou les données utilisateurs.
 
 ```bash
 python flask_app.py
 ```
 
-6. Ajuster le tuning local si necessaire
+Puis ouvrez l'URL affichée par Flask. Les tables SQLite sont créées automatiquement au démarrage des requêtes selon la configuration actuelle du projet.
 
-- Le fichier `ollama_tuning.py` contient les reglages dedies a un iMac 16 CPU logiques / 64 Go RAM.
-- Le preset `IMAC_64GB_OLLAMA_TUNING['llama3.1:8b']` ajuste :
-  - `num_thread`
-  - `num_ctx`
-  - `max_tokens`
-  - `request_timeout`
-  - la taille des extraits de contexte envoyes au modele
+## Configuration et documentation technique
 
-Note : si vous modifiez la logique des rôles, utilisez le script de migration fourni `scripts/convert_roles.py` pour convertir les anciennes valeurs role=2 en role=1 avant d'opérer.
+Les détails opérationnels sont volontairement séparés de cette présentation :
 
-## Données et fichiers attendus
+- [Configuration IA locale avec Ollama](docs/OLLAMA.md)
+- [Architecture technique et flux de données](docs/ARCHITECTURE.md)
+- [Configuration de référence](config_template.py)
 
-- static/cv.json : base CV utilisée pour la personnalisation IA.
-- static/Cover_letter.dot ou static/Cover_letter.dotx : template de lettre.
-- static/uploads/ : PDFs générés (créé automatiquement si absent).
-- static/images/ : captures de candidature et ressources associées.
-- static/uploads/users/{user_id}/ : dossiers utilisateurs contenant leurs CV originaux (`cv_original.json`) et CV générés (`generated/`)
+Le fonctionnement d'Ollama est optionnel. Sans service IA disponible, les parcours CV/LM disposent de replis locaux lorsque la fonctionnalité le permet.
 
-## Lancer l'application
+## Principales routes authentifiées
 
-```bash
-python flask_app.py
-```
+- `/suivi` : candidatures de l'utilisateur ;
+- `/new/` et `/update/<id>` : création et modification ;
+- `/generate_cover_letter_pdf/<id>` : lettre de motivation PDF ;
+- `/preview_cv_data/<id>`, `/save_cv_pdf/<id>`, `/generate_cv_pdf/<id>` : CV personnalisé ;
+- `/preview_lm_ai/<id>` et `/save_lm_text/<id>` : assistance IA pour la lettre ;
+- `/france_travail` : recherches et résultats d'offres ;
+- `/update_account/<id>` : coordonnées, CV source et préférences du compte.
 
-Puis ouvrir le navigateur sur l'URL Flask affichée en console.
+## Données personnelles, sécurité et usage commercial
 
-## Endpoints utiles
+Le service peut traiter des coordonnées, CV, candidatures, documents, données de session et recherches d'offres. Les mesures prévues dans l'application comprennent notamment l'authentification, les mots de passe hachés, les contrôles d'accès par rôle, la séparation des répertoires utilisateurs, la validation des uploads et le partage des offres désactivé par défaut.
 
-- /suivi : liste des candidatures
-- /new/ : création d'une candidature
-- /update/<id> : édition d'une candidature
-- /toggle_expired/<id> : bascule actif/clos
-- /generate_cover_letter_pdf/<id> : téléchargement LM PDF
-- /preview_cv_data/<id> : aperçu des recommandations IA CV (POST)
-- /save_cv_pdf/<id> : génération + sauvegarde CV PDF (POST)
-- /generate_cv_pdf/<id> : téléchargement CV PDF
-- /update_account/<id> : modification du profil. Seul le propriétaire peut modifier l'option `allow_view_offers` et uploader son CV JSON ; les administrateurs peuvent modifier uniquement le rôle d'un autre utilisateur.
-- /preview_lm_ai/<id> : génération IA LM (POST)
-- /save_lm_text/<id> : sauvegarde texte LM (POST)
-- /sessions, /closed_sessions : suivi des sessions
-- /delete_sessions : fermeture/suppression de sessions en lot (POST JSON)
+Avant une ouverture commerciale, l'exploitant doit compléter et valider juridiquement les mentions accessibles sur [`/legal`](templates/legal.html), notamment l'identité du responsable de traitement, les bases légales, les durées de conservation, les sous-traitants, les transferts hors UE, les procédures d'exercice des droits et les coordonnées de contact RGPD. Le contenu fourni est une base d'information et ne constitue pas un avis juridique.
 
 ## Tests
 
-Des scripts de test sont disponibles dans test/, notamment :
-
-- test/test_generate_cover_letter_pdf.py
-- test/test_delete_sessions.py
-- test/test_new_route.py
-- test/test_empty_form.py
-- Ajoutez des tests pour la validation d'upload JSON et pour la logique de visibilité des offres (par défaut : affichage des offres de l'utilisateur connecté).
-
-Exemple :
-
 ```bash
-python test/test_generate_cover_letter_pdf.py
+.venv/bin/python -m pytest -q
 ```
 
-## Sécurité et validation
-
-- Contrôles d'accès par rôle sur les routes sensibles.
-- Validation des entrées formulaire (obligatoires, format e-mail).
-- Gestion de session côté serveur avec invalidation automatique si session fermée par admin.
-- Gestion des erreurs/fallback en cas d'indisponibilité IA (aperçus et génération dégradés).
+Les tests ciblés utiles comprennent `test/test_user_contact_info.py`, `test/test_generate_cover_letter_pdf.py`, `test/test_new_route.py` et `test/test_delete_sessions.py`.
 
 ## Structure du projet
 
-- flask_app.py : routes Flask et orchestration métier.
-- Model.py : modèles SQLAlchemy.
-- Controller.py : services applicatifs (auth, e-mail, upload).
-- tools/document_tools.py : génération et utilitaires LM/PDF.
-- tools/cv_tools.py : IA CV/LM et génération CV PDF.
-- templates/ : vues Jinja2.
-- static/ : assets, templates documents, uploads.
+- `flask_app.py` : routes et orchestration ;
+- `Model.py` : modèles SQLAlchemy ;
+- `Controller.py` : authentification, uploads et e-mails ;
+- `tools/cv_tools.py` : CV, coordonnées et assistance IA ;
+- `tools/document_tools.py` : lettres et PDF ;
+- `tools/france_travail.py` : API France Travail ;
+- `templates/` : interface Jinja2 ;
+- `static/` : ressources, modèles et fichiers générés.
 
-## Scripts utilitaires
+## Copyright
 
-- `scripts/convert_roles.py` : script local de migration pour convertir `role=2` en `role=1` (fait une sauvegarde de la base avant modification).
-
-## Notes de sécurité et confidentialité
-
-- Les offres d'un utilisateur ne sont visibles par d'autres que si l'utilisateur a explicitement activé `allow_view_offers`.
-- Les CV JSON uploadés et les CV PDF générés sont stockés sous `static/uploads/users/{user_id}/` ; assurez-vous d'appliquer les règles d'accès et sauvegarde appropriées en production.
-
-## Contact
-
-Pour toute question ou incident, contacter l'auteur du projet.
+Copyright © 2024-2026 Philippe Mourey. Le code est publié selon la licence présente dans le dépôt lorsqu'elle est définie. Les contenus, modèles de documents, marques et données utilisateurs peuvent être soumis à des droits distincts.

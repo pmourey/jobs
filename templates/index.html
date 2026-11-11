@@ -89,15 +89,60 @@
             </div>
         </div>
     {% else %}
-        <div class="d-flex justify-content-center">
-            <div class="card">
-                <div class="card-body text-center">
-                    <h5 class="card-title">🔒 Accès restreint</h5>
-                    <p class="card-text">Vous n'êtes pas connecté.</p>
-                    <a href="{{ url_for('login') }}" class="btn btn-primary">Se connecter</a>
+        <section class="py-5">
+            <div class="row align-items-center g-5">
+                <div class="col-lg-7">
+                    <span class="badge text-bg-primary mb-3">Votre recherche d'emploi, mieux organisée</span>
+                    <h1 class="display-5 fw-bold">Pilotez vos candidatures avec clarté et efficacité.</h1>
+                    <p class="lead text-muted">
+                        Centralisez vos offres, suivez chaque étape et préparez des CV et lettres de motivation
+                        adaptés à chaque opportunité depuis un espace personnel sécurisé.
+                    </p>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg">Créer mon espace</a>
+                        <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg">Se connecter</a>
+                    </div>
+                </div>
+                <div class="col-lg-5">
+                    <div class="card shadow-sm border-0">
+                        <div class="card-body p-4">
+                            <h2 class="h4">Tout au même endroit</h2>
+                            <ul class="list-unstyled mb-0">
+                                <li class="mb-3">✅ Suivi des candidatures et des relances</li>
+                                <li class="mb-3">✅ Recherche d'offres France Travail</li>
+                                <li class="mb-3">✅ CV et lettres de motivation personnalisés</li>
+                                <li>✅ Données et documents séparés par utilisateur</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
+        </section>
+        <section class="row g-3 pb-5">
+            <div class="col-md-4">
+                <div class="card h-100"><div class="card-body">
+                    <h2 class="h5">📋 Gardez le cap</h2>
+                    <p class="text-muted mb-0">Retrouvez les entreprises, contacts, dates, documents et statuts de vos candidatures.</p>
+                </div></div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100"><div class="card-body">
+                    <h2 class="h5">🤖 Gagnez du temps</h2>
+                    <p class="text-muted mb-0">Utilisez l'assistance IA locale ou distante selon votre configuration pour préparer vos documents.</p>
+                </div></div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100"><div class="card-body">
+                    <h2 class="h5">🔐 Gardez le contrôle</h2>
+                    <p class="text-muted mb-0">L'accès aux candidatures est personnel par défaut et le partage avec d'autres utilisateurs est optionnel.</p>
+                </div></div>
+            </div>
+        </section>
+        <section class="alert alert-light border mb-4">
+            <strong>Protection des données :</strong> consultez les
+            <a href="{{ url_for('legal') }}">conditions d'utilisation, mentions et informations RGPD</a>
+            avant de créer votre compte.
+        </section>
     {% endif %}
 </main>
 {% endblock main %}

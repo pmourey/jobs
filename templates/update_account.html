@@ -41,6 +41,58 @@
                         </div>
                     </form>
 
+                    <!-- Coordonnées du profil (pour CV et lettres de motivation) -->
+                    <hr />
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">📋 Coordonnées du profil (pour CV et lettres de motivation)</h6>
+                        {% if is_profile_complete %}
+                        <span class="badge bg-success">✅ Profil complet</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark">⚠️ Profil incomplet</span>
+                        {% endif %}
+                    </div>
+                    {% if not is_profile_complete %}
+                    <div class="alert alert-warning py-2 mb-3 small" role="alert">
+                        <strong>Informations obligatoires manquantes :</strong> {{ missing_contact_fields | join(', ') }}.
+                        <br>Ces données sont nécessaires pour générer vos CV et lettres de motivation personnalisés avec vos coordonnées réelles.
+                    </div>
+                    {% endif %}
+                    <div class="card mb-3">
+                      <div class="card-body">
+                        <form action="{{ url_for('update_account', id=user.id) }}" method="POST">
+                          <div class="row g-3">
+                            <div class="col-md-6">
+                              <label for="contact_name" class="form-label">Nom et prénom <span class="text-danger">*</span></label>
+                              <input type="text" class="form-control" id="contact_name" name="name" value="{{ contact_info.name or '' }}" placeholder="Ex: Jean Dupont" required>
+                            </div>
+                            <div class="col-md-6">
+                              <label for="contact_email" class="form-label">Email de contact <span class="text-danger">*</span></label>
+                              <input type="email" class="form-control" id="contact_email" name="email" value="{{ contact_info.email or user.email or '' }}" placeholder="Ex: jean.dupont@email.com" required>
+                            </div>
+                            <div class="col-md-6">
+                              <label for="contact_phone" class="form-label">Numéro de téléphone <span class="text-danger">*</span></label>
+                              <input type="tel" class="form-control" id="contact_phone" name="phone" value="{{ contact_info.phone or '' }}" placeholder="Ex: 06 12 34 56 78" required>
+                            </div>
+                            <div class="col-md-6">
+                              <label for="contact_street" class="form-label">Adresse postale (rue, voie) <span class="text-danger">*</span></label>
+                              <input type="text" class="form-control" id="contact_street" name="street" value="{{ contact_info.street or '' }}" placeholder="Ex: 12 rue des Fleurs" required>
+                            </div>
+                            <div class="col-md-4">
+                              <label for="contact_postal_code" class="form-label">Code postal <span class="text-danger">*</span></label>
+                              <input type="text" class="form-control" id="contact_postal_code" name="postal_code" value="{{ contact_info.postal_code or '' }}" placeholder="Ex: 75001" required>
+                            </div>
+                            <div class="col-md-8">
+                              <label for="contact_city" class="form-label">Ville <span class="text-danger">*</span></label>
+                              <input type="text" class="form-control" id="contact_city" name="city" value="{{ contact_info.city or '' }}" placeholder="Ex: Paris" required>
+                            </div>
+                          </div>
+                          <div class="text-end mt-3">
+                            <button type="submit" class="btn btn-primary">💾 Enregistrer mes coordonnées</button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+
                     <!-- Photo de profil (upload vers update_account) -->
                     <hr />
                     <h6>Photo de profil</h6>

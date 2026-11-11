@@ -275,8 +275,14 @@
 			});
 			const data = await resp.json();
 			if (!resp.ok) {
-				body.innerHTML =
-					'<div class="alert alert-danger"><strong>Erreur :</strong> ' + (data.error || resp.statusText) + '</div>';
+				if (data.profile_incomplete) {
+					body.innerHTML =
+						'<div class="alert alert-warning"><strong>⚠️ Profil incomplet :</strong> ' + escapeHtml(data.error) +
+						'<div class="mt-3"><a href="/update_account/{{ user.id }}" class="btn btn-warning btn-sm">⚙️ Renseigner mes coordonnées</a></div></div>';
+				} else {
+					body.innerHTML =
+						'<div class="alert alert-danger"><strong>Erreur :</strong> ' + (data.error || resp.statusText) + '</div>';
+				}
 				retryBtn.disabled = false;
 				return;
 			}
@@ -552,9 +558,15 @@
 			});
 			const data = await resp.json();
 			if (!resp.ok) {
-				body.innerHTML =
-					'<div class="alert alert-danger"><strong>Erreur :</strong> ' +
-					(data.error || resp.statusText) + '</div>';
+				if (data.profile_incomplete) {
+					body.innerHTML =
+						'<div class="alert alert-warning"><strong>⚠️ Profil incomplet :</strong> ' + escapeHtml(data.error) +
+						'<div class="mt-3"><a href="/update_account/{{ user.id }}" class="btn btn-warning btn-sm">⚙️ Renseigner mes coordonnées</a></div></div>';
+				} else {
+					body.innerHTML =
+						'<div class="alert alert-danger"><strong>Erreur :</strong> ' +
+						(data.error || resp.statusText) + '</div>';
+				}
 				retryBtn.disabled = false;
 				return;
 			}
@@ -705,6 +717,16 @@
 		</div>
 	</div>
 </div>
+{% if not is_profile_complete %}
+<div class="container-fluid mb-3">
+	<div class="alert alert-warning alert-dismissible fade show d-flex align-items-center justify-content-between mb-0" role="alert">
+		<div>
+			<strong>⚠️ Profil incomplet :</strong> Pour générer vos CV et lettres de motivation personnalisés avec vos coordonnées réelles, veuillez renseigner vos coordonnées obligatoires ({{ missing_contact_fields | join(', ') }}).
+		</div>
+		<a href="{{ url_for('update_account', id=user.id) }}" class="btn btn-sm btn-warning text-nowrap ms-3">⚙️ Renseigner mon profil</a>
+	</div>
+</div>
+{% endif %}
 <main class="container-fluid">
 	{% if jobs %}
 	<!-- Desktop table -->

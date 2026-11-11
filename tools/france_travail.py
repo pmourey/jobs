@@ -630,6 +630,11 @@ def enrich_offers_with_matching(offers: list[dict], cv_data: dict, sort_by_score
     return enriched
 
 
+def sort_offers_by_date(offers: list[dict]) -> list[dict]:
+    """Trie les offres de la plus récente à la plus ancienne."""
+    return sorted(offers, key=lambda offer: offer.get("dateCreation", ""), reverse=True)
+
+
 def evaluate_offer_with_gemini(offer: dict, cv_data: dict, api_key: str | None = None) -> dict:
     """Analyse approfondie de l'adéquation d'une offre via Gemini (style recruteur LinkedIn)."""
     try:

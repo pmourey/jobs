@@ -57,7 +57,8 @@ from Model import AppSetting, FtSearch, Job, Session, User, db
 from tools.cv_tools import (build_cv_pdf_filename,
                             generate_tailored_cv_pdf_bytes,
                             get_ai_cover_letter_text, get_ai_cv_suggestions,
-                            load_cv_data)
+                            get_user_contact_info, save_user_contact_info,
+                            validate_user_contact_info, load_cv_data)
 from tools.merge_cvs import merge_cv_jsons
 from tools.import_cv import parse_json_cv, fetch_linkedin_profile
 from tools.document_tools import (build_cover_letter_pdf_filename,
@@ -67,6 +68,7 @@ from tools.france_travail import (ATS_KEYWORDS_PROFILE, CONTRACT_TYPES,
                                   DEPARTMENTS, WORK_MODES, search_auto_from_cv,
                                   search_offers, generate_keywords_with_gemini,
                                   compute_offer_matching, enrich_offers_with_matching,
+                                  sort_offers_by_date,
                                   evaluate_offer_with_gemini)
 from tools.send_emails import send_email
 
@@ -202,8 +204,9 @@ def get_client_ip():
 
 
 def _resolve_user_cv_data(user_id: int) -> dict:
-    """Charge le CV JSON par défaut de l'utilisateur si disponible.
-    Retourne un dict (chargé) ou None si absent.
+    """Charge le CV JSON de l'utilisateur si disponible.
+    Si aucun CV n'est trouvé, retourne pour l'utilisateur 1 le CV statique legacy,
+    ou pour les autres utilisateurs un profil de base construit à partir de leurs coordonnées.
     """
     try:
         cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
@@ -211,25 +214,64 @@ def _resolve_user_cv_data(user_id: int) -> dict:
         meta = {}
         if meta_path.exists():
             import json as _json
-            meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+            try:
+                meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+            except Exception:
+                meta = {}
         default = meta.get('_default')
-        if not default:
-            return None
-        target = cvs_dir / default
-        if target.exists() and target.suffix.lower() == '.json':
-            return _json.loads(target.read_text(encoding='utf-8'))
-        # If pdf, try to load parsed sibling
-        candidate2 = cvs_dir / (target.stem + '.json')
-        candidate1 = cvs_dir / 'cv_linkedin_parsed.json'
-        for c in (candidate2, candidate1):
-            if c.exists():
-                try:
-                    return _json.loads(c.read_text(encoding='utf-8'))
-                except Exception:
-                    continue
+        if default:
+            target = cvs_dir / default
+            if target.exists() and target.suffix.lower() == '.json':
+                return _json.loads(target.read_text(encoding='utf-8'))
+            candidate2 = cvs_dir / (target.stem + '.json')
+            candidate1 = cvs_dir / 'cv_linkedin_parsed.json'
+            for c in (candidate2, candidate1):
+                if c.exists():
+                    try:
+                        return _json.loads(c.read_text(encoding='utf-8'))
+                    except Exception:
+                        continue
+
+        if cvs_dir.exists():
+            for c_name in ('cv_gitconnected.json', 'cv_linkedin_parsed.json'):
+                c_path = cvs_dir / c_name
+                if c_path.exists():
+                    try:
+                        import json as _json
+                        return _json.loads(c_path.read_text(encoding='utf-8'))
+                    except Exception:
+                        pass
+            for jf in cvs_dir.glob('*.json'):
+                if jf.name != 'cvs_meta.json':
+                    try:
+                        import json as _json
+                        return _json.loads(jf.read_text(encoding='utf-8'))
+                    except Exception:
+                        pass
+
+        if user_id == 1:
+            return load_cv_data(app.static_folder)
+
+        contact = get_user_contact_info(user_id, app.static_folder)
+        return {
+            'basics': {
+                'name': contact.get('name', ''),
+                'email': contact.get('email', ''),
+                'phone': contact.get('phone', ''),
+                'location': {
+                    'address': contact.get('street', ''),
+                    'postalCode': contact.get('postal_code', ''),
+                    'city': contact.get('city', ''),
+                },
+                'address': contact.get('street', ''),
+                'postalCode': contact.get('postal_code', ''),
+                'city': contact.get('city', ''),
+            }
+        }
     except Exception:
-        return None
-    return None
+        if user_id == 1:
+            return load_cv_data(app.static_folder)
+        return {'basics': {}}
 
 
 def _list_user_cvs(user_id: int) -> tuple[list[dict], dict]:
@@ -559,6 +601,12 @@ def welcome():
     return render_template('index.html', session=session, user=user, token=token)
 
 
+@app.route('/legal')
+def legal():
+    """Affiche les informations publiques sur les conditions et les données."""
+    return render_template('legal.html')
+
+
 @app.route("/register", methods=['GET', 'POST'])
 def register():
     # Logique d'enregistrement ici
@@ -828,6 +876,17 @@ def update_account(id):
             elif role == 'Utilisateur':
                 user.role = 1
 
+        if (is_owner or current_user.is_admin) and any(f in request.form for f in ('name', 'phone', 'street', 'postal_code', 'city', 'email')):
+            contact_data = {
+                'name': request.form.get('name', ''),
+                'email': request.form.get('email', ''),
+                'phone': request.form.get('phone', ''),
+                'street': request.form.get('street', ''),
+                'postal_code': request.form.get('postal_code', ''),
+                'city': request.form.get('city', ''),
+            }
+            save_user_contact_info(user.id, contact_data, app.static_folder)
+
         user_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user.id)
         user_dir.mkdir(parents=True, exist_ok=True)
         cvs_dir = user_dir / 'cvs'
@@ -866,12 +925,17 @@ def update_account(id):
         return redirect(url_for('update_account', id=user.id))
 
     cvs_files, cvs_meta = _list_user_cvs(user.id)
+    contact_info = get_user_contact_info(user.id, app.static_folder)
+    is_profile_complete, missing_contact_fields, _ = validate_user_contact_info(user.id, app.static_folder)
     return render_template(
         'update_account.html',
         user=user,
         current_user_id=current_user.id,
         cvs_files=cvs_files,
         cvs_meta=cvs_meta,
+        contact_info=contact_info,
+        is_profile_complete=is_profile_complete,
+        missing_contact_fields=missing_contact_fields,
     )
 
 
@@ -1244,10 +1308,13 @@ def show_all():
         cv_projects = []
     # Prepare list of users for the selector: include current user and users who opted-in
     users_list = User.query.filter((User.id == user_id) | (User.allow_view_offers == True)).order_by(User.username).all()
+    is_profile_complete, missing_contact_fields, _ = validate_user_contact_info(user_id, app.static_folder)
     return render_template('candidatures.html', jobs=jobs, user=user, users=users_list, cv_pdf_urls=cv_pdf_urls,
                            cv_pdf_filenames=cv_pdf_filenames,
                            cv_education=cv_education, cv_certificates=cv_certificates,
-                           cv_skills=cv_skills, cv_references=cv_references, cv_projects=cv_projects)
+                           cv_skills=cv_skills, cv_references=cv_references, cv_projects=cv_projects,
+                           is_profile_complete=is_profile_complete,
+                           missing_contact_fields=missing_contact_fields)
 
 
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
@@ -1287,8 +1354,12 @@ def update(id):
 @app.route('/generate_cover_letter_pdf/<int:id>', endpoint='generate_cover_letter_pdf')
 @is_connected
 def generate_cover_letter_pdf(id):
-    # ...existing code...
     job = Job.query.get_or_404(id)
+    is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
+    if not is_complete:
+        missing_str = ', '.join(missing)
+        flash(f'Profil incomplet : veuillez renseigner vos coordonnées obligatoires ({missing_str}) avant de générer votre lettre de motivation.', 'warning')
+        return redirect(url_for('update_account', id=job.user_id))
     try:
         template_path = resolve_cover_letter_template_path(app.static_folder)
         letter_date = datetime.now(app.config['PARIS']) if app.config.get('PARIS') else datetime.now()
@@ -1325,10 +1396,18 @@ def _ft_ats_prefix(enabled: bool = True) -> str:
 def preview_cv_data(id):
     """Retourne les suggestions IA de personnalisation du CV au format JSON (pour l'aperçu modal)."""
     job = Job.query.get_or_404(id)
+    is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
+    if not is_complete:
+        return jsonify({
+            'error': f'Profil incomplet : veuillez renseigner vos coordonnées obligatoires ({", ".join(missing)}) dans votre compte avant de générer votre CV personnalisé.',
+            'profile_incomplete': True,
+            'missing_fields': missing,
+        }), 400
+
     # If external AI calls are administratively disabled, fall back to local suggestions
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
     github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
-    payload = request.get_json(force=True) or {}
+    payload = request.get_json(silent=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
     ats_mode = bool(payload.get('ats_mode', False))
     if ats_mode:
@@ -1406,9 +1485,9 @@ def preview_cv_data(id):
             if resolved:
                 cv_data = resolved
             else:
-                cv_data = load_cv_data(app.static_folder)
+                cv_data = _resolve_user_cv_data(job.user_id)
         else:
-            cv_data = load_cv_data(app.static_folder)
+            cv_data = _resolve_user_cv_data(job.user_id)
         # expose resolved name for debugging / client
         # expose which filename was used (for debugging/client display)
         resolved_name = default_cv if (default_cv and resolved) else (default_cv if default_cv and not resolved else None)
@@ -1446,6 +1525,7 @@ def preview_cv_data(id):
         # include cv_source so client can show which CV was used for the preview
         resp = suggestions.copy() if isinstance(suggestions, dict) else {'suggestions': suggestions}
         resp['cv_source'] = resolved_name
+        resp['cv_data'] = cv_data
         try:
             if resolved_name:
                 rel = f'uploads/users/{job.user_id}/cvs/{resolved_name}'
@@ -1460,8 +1540,10 @@ def preview_cv_data(id):
     except Exception as exc:
         app.logger.error(f'preview_cv_data error: {exc}')
         try:
-            cv_data = load_cv_data(app.static_folder)
-            return jsonify(_fallback(cv_data, warning=f"Aperçu généré sans IA : {exc}")), 200
+            cv_data = _resolve_user_cv_data(job.user_id)
+            fallback_resp = _fallback(cv_data, warning=f"Aperçu généré sans IA : {exc}")
+            fallback_resp['cv_data'] = cv_data
+            return jsonify(fallback_resp), 200
         except Exception:
             return jsonify({'error': f"Erreur lors de l'appel IA : {exc}"}), 500
 
@@ -1471,10 +1553,18 @@ def preview_cv_data(id):
 def save_cv_pdf(id):
     """Génère le CV personnalisé IA, le sauvegarde sur disque et retourne l'URL de téléchargement."""
     job = Job.query.get_or_404(id)
+    is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
+    if not is_complete:
+        return jsonify({
+            'error': f'Profil incomplet : veuillez renseigner vos coordonnées obligatoires ({", ".join(missing)}) dans votre compte avant d\'enregistrer le CV.',
+            'profile_incomplete': True,
+            'missing_fields': missing,
+        }), 400
+
     # If external AI is disabled, fall back to local suggestions (no external token used)
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
     github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
-    payload = request.get_json(force=True) or {}
+    payload = request.get_json(silent=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
     ats_mode = bool(payload.get('ats_mode', False))
     if ats_mode:
@@ -1533,9 +1623,9 @@ def save_cv_pdf(id):
             if resolved:
                 cv_data = resolved
             else:
-                cv_data = load_cv_data(app.static_folder)
+                cv_data = _resolve_user_cv_data(job.user_id)
         else:
-            cv_data = load_cv_data(app.static_folder)
+            cv_data = _resolve_user_cv_data(job.user_id)
         if github_token:
             suggestions = get_ai_cv_suggestions(
                 job=job, cv_data=cv_data, github_token=github_token,
@@ -1561,7 +1651,7 @@ def save_cv_pdf(id):
         # Log full traceback to help debugging unexpected types inside job/cv fields
         app.logger.exception('save_cv_pdf error')
         try:
-            cv_data = load_cv_data(app.static_folder)
+            cv_data = _resolve_user_cv_data(job.user_id)
             suggestions = _fallback_suggestions(cv_data, warning=str(exc))
             pdf_bytes = generate_tailored_cv_pdf_bytes(
                 job=job, cv_data=cv_data, suggestions=suggestions,
@@ -1625,6 +1715,12 @@ def save_cv_pdf(id):
 def generate_cv_pdf(id):
     """Télécharge directement le CV PDF sauvegardé sur disque, ou génère à la volée si absent."""
     job = Job.query.get_or_404(id)
+    is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
+    if not is_complete:
+        missing_str = ', '.join(missing)
+        flash(f'Profil incomplet : veuillez renseigner vos coordonnées obligatoires ({missing_str}) avant de générer votre CV.', 'warning')
+        return redirect(url_for('update_account', id=job.user_id))
+
     # First check per-user generated directory for the sanitized pretty filename
     owner_id = job.user_id
     gen_dir = Path(app.static_folder) / 'uploads' / 'users' / str(owner_id) / 'generated'
@@ -1682,9 +1778,17 @@ def generate_cv_pdf(id):
 def preview_lm_ai(id):
     """Génère une lettre de motivation par IA et retourne le texte au format JSON."""
     job = Job.query.get_or_404(id)
+    is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
+    if not is_complete:
+        return jsonify({
+            'error': f'Profil incomplet : veuillez renseigner vos coordonnées obligatoires ({", ".join(missing)}) dans votre compte avant de générer une lettre de motivation avec l\'IA.',
+            'profile_incomplete': True,
+            'missing_fields': missing,
+        }), 400
+
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
     github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
-    payload = request.get_json(force=True) or {}
+    payload = request.get_json(silent=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
     ats_mode = bool(payload.get('ats_mode', False))
     if ats_mode:
@@ -1902,7 +2006,9 @@ def france_travail_search():
 
     # Sauvegarde persistante du résultat pour consultation ultérieure
     cv_data_user = _resolve_user_cv_data(user.id) or load_cv_data(app.static_folder)
-    offers = enrich_offers_with_matching(offers, cv_data_user, sort_by_score=True)
+    offers = sort_offers_by_date(
+        enrich_offers_with_matching(offers, cv_data_user, sort_by_score=False)
+    )
 
     ft_search = FtSearch(
         user_id=session['login_id'],
@@ -2119,6 +2225,7 @@ def ft_search_view(search_id):
             db.session.commit()
         except Exception as exc:
             app.logger.warning(f"Could not compute matching on the fly: {exc}")
+    raw_offers = sort_offers_by_date(raw_offers)
 
     return render_template(
         'offers_candidates.html',
@@ -2323,7 +2430,9 @@ def ft_search_refresh(search_id):
         return redirect(url_for('ft_search_view', search_id=search_id))
 
     cv_data_user = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
-    offers = enrich_offers_with_matching(offers, cv_data_user, sort_by_score=True)
+    offers = sort_offers_by_date(
+        enrich_offers_with_matching(offers, cv_data_user, sort_by_score=False)
+    )
 
     ft_search.offers      = offers
     ft_search.search_info = search_info
