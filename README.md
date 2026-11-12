@@ -1,6 +1,6 @@
 # Suivi de candidatures
 
-Application web Flask pour organiser une recherche d'emploi, suivre ses candidatures et préparer des documents personnalisés. Une page publique présente le service avant connexion ; les fonctionnalités de gestion sont accessibles après création et validation d'un compte.
+Application web Flask pour organiser une recherche d'emploi, suivre ses candidatures et préparer des documents personnalisés. Une page publique présente le service avant connexion ; les fonctionnalités de gestion sont accessibles après création et validation d'un compte. Le projet évolue vers un modèle communautaire gratuit, documenté dans [docs/COMMUNITY_PROJECT.md](docs/COMMUNITY_PROJECT.md).
 
 ## Pour les utilisateurs
 
@@ -42,6 +42,12 @@ cp config_template.py config.py
 
 Renseignez ensuite `SECRET_KEY`, `SQLALCHEMY_DATABASE_URI`, les paramètres SMTP et, si nécessaire, les identifiants France Travail et IA. Ne commitez jamais `config.py`, les mots de passe, les tokens ou les données utilisateurs.
 
+Pour permettre aux utilisateurs d'enregistrer une clé IA personnelle, définissez
+également `AI_CREDENTIALS_MASTER_KEY` dans l'environnement avec une clé générée
+par `Fernet.generate_key()`. Cette clé ne doit jamais être committée. Les
+fournisseurs autorisés se gèrent dans l'interface administrateur ; Ollama est
+désactivé par défaut.
+
 ```bash
 python flask_app.py
 ```
@@ -54,6 +60,8 @@ Les détails opérationnels sont volontairement séparés de cette présentation
 
 - [Configuration IA locale avec Ollama](docs/OLLAMA.md)
 - [Architecture technique et flux de données](docs/ARCHITECTURE.md)
+- [Trajectoire du projet communautaire gratuit](docs/COMMUNITY_PROJECT.md)
+- [Fournisseurs IA utilisables par API](docs/AI_API_PROVIDERS.md)
 - [Configuration de référence](config_template.py)
 
 Le fonctionnement d'Ollama est optionnel. Sans service IA disponible, les parcours CV/LM disposent de replis locaux lorsque la fonctionnalité le permet.
@@ -72,7 +80,7 @@ Le fonctionnement d'Ollama est optionnel. Sans service IA disponible, les parcou
 
 Le service peut traiter des coordonnées, CV, candidatures, documents, données de session et recherches d'offres. Les mesures prévues dans l'application comprennent notamment l'authentification, les mots de passe hachés, les contrôles d'accès par rôle, la séparation des répertoires utilisateurs, la validation des uploads et le partage des offres désactivé par défaut.
 
-Avant une ouverture commerciale, l'exploitant doit compléter et valider juridiquement les mentions accessibles sur [`/legal`](templates/legal.html), notamment l'identité du responsable de traitement, les bases légales, les durées de conservation, les sous-traitants, les transferts hors UE, les procédures d'exercice des droits et les coordonnées de contact RGPD. Le contenu fourni est une base d'information et ne constitue pas un avis juridique.
+Même dans le cadre communautaire gratuit, l'exploitant de l'instance reste responsable de la protection des données. Avant d'accepter des contributions régulières ou de proposer une contrepartie, il doit faire vérifier le cadre fiscal et juridique applicable. Les mentions accessibles sur [`/legal`](templates/legal.html) restent une base à compléter, notamment pour l'identité du responsable de traitement, les bases légales, les durées de conservation, les sous-traitants, les transferts hors UE, les procédures d'exercice des droits et les coordonnées RGPD.
 
 ## Tests
 

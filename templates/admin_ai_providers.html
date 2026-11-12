@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block main %}
+<main class="container">
+  {% include './partials/_menu.html' %}
+  <h2 class="h4 mb-3">⚙️ Fournisseurs IA autorisés</h2>
+  <div class="alert alert-warning small">Désactiver un fournisseur bloque les nouveaux appels et l'enregistrement de nouvelles clés. Les clés existantes restent chiffrées mais inutilisables.</div>
+  <form method="post">
+    {% for provider in providers %}
+    <div class="d-flex align-items-start gap-2 mb-2 p-2 border rounded">
+      <input class="form-check-input flex-shrink-0 mt-1" type="checkbox" name="providers" value="{{ provider.key }}"
+             id="provider-{{ provider.key }}" {% if provider.key in enabled %}checked{% endif %}>
+      <label class="form-check-label flex-grow-1" for="provider-{{ provider.key }}">
+        <span class="d-block"><strong>{{ provider.name }}</strong></span>
+        <span class="d-block small text-muted">Modèle par défaut : <code>{{ provider.default_model }}</code></span>
+        {% if provider.key == 'ollama' %}<span class="d-block small text-warning">Désactivé par défaut sur PythonAnywhere.</span>{% endif %}
+      </label>
+    </div>
+    {% endfor %}
+    <button class="btn btn-primary mt-3" type="submit">Enregistrer les autorisations</button>
+  </form>
+</main>
+{% endblock main %}

@@ -51,6 +51,7 @@
                         <h5 class="card-title">👥 Comptes</h5>
                         <p class="card-text">Gestion des utilisateurs</p>
                         <a href="{{ url_for('show_accounts') }}" class="btn btn-info">Gérer</a>
+                        <a href="{{ url_for('admin_ai_providers') }}" class="btn btn-outline-info">Fournisseurs IA</a>
                     </div>
                 </div>
             </div>
@@ -92,7 +93,11 @@
         <section class="py-5">
             <div class="row align-items-center g-5">
                 <div class="col-lg-7">
+                    {% if config.get('COMMUNITY_MODE', True) %}
+                    <span class="badge text-bg-success mb-3">Projet communautaire gratuit</span>
+                    {% else %}
                     <span class="badge text-bg-primary mb-3">Votre recherche d'emploi, mieux organisée</span>
+                    {% endif %}
                     <h1 class="display-5 fw-bold">Pilotez vos candidatures avec clarté et efficacité.</h1>
                     <p class="lead text-muted">
                         Centralisez vos offres, suivez chaque étape et préparez des CV et lettres de motivation
@@ -118,6 +123,18 @@
                 </div>
             </div>
         </section>
+        {% if config.get('COMMUNITY_MODE', True) %}
+        <section class="alert alert-success border mb-4">
+            <strong>Projet gratuit et ouvert :</strong>
+            le code et les instructions d'auto-hébergement sont disponibles dans
+            <a href="https://github.com/pmourey/jobs" target="_blank" rel="noopener">le dépôt du projet</a>.
+            Les éventuelles contributions sont facultatives et ne donnent droit à aucune fonctionnalité
+            supplémentaire.
+            {% if config.get('COMMUNITY_SUPPORT_URL', '') %}
+            <a class="btn btn-sm btn-outline-success ms-2" href="{{ config.get('COMMUNITY_SUPPORT_URL') }}" target="_blank" rel="noopener">Soutenir le projet</a>
+            {% endif %}
+        </section>
+        {% endif %}
         <section class="row g-3 pb-5">
             <div class="col-md-4">
                 <div class="card h-100"><div class="card-body">

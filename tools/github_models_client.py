@@ -50,6 +50,7 @@ def chat_completion(messages: list[dict], model: str, base_url: str, api_key: st
     import requests
 
     key = hashlib.sha256(json.dumps({
+        'base_url': base_url.rstrip('/'),
         'model': model,
         'messages': messages,
         'response_format': response_format,

@@ -253,6 +253,22 @@ class AppSetting(db.Model):
         db.session.commit()
 
 
+class UserAiCredential(db.Model):
+    """Clé IA personnelle chiffrée et configuration choisie par un utilisateur."""
+    __tablename__ = 'user_ai_credential'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
+    provider_key = db.Column(db.String(40), nullable=False)
+    encrypted_api_key = db.Column(db.Text, nullable=True)
+    model = db.Column(db.String(160), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
+                           onupdate=datetime.utcnow)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+    user = relationship('User', backref='ai_credential', uselist=False)
+
+
 class FtSearch(db.Model):
     """Sauvegarde persistante des résultats de recherche France Travail.
 

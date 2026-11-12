@@ -943,6 +943,8 @@ def _cleanup_cover_letter_output(text: str, author_display: str | None) -> str:
 
 
 def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
+                          ai_base_url: str | None = None,
+                          ai_model: str | None = None,
                           additional_prompt: str = '',
                           include_sections: list | None = None,
                           selected_education: list | None = None,
@@ -954,8 +956,8 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
     from tools.github_models_client import chat_completion
     try:
         from flask import current_app
-        base_url = current_app.config.get('GITHUB_MODELS_BASE_URL', 'https://models.github.ai/inference')
-        model_name = current_app.config.get('GITHUB_MODELS_MODEL', 'openai/gpt-4.1')
+        base_url = ai_base_url or current_app.config.get('GITHUB_MODELS_BASE_URL', 'https://models.github.ai/inference')
+        model_name = ai_model or current_app.config.get('GITHUB_MODELS_MODEL', 'openai/gpt-4.1')
     except Exception:
         base_url = 'https://models.github.ai/inference'
         model_name = 'openai/gpt-4.1'
@@ -1120,6 +1122,8 @@ def _extract_pdf_text(pdf_path: Path) -> str:
 
 
 def get_ai_cover_letter_text(job: Job, github_token: str,
+                             ai_base_url: str | None = None,
+                             ai_model: str | None = None,
                              additional_prompt: str = '',
                              include_sections: list | None = None,
                              selected_education: list | None = None,
@@ -1135,8 +1139,8 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
 
     try:
         from flask import current_app
-        base_url = current_app.config.get('GITHUB_MODELS_BASE_URL', 'https://models.github.ai/inference')
-        model_name = current_app.config.get('GITHUB_MODELS_MODEL', 'openai/gpt-4.1')
+        base_url = ai_base_url or current_app.config.get('GITHUB_MODELS_BASE_URL', 'https://models.github.ai/inference')
+        model_name = ai_model or current_app.config.get('GITHUB_MODELS_MODEL', 'openai/gpt-4.1')
         static_folder = current_app.static_folder
         is_user_1 = getattr(job, 'user_id', None) == 1
         author_name = current_app.config.get('GMAIL_FULLNAME', '') if is_user_1 else ''

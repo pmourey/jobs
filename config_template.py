@@ -5,6 +5,11 @@ from ollama_tuning import IMAC_64GB_OLLAMA_TUNING
 
 class Config:
     DEBUG = False
+    # Mode communautaire gratuit : aucun paiement ni avantage payant n'est
+    # activé par l'application. Un lien de soutien doit rester vide tant que
+    # son cadre fiscal et les conditions du prestataire ne sont pas vérifiés.
+    COMMUNITY_MODE = True
+    COMMUNITY_SUPPORT_URL = ''
     # TESTING = True
     SECRET_KEY = 'fifa 2022'
     SQLALCHEMY_DATABASE_URI = 'sqlite:///jobs.sqlite3'
@@ -22,6 +27,11 @@ class Config:
     # On hosts that block outgoing connections (ex: PythonAnywhere), set this to False
     # to force local fallbacks for CV / LM generation.
     ENABLE_REMOTE_IA = True
+    # Fernet key generated with:
+    # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Never commit the value; set AI_CREDENTIALS_MASTER_KEY in the environment.
+    AI_CREDENTIALS_MASTER_KEY = ''
+    AI_ENABLED_PROVIDERS = 'gemini,openai,mistral,openrouter,groq'
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24
     # SCHEDULER_INTERVAL = 10

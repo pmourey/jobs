@@ -53,7 +53,7 @@ from Controller import (check, check_password_and_upgrade,
                         get_session_by_login, get_user_by_id,
                         handle_file_upload, send_confirmation_email,
                         send_password_recovery_email)
-from Model import AppSetting, FtSearch, Job, Session, User, db
+from Model import AppSetting, FtSearch, Job, Session, User, UserAiCredential, db
 from tools.cv_tools import (build_cv_pdf_filename,
                             generate_tailored_cv_pdf_bytes,
                             get_ai_cover_letter_text, get_ai_cv_suggestions,
@@ -71,6 +71,9 @@ from tools.france_travail import (ATS_KEYWORDS_PROFILE, CONTRACT_TYPES,
                                   sort_offers_by_date,
                                   evaluate_offer_with_gemini)
 from tools.send_emails import send_email
+from tools.ai_credentials import (AI_PROVIDERS, delete_user_credential,
+                                  enabled_provider_keys, provider_options,
+                                  resolve_user_ai_config, save_user_credential)
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
 # Set the environment (development, production, etc.)
@@ -79,6 +82,8 @@ app.config.from_object('config.Config')
 # app.config.from_pyfile(config_filename)
 
 db.init_app(app)
+with app.app_context():
+    db.create_all()
 
 toolbar = DebugToolbarExtension(app)
 
@@ -87,6 +92,13 @@ basicConfig(level=DEBUG)
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+
+
+@app.before_request
+def ensure_database_schema():
+    """Crée les nouvelles tables sans migration externe pour les installations SQLite."""
+    db.create_all()
+
 
 # Set the secret key to some random bytes. Keep this really secret!
 app.secret_key = b'_5#y2L"F4Q8z\n\xec]/'
@@ -851,6 +863,68 @@ def show_accounts():
     return render_template('accounts.html', accounts=accounts, user=user)
 
 
+@app.route('/ai-providers')
+@is_connected
+def ai_providers_help():
+    return render_template('ai_providers.html', providers=provider_options())
+
+
+@app.route('/admin/ai-providers', methods=['GET', 'POST'])
+@is_connected
+@is_admin
+def admin_ai_providers():
+    if request.method == 'POST':
+        selected = {
+            key for key in request.form.getlist('providers')
+            if key in AI_PROVIDERS
+        }
+        # Ollama is deliberately disabled by default; enabling it remains an
+        # explicit administrator decision for installations that host Ollama.
+        AppSetting.set('ai_enabled_providers', _json.dumps(sorted(selected)))
+        flash('Les fournisseurs IA autorisés ont été mis à jour.', 'success')
+        return redirect(url_for('admin_ai_providers'))
+    return render_template(
+        'admin_ai_providers.html',
+        providers=provider_options(include_disabled=True),
+        enabled=enabled_provider_keys(),
+    )
+
+
+@app.route('/account/<int:user_id>/ai', methods=['GET', 'POST'])
+@is_connected
+def account_ai_settings(user_id):
+    current = get_user_by_id(session['login_id'])
+    if not (current.is_admin or current.id == user_id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('welcome'))
+    user = User.query.get_or_404(user_id)
+    if request.method == 'POST':
+        action = request.form.get('action', 'save')
+        try:
+            if action == 'delete':
+                delete_user_credential(user.id)
+                flash('La configuration IA personnelle a été supprimée.', 'success')
+            else:
+                provider_key = request.form.get('provider', '').strip().lower()
+                save_user_credential(
+                    user.id,
+                    provider_key,
+                    request.form.get('api_key'),
+                    request.form.get('model'),
+                )
+                flash('La configuration IA personnelle a été enregistrée.', 'success')
+        except (RuntimeError, ValueError) as exc:
+            flash(str(exc), 'error')
+        return redirect(url_for('account_ai_settings', user_id=user.id))
+    credential = UserAiCredential.query.filter_by(user_id=user.id).first()
+    return render_template(
+        'ai_settings.html',
+        user=user,
+        credential=credential,
+        providers=provider_options(),
+    )
+
+
 @app.route('/update_account/<int:id>', methods=['GET', 'POST'])
 @is_connected
 def update_account(id):
@@ -1046,11 +1120,110 @@ def merge_cvs(user_id):
     return redirect(url_for('manage_cvs_view', user_id=user_id))
 
 
-@app.route('/edit_cv/<int:user_id>')
+@app.route('/edit_cv/<int:user_id>', methods=['GET', 'POST'])
 @is_connected
 def edit_cv(user_id):
-    """Alias compatible vers la gestion des CVs."""
-    return redirect(url_for('manage_cvs_view', user_id=user_id))
+    """Editeur de CV JSON pour le propriétaire ou un administrateur."""
+    current_user = get_user_by_id(session['login_id'])
+    if not (current_user.is_admin or current_user.id == user_id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('welcome'))
+
+    cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    cvs_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = cvs_dir / 'cvs_meta.json'
+    meta = {}
+    if meta_path.exists():
+        try:
+            meta = _json.loads(meta_path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            meta = {}
+
+    requested_file = request.args.get('file', '').strip() if request.method == 'GET' else request.form.get('file', '').strip()
+    filename = secure_filename(requested_file) if requested_file else ''
+    if not filename or not filename.lower().endswith('.json') or filename == 'cvs_meta.json':
+        default_name = meta.get('_default', '')
+        filename = secure_filename(default_name) if isinstance(default_name, str) else ''
+    if not filename or not filename.lower().endswith('.json') or filename == 'cvs_meta.json':
+        candidates = sorted(p.name for p in cvs_dir.glob('*.json') if p.name != 'cvs_meta.json')
+        filename = candidates[0] if candidates else 'cv_editable.json'
+
+    target = cvs_dir / filename
+    try:
+        target.resolve().relative_to(cvs_dir.resolve())
+    except ValueError:
+        flash('Fichier CV invalide.', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+
+    cv_data = {}
+    if target.exists():
+        try:
+            cv_data = _json.loads(target.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            flash('Le CV sélectionné contient un JSON invalide.', 'error')
+            cv_data = {}
+    if not isinstance(cv_data, dict):
+        cv_data = {}
+    cv_data.setdefault('basics', {})
+    if not isinstance(cv_data['basics'], dict):
+        cv_data['basics'] = {}
+
+    editable_sections = (
+        'work', 'education', 'skills', 'projects', 'certificates',
+        'languages', 'volunteer', 'references',
+    )
+    if request.method == 'POST':
+        basics = cv_data['basics']
+        for field in ('name', 'label', 'email', 'phone', 'summary'):
+            basics[field] = request.form.get(field, '').strip()
+
+        location = basics.get('location')
+        if not isinstance(location, dict):
+            location = {}
+            basics['location'] = location
+        for field in ('address', 'postalCode', 'city', 'country'):
+            location[field] = request.form.get(f'location_{field}', '').strip()
+
+        errors = []
+        for section in editable_sections:
+            raw_value = request.form.get(section, '').strip()
+            if not raw_value:
+                cv_data[section] = []
+                continue
+            try:
+                parsed = _json.loads(raw_value)
+            except ValueError as exc:
+                errors.append(f'{section}: JSON invalide ({exc})')
+                continue
+            if not isinstance(parsed, list):
+                errors.append(f'{section}: la valeur doit être une liste JSON')
+                continue
+            if any(not isinstance(item, (dict, str)) for item in parsed):
+                errors.append(f'{section}: chaque élément doit être un objet ou un texte')
+                continue
+            cv_data[section] = parsed
+
+        if errors:
+            for error in errors:
+                flash(error, 'error')
+        else:
+            try:
+                target.write_text(_json.dumps(cv_data, ensure_ascii=False, indent=2), encoding='utf-8')
+                meta['_default'] = filename
+                meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+                flash('CV enregistré.', 'success')
+                return redirect(url_for('edit_cv', user_id=user_id, file=filename))
+            except OSError as exc:
+                flash(f'Impossible d’enregistrer le CV : {exc}', 'error')
+
+    return render_template(
+        'edit_cv.html',
+        user=get_user_by_id(user_id),
+        user_id=user_id,
+        filename=filename,
+        cv_data=cv_data,
+        editable_sections=editable_sections,
+    )
 
 
 @app.route('/delete_session/<int:id>', methods=['POST'])
@@ -1406,7 +1579,8 @@ def preview_cv_data(id):
 
     # If external AI calls are administratively disabled, fall back to local suggestions
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
-    github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
+    ai_config = resolve_user_ai_config(job.user_id) if enable_ai else None
+    github_token = ai_config['api_key'] if ai_config else ''
     payload = request.get_json(silent=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
     ats_mode = bool(payload.get('ats_mode', False))
@@ -1495,6 +1669,7 @@ def preview_cv_data(id):
         if github_token:
             suggestions = get_ai_cv_suggestions(
                 job=job, cv_data=cv_data, github_token=github_token,
+                ai_base_url=ai_config['base_url'], ai_model=ai_config['model'],
                 additional_prompt=additional_prompt, include_sections=include_sections,
                 selected_education=selected_education, selected_certificates=selected_certificates,
                 selected_skills=selected_skills, selected_references=selected_references,
@@ -1563,7 +1738,8 @@ def save_cv_pdf(id):
 
     # If external AI is disabled, fall back to local suggestions (no external token used)
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
-    github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
+    ai_config = resolve_user_ai_config(job.user_id) if enable_ai else None
+    github_token = ai_config['api_key'] if ai_config else ''
     payload = request.get_json(silent=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
     ats_mode = bool(payload.get('ats_mode', False))
@@ -1629,6 +1805,7 @@ def save_cv_pdf(id):
         if github_token:
             suggestions = get_ai_cv_suggestions(
                 job=job, cv_data=cv_data, github_token=github_token,
+                ai_base_url=ai_config['base_url'], ai_model=ai_config['model'],
                 additional_prompt=additional_prompt, include_sections=include_sections,
                 selected_education=selected_education, selected_certificates=selected_certificates,
                 selected_skills=selected_skills, selected_references=selected_references,
@@ -1742,7 +1919,8 @@ def generate_cv_pdf(id):
     # Fallback : génération à la volée
     # If external AI is disabled, fall back to local suggestions (no external token used)
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
-    github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
+    ai_config = resolve_user_ai_config(job.user_id) if enable_ai else None
+    github_token = ai_config['api_key'] if ai_config else ''
     if not app.config.get('ENABLE_REMOTE_IA', True):
         github_token = ''
     try:
@@ -1750,7 +1928,10 @@ def generate_cv_pdf(id):
         # derived keywords reflect the user's profile instead of the global static/cv.json
         cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
         if github_token:
-            suggestions = get_ai_cv_suggestions(job=job, cv_data=cv_data, github_token=github_token)
+            suggestions = get_ai_cv_suggestions(
+                job=job, cv_data=cv_data, github_token=github_token,
+                ai_base_url=ai_config['base_url'], ai_model=ai_config['model'],
+            )
         else:
             suggestions = {
                 'cv_title': cv_data.get('basics', {}).get('label', 'Développeur / Consultant IT'),
@@ -1787,7 +1968,8 @@ def preview_lm_ai(id):
         }), 400
 
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
-    github_token = app.config.get('GITHUB_TOKEN', '') if enable_ai else ''
+    ai_config = resolve_user_ai_config(job.user_id) if enable_ai else None
+    github_token = ai_config['api_key'] if ai_config else ''
     payload = request.get_json(silent=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
     ats_mode = bool(payload.get('ats_mode', False))
@@ -1853,6 +2035,8 @@ def preview_lm_ai(id):
 
         text = get_ai_cover_letter_text(
             job=job, github_token=github_token,
+            ai_base_url=ai_config['base_url'] if ai_config else None,
+            ai_model=ai_config['model'] if ai_config else None,
             additional_prompt=additional_prompt, include_sections=include_sections,
             selected_education=selected_education,
             selected_certificates=selected_certificates,

@@ -173,6 +173,18 @@
                         </div>
                       </div>
                     </div>
+
+                    <div class="card mb-3 border-info">
+                      <div class="card-body">
+                        <h6 class="card-title">🤖 Utiliser votre propre fournisseur IA</h6>
+                        <p class="card-text small mb-2">
+                          Utilisez une clé API souscrite directement auprès d'un fournisseur compatible.
+                          Elle est chiffrée sur le serveur et n'est jamais affichée après son enregistrement.
+                        </p>
+                        <a class="btn btn-sm btn-outline-info" href="{{ url_for('account_ai_settings', user_id=user.id) }}">Configurer ma clé IA</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('ai_providers_help') }}">Aide et fournisseurs compatibles</a>
+                      </div>
+                    </div>
                     {% endif %}
                 </div>
             </div>

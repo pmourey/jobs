@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block main %}
+<main class="container">
+  {% include './partials/_menu.html' %}
+  <h2 class="h4">Fournisseurs IA compatibles</h2>
+  <p class="text-muted">Seuls les fournisseurs autorisés par l'administrateur sont proposés dans cette installation.</p>
+  <div class="row">
+    {% for provider in providers %}
+    <div class="col-md-6 mb-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <h3 class="h6">{{ provider.name }}</h3>
+          <p class="small mb-2">Modèle par défaut : <code>{{ provider.default_model }}</code></p>
+          <a href="{{ provider.help_url }}" target="_blank" rel="noopener">Documentation et création de clé</a>
+          {% if provider.key == 'ollama' %}
+          <p class="small text-warning mt-2 mb-0">Ollama nécessite une installation locale ; il est désactivé par défaut sur PythonAnywhere.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">Aucun fournisseur n'est actuellement activé.</div>
+    {% endfor %}
+  </div>
+</main>
+{% endblock main %}
