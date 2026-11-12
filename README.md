@@ -48,6 +48,25 @@ par `Fernet.generate_key()`. Cette clé ne doit jamais être committée. Les
 fournisseurs autorisés se gèrent dans l'interface administrateur ; Ollama est
 désactivé par défaut.
 
+Pour France Travail, configurez `FT_CLIENT_ID` et `FT_CLIENT_SECRET` dans
+l'environnement du processus Flask (variables du fichier WSGI sur
+PythonAnywhere). Le diagnostic réseau peut être lancé sans afficher les
+secrets :
+
+```bash
+python scripts/check_ft_proxy.py
+```
+
+Par défaut, l'application laisse `requests` utiliser le proxy de
+l'environnement. Si le réseau local impose une connexion directe vers France
+Travail, activez explicitement `FT_BYPASS_PROXY=true`. Ne l'activez pas sur
+PythonAnywhere sans vérifier que les connexions directes sont autorisées.
+
+Un compte PythonAnywhere gratuit peut bloquer les connexions sortantes vers les
+domaines France Travail. Dans ce cas, il faut vérifier l'autorisation réseau
+de l'offre d'hébergement ou utiliser une instance disposant d'un accès
+sortant autorisé ; le code applicatif ne peut pas contourner cette restriction.
+
 ```bash
 python flask_app.py
 ```

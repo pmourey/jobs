@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% block main %}
+{% include 'partials/_menu.html' %}
 <main class="container py-5">
     <div class="mb-4">
         <h1 class="display-6">Mentions, confidentialité et conditions d'utilisation</h1>
@@ -80,6 +81,20 @@
         <p>
             Les e-mails, l'API France Travail et les autres intégrations sont également des services distincts.
             Leurs propres politiques de confidentialité s'appliquent aux données qu'ils reçoivent.
+        </p>
+        <p>
+            L'utilisateur peut utiliser sa propre clé API auprès d'un fournisseur autorisé. La clé est
+            chiffrée côté serveur avec une clé maîtresse détenue par l'exploitant et n'est pas affichée,
+            exportée ou communiquée à un autre utilisateur. L'exploitant ne garantit ni les quotas, ni les
+            tarifs, ni la disponibilité du fournisseur choisi. Les abonnements grand public et les accès API
+            peuvent être distincts et restent sous la responsabilité de l'utilisateur.
+        </p>
+        <p>
+            Les recherches France Travail utilisent l'API officielle lorsque les identifiants de l'instance
+            sont configurés et que l'hébergement autorise les connexions sortantes. Les critères de recherche
+            et, en mode automatique, les informations nécessaires du CV peuvent être transmis à France Travail.
+            Les résultats sont ensuite enregistrés dans le compte de l'utilisateur. En cas d'indisponibilité
+            de l'API ou de restriction réseau de l'hébergeur, le service peut être temporairement indisponible.
         </p>
     </section>
 

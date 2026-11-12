@@ -8,7 +8,9 @@
     "summary": "Lors de mon expérience professionnelle dans les domaines du développement, production et sécurité informatique, j'ai été amené à travailler sur plusieurs missions dans le domaine du développement informatique. Rigoureux et motivé, je recherche de nouvelles opportunités dans le département des Alpes-Maritimes (06) pour contribuer à des projets innovants.",
     "location": {
       "city": "Saint-Laurent-du-Var",
-      "region": "France"
+      "region": "France",
+      "address": "1880, route de Saint Jeannet",
+      "postalCode": "06700"
     },
     "profiles": [
       {
@@ -36,7 +38,11 @@
     "following": 30,
     "picture": "https://avatars.githubusercontent.com/u/25690768?v=4",
     "website": "https://philippe9146.wixsite.com/flask",
-    "rqth": "Reconnaissance RQTH (bénéficiaire obligation d’emploi)"
+    "rqth": "Reconnaissance RQTH (bénéficiaire obligation d’emploi)",
+    "phone": "06 89 15 08 56",
+    "address": "1880, route de Saint Jeannet",
+    "postalCode": "06700",
+    "city": "Saint-Laurent-du-Var"
   },
   "work": [
     {

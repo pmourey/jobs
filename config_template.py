@@ -1,4 +1,5 @@
 # config.py
+import os
 from pytz import timezone
 from ollama_tuning import IMAC_64GB_OLLAMA_TUNING
 
@@ -32,6 +33,11 @@ class Config:
     # Never commit the value; set AI_CREDENTIALS_MASTER_KEY in the environment.
     AI_CREDENTIALS_MASTER_KEY = ''
     AI_ENABLED_PROVIDERS = 'gemini,openai,mistral,openrouter,groq'
+    # France Travail OAuth2. Prefer environment variables on hosted deployments.
+    FT_CLIENT_ID = os.environ.get('FT_CLIENT_ID', '')
+    FT_CLIENT_SECRET = os.environ.get('FT_CLIENT_SECRET', '')
+    FT_DEFAULT_DEPT = os.environ.get('FT_DEFAULT_DEPT', '06')
+    FT_BYPASS_PROXY = os.environ.get('FT_BYPASS_PROXY', 'false').lower() == 'true'
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24
     # SCHEDULER_INTERVAL = 10

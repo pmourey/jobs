@@ -17,8 +17,9 @@ for k in ('HTTP_PROXY','http_proxy','HTTPS_PROXY','https_proxy','NO_PROXY','no_p
 
 try:
     cfg = import_module('config')
-    cid = getattr(cfg, 'FT_CLIENT_ID', None)
-    csec = getattr(cfg, 'FT_CLIENT_SECRET', None)
+    config_class = getattr(cfg, 'Config', cfg)
+    cid = os.environ.get('FT_CLIENT_ID') or getattr(config_class, 'FT_CLIENT_ID', None)
+    csec = os.environ.get('FT_CLIENT_SECRET') or getattr(config_class, 'FT_CLIENT_SECRET', None)
     print('\nLoaded config FT_CLIENT_ID present:', bool(cid))
 except Exception as e:
     print('\nCould not import config:', e)

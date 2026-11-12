@@ -22,5 +22,11 @@
     <div class="alert alert-info">Aucun fournisseur n'est actuellement activé.</div>
     {% endfor %}
   </div>
+  <div class="d-flex gap-2 mt-3">
+    {% if session.get('login_id') %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('update_account', id=session['login_id']) }}">Retour au compte</a>
+    {% endif %}
+    <a class="btn btn-secondary" href="{{ url_for('welcome') }}">Accueil</a>
+  </div>
 </main>
 {% endblock main %}

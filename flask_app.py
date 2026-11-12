@@ -14,11 +14,15 @@ import os
 from flask import (Flask, flash, redirect, render_template, request, session,
                    url_for)
 
-# Ensure NO_PROXY is set (some environments use lowercase 'no_proxy') so requests bypasses
-# the corporate proxy for France Travail domains when the variable was exported locally.
-if not os.environ.get('NO_PROXY') and os.environ.get('no_proxy'):
-    os.environ['NO_PROXY'] = os.environ.get('no_proxy')
-os.environ.setdefault('NO_PROXY', 'entreprise.francetravail.fr,api.francetravail.io')
+# Some local networks require France Travail to bypass a corporate proxy. Do
+# not force this on hosted deployments where the proxy may be required.
+if os.environ.get('FT_BYPASS_PROXY', '').lower() in {'1', 'true', 'yes'}:
+    existing_no_proxy = os.environ.get('NO_PROXY') or os.environ.get('no_proxy') or ''
+    hosts = [host.strip() for host in existing_no_proxy.split(',') if host.strip()]
+    for host in ('entreprise.francetravail.fr', 'api.francetravail.io'):
+        if host not in hosts:
+            hosts.append(host)
+    os.environ['NO_PROXY'] = ','.join(hosts)
 import re
 from datetime import datetime, timedelta
 import json as _json
@@ -34,7 +38,7 @@ import pytz
 from _socket import gethostbyname
 from apscheduler.schedulers.background import BackgroundScheduler
 from dateutil.relativedelta import relativedelta
-from flask import (Flask, flash, jsonify, redirect, render_template, request,
+from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
 from flask_debugtoolbar import DebugToolbarExtension
 from flask_login import (LoginManager, current_user, login_required,
@@ -1139,12 +1143,17 @@ def edit_cv(user_id):
         except (OSError, ValueError):
             meta = {}
 
+    create_new = request.method == 'GET' and request.args.get('new') == '1'
     requested_file = request.args.get('file', '').strip() if request.method == 'GET' else request.form.get('file', '').strip()
     filename = secure_filename(requested_file) if requested_file else ''
-    if not filename or not filename.lower().endswith('.json') or filename == 'cvs_meta.json':
+    if create_new:
+        filename = 'cv_nouveau.json'
+        if (cvs_dir / filename).exists():
+            filename = f'cv_nouveau_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.json'
+    elif not filename or not filename.lower().endswith('.json') or filename == 'cvs_meta.json':
         default_name = meta.get('_default', '')
         filename = secure_filename(default_name) if isinstance(default_name, str) else ''
-    if not filename or not filename.lower().endswith('.json') or filename == 'cvs_meta.json':
+    if not create_new and (not filename or not filename.lower().endswith('.json') or filename == 'cvs_meta.json'):
         candidates = sorted(p.name for p in cvs_dir.glob('*.json') if p.name != 'cvs_meta.json')
         filename = candidates[0] if candidates else 'cv_editable.json'
 
@@ -1156,7 +1165,7 @@ def edit_cv(user_id):
         return redirect(url_for('manage_cvs_view', user_id=user_id))
 
     cv_data = {}
-    if target.exists():
+    if target.exists() and not create_new:
         try:
             cv_data = _json.loads(target.read_text(encoding='utf-8'))
         except (OSError, ValueError):
@@ -1223,6 +1232,45 @@ def edit_cv(user_id):
         filename=filename,
         cv_data=cv_data,
         editable_sections=editable_sections,
+    )
+
+
+@app.route('/view_cv/<int:user_id>')
+@is_connected
+def view_cv(user_id):
+    """Affiche un CV JSON sous forme de page HTML pour son propriétaire ou un admin."""
+    current_user = get_user_by_id(session['login_id'])
+    if not (current_user.is_admin or current_user.id == user_id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('welcome'))
+
+    requested_file = secure_filename(request.args.get('file', '').strip())
+    if not requested_file or not requested_file.lower().endswith('.json') or requested_file == 'cvs_meta.json':
+        abort(404)
+
+    cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+    target = cvs_dir / requested_file
+    try:
+        target.resolve().relative_to(cvs_dir.resolve())
+    except ValueError:
+        abort(404)
+    if not target.is_file():
+        abort(404)
+
+    try:
+        cv_data = _json.loads(target.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        flash('Le CV sélectionné contient un JSON invalide.', 'error')
+        return redirect(url_for('manage_cvs_view', user_id=user_id))
+    if not isinstance(cv_data, dict):
+        abort(404)
+
+    return render_template(
+        'view_cv.html',
+        user=get_user_by_id(user_id),
+        user_id=user_id,
+        filename=requested_file,
+        cv_data=cv_data,
     )
 
 
@@ -1562,6 +1610,13 @@ def _ft_ats_prefix(enabled: bool = True) -> str:
         "les intitulés standards du marché et les compétences recherchées par les systèmes de filtrage automatique (ATS) "
         "afin de maximiser le score de correspondance du profil avec l'offre d'emploi.\n\n"
     )
+
+
+def _get_france_travail_credentials() -> tuple[str, str]:
+    """Retourne les identifiants FT, avec priorité aux variables d'environnement."""
+    client_id = os.environ.get('FT_CLIENT_ID') or app.config.get('FT_CLIENT_ID', '')
+    client_secret = os.environ.get('FT_CLIENT_SECRET') or app.config.get('FT_CLIENT_SECRET', '')
+    return client_id, client_secret
 
 
 @app.route('/preview_cv_data/<int:id>', methods=['POST'])
@@ -2085,8 +2140,7 @@ def save_lm_text(id):
 @is_connected
 def france_travail_search():
     user = get_user_by_id(session['login_id'])
-    client_id     = app.config.get('FT_CLIENT_ID', '')
-    client_secret = app.config.get('FT_CLIENT_SECRET', '')
+    client_id, client_secret = _get_france_travail_credentials()
 
     if not client_id or not client_secret:
         flash(
@@ -2577,8 +2631,7 @@ def ft_search_export(search_id):
 def ft_search_refresh(search_id):
     """Réactualise une recherche sauvegardée en réexécutant les mêmes paramètres."""
     ft_search = FtSearch.query.get_or_404(search_id)
-    client_id     = app.config.get('FT_CLIENT_ID', '')
-    client_secret = app.config.get('FT_CLIENT_SECRET', '')
+    client_id, client_secret = _get_france_travail_credentials()
     if not client_id or not client_secret:
         flash('Identifiants France Travail non configurés.', 'error')
         return redirect(url_for('ft_search_view', search_id=search_id))

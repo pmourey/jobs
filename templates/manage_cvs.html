@@ -10,6 +10,9 @@
   <div class="row">
     <div class="col-md-6">
       <h4>Fichiers disponibles</h4>
+      <a class="btn btn-primary mb-3" href="{{ url_for('edit_cv', user_id=user_id, new=1) }}">
+        + Créer un CV depuis une structure vide
+      </a>
       <ul class="list-group">
         {% for f in files %}
           <li class="list-group-item d-flex justify-content-between align-items-center">
@@ -24,6 +27,7 @@
             </div>
               <div>
               {% if f.is_json %}
+                <a class="btn btn-sm btn-success" href="{{ url_for('view_cv', user_id=user_id, file=f.name) }}">Visualiser</a>
                 <a class="btn btn-sm btn-outline-primary" href="{{ url_for('static', filename=f.path) }}" target="_blank">Voir JSON</a>
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('edit_cv', user_id=user_id, file=f.name) }}">Éditer</a>
                 {# If a corresponding PDF exists (same stem), offer a PDF preview link #}
@@ -114,8 +118,6 @@
   </div>
 </div>
 {% endblock main %}
-
-
 
 
 

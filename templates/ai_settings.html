@@ -36,7 +36,11 @@
     <button class="btn btn-outline-danger" type="submit" name="action" value="delete">Supprimer ma configuration IA</button>
   </form>
   {% endif %}
-  <p class="mt-3"><a href="{{ url_for('ai_providers_help') }}">Consulter l'aide sur les fournisseurs</a></p>
+  <p class="mt-3">
+    <a href="{{ url_for('ai_providers_help') }}">Consulter l'aide sur les fournisseurs</a>
+    <span class="mx-1">·</span>
+    <a href="{{ url_for('update_account', id=user.id) }}">Retour au compte</a>
+  </p>
 </main>
 <script>
   (() => {

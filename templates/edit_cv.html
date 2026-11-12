@@ -10,8 +10,9 @@
   </div>
 
   <div class="alert alert-info">
-    Les informations principales sont éditables directement. Les sections répétables restent au format JSON
-    afin de préserver la compatibilité avec les imports et la génération de documents.
+    Ajoutez et modifiez les expériences, formations, compétences et autres éléments
+    directement dans les champs ci-dessous. Le format technique compatible avec les
+    imports et la génération de documents est géré automatiquement.
   </div>
 
   <form method="post" action="{{ url_for('edit_cv', user_id=user_id, file=filename) }}">
@@ -56,14 +57,17 @@
     <section class="card mb-4">
       <div class="card-header"><h3 class="h5 mb-0">Sections du CV</h3></div>
       <div class="card-body">
-        <p class="small text-muted">
-          Saisissez une liste JSON. Exemple :
-          <code>[{"position":"Développeur","name":"Entreprise","summary":"..."}]</code>
-        </p>
         {% for section in editable_sections %}
-        <div class="mb-3">
-          <label class="form-label text-capitalize" for="section_{{ section }}">{{ section }}</label>
-          <textarea class="form-control font-monospace" id="section_{{ section }}" name="{{ section }}" rows="5">{{ cv_data.get(section, []) | tojson(indent=2) }}</textarea>
+        <div class="cv-section-editor border rounded p-3 mb-4" data-section="{{ section }}">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="h6 text-capitalize mb-0">{{ section }}</h4>
+            <button type="button" class="btn btn-sm btn-outline-primary add-cv-item" data-section="{{ section }}">
+              + Ajouter
+            </button>
+          </div>
+          <div id="editor-{{ section }}" class="cv-items"></div>
+          <div class="small text-muted empty-section-message">Aucun élément. Cliquez sur « Ajouter ».</div>
+          <textarea class="d-none cv-section-json" id="section_{{ section }}" name="{{ section }}">{{ cv_data.get(section, []) | tojson }}</textarea>
         </div>
         {% endfor %}
       </div>
@@ -75,4 +79,160 @@
     </div>
   </form>
 </main>
+<script>
+(() => {
+  const cvData = {{ cv_data | tojson }};
+  const sectionDefinitions = {
+    work: [
+      ['position', 'Poste', 'text'],
+      ['name', 'Entreprise', 'text'],
+      ['startDate', 'Date de début', 'date'],
+      ['endDate', 'Date de fin', 'date'],
+      ['summary', 'Description', 'textarea']
+    ],
+    education: [
+      ['institution', 'Établissement', 'text'],
+      ['area', 'Domaine d’étude', 'text'],
+      ['studyType', 'Diplôme', 'text'],
+      ['startDate', 'Date de début', 'date'],
+      ['endDate', 'Date de fin', 'date'],
+      ['score', 'Résultat', 'text']
+    ],
+    skills: [
+      ['name', 'Compétence', 'text'],
+      ['level', 'Niveau', 'text'],
+      ['keywords', 'Mots-clés', 'list']
+    ],
+    projects: [
+      ['name', 'Nom du projet', 'text'],
+      ['description', 'Description', 'textarea'],
+      ['url', 'URL', 'url'],
+      ['highlights', 'Points forts', 'list']
+    ],
+    certificates: [
+      ['name', 'Nom de la certification', 'text'],
+      ['issuer', 'Organisme', 'text'],
+      ['date', 'Date', 'date'],
+      ['url', 'URL', 'url']
+    ],
+    languages: [
+      ['language', 'Langue', 'text'],
+      ['fluency', 'Niveau', 'text']
+    ],
+    volunteer: [
+      ['organization', 'Organisation', 'text'],
+      ['position', 'Fonction', 'text'],
+      ['startDate', 'Date de début', 'date'],
+      ['endDate', 'Date de fin', 'date'],
+      ['summary', 'Description', 'textarea']
+    ],
+    references: [
+      ['name', 'Nom', 'text'],
+      ['reference', 'Référence', 'textarea']
+    ]
+  };
+
+  function valuesFor(section) {
+    const values = cvData[section];
+    if (!Array.isArray(values)) return [];
+    return values.map(value => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+      return { value: value || '' };
+    });
+  }
+
+  function createField(row, definition, value) {
+    const [field, label, type] = definition;
+    const wrapper = document.createElement('div');
+    wrapper.className = type === 'textarea' ? 'col-12' : 'col-md-6';
+    const labelElement = document.createElement('label');
+    labelElement.className = 'form-label small mb-1';
+    labelElement.textContent = label;
+    const input = type === 'textarea'
+      ? document.createElement('textarea')
+      : document.createElement('input');
+    input.className = 'form-control form-control-sm';
+    input.dataset.field = field;
+    input.dataset.list = type === 'list' ? 'true' : 'false';
+    input.value = type === 'list'
+      ? (Array.isArray(value) ? value.join(', ') : (value || ''))
+      : (value || '');
+    if (type !== 'textarea') input.type = type === 'list' ? 'text' : type;
+    if (type === 'textarea') input.rows = 3;
+    wrapper.append(labelElement, input);
+    row.appendChild(wrapper);
+  }
+
+  function renderSection(section) {
+    const container = document.getElementById(`editor-${section}`);
+    const emptyMessage = container.parentElement.querySelector('.empty-section-message');
+    container.replaceChildren();
+    valuesFor(section).forEach(item => addItem(section, item));
+    emptyMessage.classList.toggle('d-none', container.children.length > 0);
+  }
+
+  function addItem(section, item = {}) {
+    const container = document.getElementById(`editor-${section}`);
+    const row = document.createElement('div');
+    row.className = 'card card-body mb-3 cv-item';
+    row.__original = { ...item };
+
+    const header = document.createElement('div');
+    header.className = 'd-flex justify-content-between align-items-center mb-2';
+    const title = document.createElement('strong');
+    title.className = 'small';
+    title.textContent = `Élément ${container.children.length + 1}`;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-sm btn-outline-danger';
+    remove.textContent = 'Supprimer';
+    remove.addEventListener('click', () => {
+      row.remove();
+      refreshSectionState(section);
+    });
+    header.append(title, remove);
+
+    const fields = document.createElement('div');
+    fields.className = 'row g-2';
+    const definitions = sectionDefinitions[section] || [['value', 'Valeur', 'textarea']];
+    definitions.forEach(definition => createField(fields, definition, item[definition[0]]));
+    row.append(header, fields);
+    container.appendChild(row);
+    refreshSectionState(section);
+  }
+
+  function refreshSectionState(section) {
+    const container = document.getElementById(`editor-${section}`);
+    const emptyMessage = container.parentElement.querySelector('.empty-section-message');
+    emptyMessage.classList.toggle('d-none', container.children.length > 0);
+    [...container.children].forEach((item, index) => {
+      item.querySelector('strong').textContent = `Élément ${index + 1}`;
+    });
+  }
+
+  function serializeSections() {
+    Object.keys(sectionDefinitions).forEach(section => {
+      const container = document.getElementById(`editor-${section}`);
+      const items = [...container.children].map(row => {
+        const item = { ...row.__original };
+        row.querySelectorAll('[data-field]').forEach(input => {
+          const value = input.value.trim();
+          item[input.dataset.field] = input.dataset.list === 'true'
+            ? value.split(',').map(part => part.trim()).filter(Boolean)
+            : value;
+        });
+        return item;
+      });
+      document.getElementById(`section_${section}`).value = JSON.stringify(items);
+    });
+  }
+
+  document.querySelectorAll('.cv-section-editor').forEach(editor => {
+    const section = editor.dataset.section;
+    renderSection(section);
+    editor.querySelector('.add-cv-item').addEventListener('click', () => addItem(section));
+  });
+  document.querySelector('form').addEventListener('submit', serializeSections);
+})();
+</script>
 {% endblock main %}
