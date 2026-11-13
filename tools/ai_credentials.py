@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 
 from cryptography.fernet import Fernet
+from cryptography.fernet import InvalidToken
 from flask import current_app
 
 from Model import AppSetting, UserAiCredential, db
@@ -146,17 +147,26 @@ def resolve_user_ai_config(user_id: int) -> dict | None:
     credential = UserAiCredential.query.filter_by(user_id=user_id).first()
     if credential and credential.provider_key in enabled_provider_keys():
         provider = AI_PROVIDERS[credential.provider_key]
-        api_key = _decrypt(credential)
-        if provider['requires_key'] and not api_key:
-            return None
-        credential.last_used_at = datetime.utcnow()
-        db.session.commit()
-        return {
-            'provider_key': credential.provider_key,
-            'base_url': provider['base_url'],
-            'model': credential.model or provider['default_model'],
-            'api_key': api_key or 'ollama-local',
-        }
+        try:
+            api_key = _decrypt(credential)
+        except (InvalidToken, RuntimeError, UnicodeDecodeError):
+            current_app.logger.warning(
+                'Impossible de déchiffrer la clé IA personnelle de user_id=%s; '
+                'utilisation de la configuration IA du site.',
+                user_id,
+            )
+        else:
+            if provider['requires_key'] and not api_key:
+                return None
+            credential.last_used_at = datetime.utcnow()
+            db.session.commit()
+            return {
+                'provider_key': credential.provider_key,
+                'base_url': provider['base_url'],
+                'model': credential.model or provider['default_model'],
+                'api_key': api_key or 'ollama-local',
+                'site_managed': False,
+            }
 
     base_url = current_app.config.get('GITHUB_MODELS_BASE_URL', '')
     api_key = current_app.config.get('GITHUB_TOKEN', '') or ''
@@ -167,11 +177,10 @@ def resolve_user_ai_config(user_id: int) -> dict | None:
         api_key = 'ollama-local'
     else:
         provider_key = 'gemini' if 'generativelanguage.googleapis.com' in base_url else 'openai'
-    if provider_key not in enabled_provider_keys():
-        return None
     return {
         'provider_key': provider_key,
         'base_url': base_url,
         'model': current_app.config.get('GITHUB_MODELS_MODEL', AI_PROVIDERS[provider_key]['default_model']),
         'api_key': api_key,
+        'site_managed': True,
     }

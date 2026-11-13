@@ -18,6 +18,38 @@
     {% endfor %}
     <button class="btn btn-primary mt-3" type="submit">Enregistrer les autorisations</button>
   </form>
+  <hr class="my-4">
+  <h3 class="h5">Quota mensuel de l’API du site</h3>
+  <p class="small text-muted">Ce quota s’applique aux utilisateurs qui n’ont pas configuré leur propre fournisseur IA.</p>
+  <form method="post" class="row g-2 align-items-end">
+    <input type="hidden" name="action" value="quota">
+    <div class="col-sm-4">
+      <label class="form-label" for="monthly_quota">Appels par utilisateur et par mois</label>
+      <input class="form-control" id="monthly_quota" name="monthly_quota" type="number" min="0" required value="{{ monthly_quota }}">
+    </div>
+    <div class="col-sm-auto">
+      <button class="btn btn-primary" type="submit">Enregistrer le quota</button>
+    </div>
+  </form>
+  {% if quota_requests %}
+  <h3 class="h5 mt-4">Demandes en attente</h3>
+  {% for quota_request in quota_requests %}
+  <div class="border rounded p-2 mb-2">
+    <div><strong>{{ quota_request.user_id }}</strong> demande
+      {% if quota_request.requested_quota is not none %}{{ quota_request.requested_quota }} appels/mois{% else %}une augmentation{% endif %}</div>
+    {% if quota_request.reason %}<div class="small text-muted">{{ quota_request.reason }}</div>{% endif %}
+    <form method="post" class="row g-2 mt-1 align-items-end">
+      <input type="hidden" name="action" value="review_quota">
+      <input type="hidden" name="request_id" value="{{ quota_request.id }}">
+      <div class="col-sm-4">
+        <label class="form-label small" for="approved-{{ quota_request.id }}">Quota accordé</label>
+        <input class="form-control form-control-sm" id="approved-{{ quota_request.id }}" name="approved_quota" type="number" min="0" value="{{ quota_request.requested_quota or monthly_quota }}">
+      </div>
+      <div class="col-sm-auto"><button class="btn btn-sm btn-success" type="submit">Accorder</button></div>
+    </form>
+  </div>
+  {% endfor %}
+  {% endif %}
   <div class="mt-3">
     <a class="btn btn-secondary" href="{{ url_for('welcome') }}">Retour à l'accueil</a>
   </div>

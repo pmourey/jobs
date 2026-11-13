@@ -269,6 +269,31 @@ class UserAiCredential(db.Model):
     user = relationship('User', backref='ai_credential', uselist=False)
 
 
+class AiUsage(db.Model):
+    """Compteur mensuel des appels effectués avec la clé IA du site."""
+    __tablename__ = 'ai_usage'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    period = db.Column(db.String(7), nullable=False)
+    calls = db.Column(db.Integer, nullable=False, default=0)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'period', name='uq_ai_usage_user_period'),)
+
+
+class AiQuotaRequest(db.Model):
+    """Demande utilisateur d'augmentation de quota IA."""
+    __tablename__ = 'ai_quota_request'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    requested_quota = db.Column(db.Integer, nullable=True)
+    reason = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='pending')
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+
 class FtSearch(db.Model):
     """Sauvegarde persistante des résultats de recherche France Travail.
 

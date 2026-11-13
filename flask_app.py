@@ -58,7 +58,8 @@ from Controller import (check, check_password_and_upgrade,
                         get_session_by_login, get_user_by_id,
                         handle_file_upload, send_confirmation_email,
                         send_password_recovery_email)
-from Model import AppSetting, FtSearch, Job, Session, User, UserAiCredential, db
+from Model import (AiQuotaRequest, AppSetting, FtSearch, Job, Session, User,
+                   UserAiCredential, db)
 from tools.cv_tools import (build_cv_pdf_filename,
                             generate_tailored_cv_pdf_bytes,
                             get_ai_cover_letter_text, get_ai_cv_suggestions,
@@ -83,6 +84,7 @@ from tools.send_emails import send_email
 from tools.ai_credentials import (AI_PROVIDERS, delete_user_credential,
                                   enabled_provider_keys, provider_options,
                                   resolve_user_ai_config, save_user_credential)
+from tools.ai_quota import consume_site_quota, get_site_monthly_quota, monthly_usage
 from tools.jobboard_providers import (JOB_OFFER_PROVIDERS,
                                       available_job_offer_provider_keys,
                                       enabled_job_offer_provider_keys,
@@ -232,6 +234,18 @@ def _format_github_rate_warning(token: str, default_missing_msg: str) -> str:
     if minutes is None:
         return f"Quota restant: {info.get('remaining')}/{info.get('limit')} — aperçu généré sans IA."
     return f"Quota GitHub remaining: {info.get('remaining')}/{info.get('limit')} (reset dans ~{minutes} min) — aperçu généré sans IA."
+
+
+def _consume_site_ai_quota(user_id: int, ai_config: dict | None) -> tuple[bool, str]:
+    if not ai_config or not ai_config.get('site_managed'):
+        return True, ''
+    allowed, used, quota = consume_site_quota(user_id)
+    if allowed:
+        return True, ''
+    return False, (
+        f'Le quota mensuel de l’API du site est atteint ({used}/{quota}). '
+        'Envoyez une demande d’augmentation à l’administrateur.'
+    )
 
 def is_admin(func):
     @wraps(func)
@@ -946,6 +960,38 @@ def ai_providers_help():
 @is_admin
 def admin_ai_providers():
     if request.method == 'POST':
+        action = request.form.get('action', 'providers')
+        if action == 'quota':
+            try:
+                quota = int(request.form.get('monthly_quota', ''))
+                if quota < 0:
+                    raise ValueError
+            except ValueError:
+                flash('Le quota mensuel doit être un entier positif ou nul.', 'error')
+                return redirect(url_for('admin_ai_providers'))
+            AppSetting.set('ai_site_monthly_quota', str(quota))
+            flash('Le quota mensuel de l’API du site a été enregistré.', 'success')
+            return redirect(url_for('admin_ai_providers'))
+        if action == 'review_quota':
+            request_id = request.form.get('request_id')
+            quota_value = request.form.get('approved_quota')
+            quota_request = AiQuotaRequest.query.get(int(request_id)) if request_id else None
+            try:
+                approved_quota = int(quota_value)
+                if approved_quota < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                approved_quota = None
+            if quota_request and approved_quota is not None:
+                AppSetting.set(f'ai_site_monthly_quota_user_{quota_request.user_id}', str(approved_quota))
+                quota_request.status = 'approved'
+                quota_request.reviewed_at = datetime.utcnow()
+                quota_request.reviewed_by = session['login_id']
+                db.session.commit()
+                flash('La demande de quota a été acceptée.', 'success')
+            else:
+                flash('Demande de quota invalide.', 'error')
+            return redirect(url_for('admin_ai_providers'))
         selected = {
             key for key in request.form.getlist('providers')
             if key in AI_PROVIDERS
@@ -959,7 +1005,36 @@ def admin_ai_providers():
         'admin_ai_providers.html',
         providers=provider_options(include_disabled=True),
         enabled=enabled_provider_keys(),
+        monthly_quota=get_site_monthly_quota(),
+        quota_requests=AiQuotaRequest.query.filter_by(status='pending').order_by(AiQuotaRequest.created_at).all(),
     )
+
+
+@app.route('/ai-quota-request', methods=['POST'])
+@is_connected
+def ai_quota_request():
+    user_id = session['login_id']
+    reason = request.form.get('reason', '').strip()
+    requested_quota = request.form.get('requested_quota', '').strip()
+    try:
+        requested_value = int(requested_quota) if requested_quota else None
+        if requested_value is not None and requested_value < 0:
+            raise ValueError
+    except ValueError:
+        flash('Le quota demandé doit être un entier positif.', 'error')
+        return redirect(url_for('show_all'))
+    pending = AiQuotaRequest.query.filter_by(user_id=user_id, status='pending').first()
+    if pending:
+        flash('Une demande de quota est déjà en attente.', 'info')
+    else:
+        db.session.add(AiQuotaRequest(
+            user_id=user_id,
+            requested_quota=requested_value,
+            reason=reason,
+        ))
+        db.session.commit()
+        flash('Votre demande d’augmentation de quota a été envoyée à l’administrateur.', 'success')
+    return redirect(url_for('show_all'))
 
 
 @app.route('/admin/job-offer-providers', methods=['GET', 'POST'])
@@ -1748,6 +1823,8 @@ def show_all():
     # Prepare list of users for the selector: include current user and users who opted-in
     users_list = User.query.filter((User.id == user_id) | (User.allow_view_offers == True)).order_by(User.username).all()
     is_profile_complete, missing_contact_fields, _ = validate_user_contact_info(user_id, app.static_folder)
+    effective_ai = resolve_user_ai_config(user_id)
+    site_ai_usage = monthly_usage(user_id) if effective_ai and effective_ai.get('site_managed') else None
     default_cv_available = {
         job.id: _has_user_default_cv(job.user_id)
         for job in jobs
@@ -1758,7 +1835,8 @@ def show_all():
                            cv_skills=cv_skills, cv_references=cv_references, cv_projects=cv_projects,
                            is_profile_complete=is_profile_complete,
                            missing_contact_fields=missing_contact_fields,
-                           default_cv_available=default_cv_available)
+                           default_cv_available=default_cv_available,
+                           site_ai_usage=site_ai_usage)
 
 
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
@@ -1890,6 +1968,9 @@ def preview_cv_data(id):
     # If external AI calls are administratively disabled, fall back to local suggestions
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
     ai_config = resolve_user_ai_config(job.user_id) if enable_ai else None
+    quota_ok, quota_message = _consume_site_ai_quota(job.user_id, ai_config)
+    if not quota_ok:
+        return jsonify({'error': quota_message, 'quota_reached': True}), 429
     github_token = ai_config['api_key'] if ai_config else ''
     payload = request.get_json(silent=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
@@ -2054,6 +2135,9 @@ def save_cv_pdf(id):
     # If external AI is disabled, fall back to local suggestions (no external token used)
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
     ai_config = resolve_user_ai_config(job.user_id) if enable_ai else None
+    quota_ok, quota_message = _consume_site_ai_quota(job.user_id, ai_config)
+    if not quota_ok:
+        return jsonify({'error': quota_message, 'quota_reached': True}), 429
     github_token = ai_config['api_key'] if ai_config else ''
     payload = request.get_json(silent=True) or {}
     additional_prompt = payload.get('additional_prompt', '')
@@ -2238,6 +2322,10 @@ def generate_cv_pdf(id):
     # If external AI is disabled, fall back to local suggestions (no external token used)
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
     ai_config = resolve_user_ai_config(job.user_id) if enable_ai else None
+    quota_ok, quota_message = _consume_site_ai_quota(job.user_id, ai_config)
+    if not quota_ok:
+        flash(quota_message, 'warning')
+        return redirect(url_for('show_all'))
     github_token = ai_config['api_key'] if ai_config else ''
     if not app.config.get('ENABLE_REMOTE_IA', True):
         github_token = ''
@@ -2292,6 +2380,9 @@ def preview_lm_ai(id):
 
     enable_ai = app.config.get('ENABLE_EXTERNAL_AI', app.config.get('ENABLE_REMOTE_IA', True))
     ai_config = resolve_user_ai_config(job.user_id) if enable_ai else None
+    quota_ok, quota_message = _consume_site_ai_quota(job.user_id, ai_config)
+    if not quota_ok:
+        return jsonify({'error': quota_message, 'quota_reached': True}), 429
     github_token = ai_config['api_key'] if ai_config else ''
     payload = request.get_json(silent=True) or {}
     additional_prompt = payload.get('additional_prompt', '')

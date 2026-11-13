@@ -273,7 +273,7 @@
 					selected_projects: _getSelectedProjects('cv'),
 				}),
 			});
-			const data = await resp.json();
+			const data = await readResponseJson(resp);
 			if (!resp.ok) {
 				if (data.profile_incomplete) {
 					body.innerHTML =
@@ -437,7 +437,7 @@
 					selected_projects: _getSelectedProjects('cv'),
 				}),
 			});
-			const data = await resp.json();
+			const data = await readResponseJson(resp);
 			if (resp.ok) {
 				currentCvSavedUrl = data.url;
 				currentCvSavedFilename = data.filename || 'CV.pdf';
@@ -556,7 +556,7 @@
 					selected_premium_modules: _getCheckedValues('.lm-premium-check'),
 				}),
 			});
-			const data = await resp.json();
+			const data = await readResponseJson(resp);
 			if (!resp.ok) {
 				if (data.profile_incomplete) {
 					body.innerHTML =
@@ -616,7 +616,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ text: currentLmAiText }),
 			});
-			const data = await resp.json();
+			const data = await readResponseJson(resp);
 			if (resp.ok) {
 				insertBtn.textContent = '✅ LM insérée !';
 				setTimeout(() => {
@@ -637,6 +637,19 @@
 	function escapeHtml(text) {
 		if (!text) return '';
 		return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+	}
+
+	async function readResponseJson(response) {
+		const text = await response.text();
+		try {
+			return JSON.parse(text);
+		} catch (error) {
+			return {
+				error: response.ok
+					? 'Réponse inattendue du serveur.'
+					: 'Le serveur a rencontré une erreur (HTTP ' + response.status + ').',
+			};
+		}
 	}
 
 	function applyClosedFilter() {
@@ -724,6 +737,18 @@
 			<strong>⚠️ Profil incomplet :</strong> Pour générer vos CV et lettres de motivation personnalisés avec vos coordonnées réelles, veuillez renseigner vos coordonnées obligatoires ({{ missing_contact_fields | join(', ') }}).
 		</div>
 		<a href="{{ url_for('update_account', id=user.id) }}" class="btn btn-sm btn-warning text-nowrap ms-3">⚙️ Renseigner mon profil</a>
+	</div>
+</div>
+{% endif %}
+{% if site_ai_usage %}
+<div class="container-fluid mb-3">
+	<div class="alert alert-info d-flex align-items-center justify-content-between mb-0">
+		<span>Utilisation de l’API IA du site ce mois-ci : <strong>{{ site_ai_usage[0] }}/{{ site_ai_usage[1] }}</strong></span>
+		<form method="post" action="{{ url_for('ai_quota_request') }}" class="d-flex gap-2 align-items-center">
+			<input type="number" min="0" name="requested_quota" class="form-control form-control-sm" style="width: 110px;" placeholder="Nouveau quota">
+			<input type="text" name="reason" class="form-control form-control-sm" placeholder="Motif (facultatif)">
+			<button class="btn btn-sm btn-outline-primary text-nowrap" type="submit">Demander une augmentation</button>
+		</form>
 	</div>
 </div>
 {% endif %}
