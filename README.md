@@ -40,6 +40,12 @@ pip install -r requirements.txt
 cp config_template.py config.py
 ```
 
+La génération PDF fonctionne avec ReportLab, inclus dans les dépendances
+Python. LibreOffice est facultatif : installez-le et rendez le binaire
+`soffice` disponible dans le `PATH` uniquement si vous souhaitez convertir des
+templates DOCX/DOTX avec la mise en page LibreOffice. Il n'est pas nécessaire
+pour l'installation ou le fonctionnement standard sur PythonAnywhere.
+
 Renseignez ensuite `SECRET_KEY`, `SQLALCHEMY_DATABASE_URI`, les paramètres SMTP et, si nécessaire, les identifiants France Travail et IA. Ne commitez jamais `config.py`, les mots de passe, les tokens ou les données utilisateurs.
 
 Pour permettre aux utilisateurs d'enregistrer une clé IA personnelle, définissez
