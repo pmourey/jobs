@@ -73,7 +73,8 @@ from tools.france_travail import (ATS_KEYWORDS_PROFILE, CONTRACT_TYPES,
                                   search_offers, generate_keywords_with_gemini,
                                   compute_offer_matching, enrich_offers_with_matching,
                                   sort_offers_by_date,
-                                  evaluate_offer_with_gemini)
+                                  evaluate_offer_with_gemini,
+                                  format_connection_error)
 from tools.send_emails import send_email
 from tools.ai_credentials import (AI_PROVIDERS, delete_user_credential,
                                   enabled_provider_keys, provider_options,
@@ -2239,7 +2240,7 @@ def france_travail_search():
 
     except Exception as exc:
         app.logger.error(f'France Travail search error: {exc}')
-        flash(f'Erreur lors de la recherche France Travail : {exc}', 'error')
+        flash(f'Erreur lors de la recherche France Travail : {format_connection_error(exc)}', 'error')
         return redirect(url_for('france_travail'))
 
     # Sauvegarde persistante du résultat pour consultation ultérieure
@@ -2663,7 +2664,7 @@ def ft_search_refresh(search_id):
             search_info = f"Mode manuel – Mots-clés : «{kw}» – {len(offers)} offre(s) (actualisé)"
     except Exception as exc:
         app.logger.error(f'FT refresh error: {exc}')
-        flash(f'Erreur lors de la réactualisation : {exc}', 'error')
+        flash(f'Erreur lors de la réactualisation : {format_connection_error(exc)}', 'error')
         return redirect(url_for('ft_search_view', search_id=search_id))
 
     cv_data_user = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
