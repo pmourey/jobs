@@ -17,6 +17,7 @@
         <div class="col-12 d-flex justify-content-between align-items-center">
             <div>
                 <button id="delete-selected" class="btn btn-danger btn-sm" disabled title="Supprimer les sessions sélectionnées">🗑️ Supprimer sélectionnées</button>
+                <button id="delete-other-sessions" class="btn btn-warning btn-sm" title="Déconnecter toutes les autres sessions">🚪 Déconnecter les autres</button>
                 <span id="selected-count" class="ms-2 text-muted">(0)</span>
             </div>
             <div>
@@ -42,7 +43,7 @@
             {% for session in sessions %}
             <tr>
                 <td>
-                    {% if session.login_id != user.id %}
+                    {% if session.id != current_session_id %}
                     <input class="session-checkbox" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />
                     {% endif %}
                 </td>
@@ -50,7 +51,7 @@
                 <td>{{ session.start|format_paris_time }}</td>
                 <td>{{ session.browser_family }} <small class="text-muted">(v{{ session.browser_version }})</small></td>
                 <td><code>{{ session.client_ip }}</code></td>
-                <td>{% if session.login_id != user.id %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer session">🗑️</button>{% endif %}</td>
+                <td>{% if session.id != current_session_id %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer session">🗑️</button>{% endif %}</td>
             </tr>
             {% endfor %}
             </tbody>
@@ -64,7 +65,7 @@
             <div class="card-body p-2">
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <div class="d-flex align-items-center">
-                        {% if session.login_id != user.id %}<input class="session-checkbox me-2" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />{% endif %}
+                        {% if session.id != current_session_id %}<input class="session-checkbox me-2" type="checkbox" data-id="{{ session.id }}" aria-label="Sélectionner la session de {{ session.username }}" />{% endif %}
                         <span class="badge bg-primary">{{ session.username }}</span>
                     </div>
                     <small class="text-muted">{{ session.start.strftime('%d/%m %H:%M') }}</small>
@@ -74,7 +75,7 @@
                 </div>
                 <div class="d-flex justify-content-between align-items-center">
                     <div class="small">🌍 <code>{{ session.client_ip }}</code></div>
-                    {% if session.login_id != user.id %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer">🗑️</button>{% endif %}
+                    {% if session.id != current_session_id %}<button onclick="deleteSession({{ session.id }})" class="btn btn-sm btn-danger" title="Supprimer">🗑️</button>{% endif %}
                 </div>
             </div>
         </div>
@@ -174,6 +175,27 @@ document.addEventListener('DOMContentLoaded', function() {
             const header = document.getElementById('select-all');
             if (header) header.checked = anyUnchecked;
             this.textContent = anyUnchecked ? 'Tout désélectionner' : 'Tout sélectionner';
+        });
+    }
+
+    const deleteOtherButton = document.getElementById('delete-other-sessions');
+    if (deleteOtherButton) {
+        deleteOtherButton.addEventListener('click', function() {
+            if (!confirm('Déconnecter toutes les autres sessions actives ?')) return;
+            this.disabled = true;
+            fetch('/delete_other_sessions', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            }).then(resp => {
+                if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+                return resp.json();
+            }).then(() => location.reload())
+              .catch(err => {
+                  console.error(err);
+                  alert('Erreur lors de la déconnexion des autres sessions : ' + err.message);
+                  this.disabled = false;
+              });
         });
     }
 

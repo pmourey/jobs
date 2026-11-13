@@ -446,6 +446,33 @@ def get_client_ip():
     return client_ip
 
 
+def _current_session_id() -> int | None:
+    current_session_id = session.get('id')
+    if current_session_id is not None:
+        try:
+            current_session_id = int(current_session_id)
+        except (TypeError, ValueError):
+            current_session_id = None
+    if current_session_id is not None:
+        current_session = Session.query.filter_by(
+            id=current_session_id,
+            login_id=session['login_id'],
+            end=None,
+        ).first()
+        if current_session:
+            return current_session.id
+    current_session = (
+        Session.query
+        .filter_by(login_id=session['login_id'], end=None)
+        .order_by(desc(Session.id))
+        .first()
+    )
+    if current_session:
+        session['id'] = current_session.id
+        return current_session.id
+    return None
+
+
 def _resolve_user_cv_data(user_id: int) -> dict:
     """Charge le CV JSON de l'utilisateur si disponible.
     Si aucun CV n'est trouvé, retourne pour l'utilisateur 1 le CV statique legacy,
@@ -933,6 +960,7 @@ def login():
                                browser_version=user_agent.browser.version_string)
                 db.session.add(sess)
                 db.session.commit()
+                session['id'] = sess.id
                 return redirect(url_for('welcome'))
             else:
                 error = (
@@ -1850,9 +1878,9 @@ def view_cv(user_id):
 @is_admin
 def delete_session(id):
     session_obj = Session.query.get_or_404(id)
-    current_user_id = session['login_id']
+    current_session_id = _current_session_id()
     if session_obj.end is None:
-        if session_obj.login_id == current_user_id:
+        if session_obj.id == current_session_id:
             return jsonify({ 'error': 'Cannot close your own active session' }), 403
         # Close active session of another user
         session_obj.end = datetime.now()
@@ -1935,11 +1963,11 @@ def delete_sessions():
     now = datetime.now()
     closed_ids = []
     deleted_ids = []
-    current_user_id = session['login_id']
+    current_session_id = _current_session_id()
     for sess in sessions_to_close:
         print(f"DEBUG Processing session {sess.id}, end={sess.end}, login_id={sess.login_id}")
         if sess.end is None:
-            if sess.login_id == current_user_id:
+            if sess.id == current_session_id:
                 print(f"DEBUG Skipping own active session {sess.id}")
                 continue  # Skip closing own session
             sess.end = now
@@ -1957,6 +1985,25 @@ def delete_sessions():
     return jsonify({ 'closed': closed_ids, 'deleted': deleted_ids }), 200
 
 
+@app.route('/delete_other_sessions', methods=['POST'])
+@is_connected
+@is_admin
+def delete_other_sessions():
+    """Close every active session except the browser session making the request."""
+    current_session_id = _current_session_id()
+    sessions_to_close = Session.query.filter(
+        Session.end.is_(None),
+        Session.id != current_session_id,
+    ).all()
+    now = datetime.now()
+    closed_ids = []
+    for sess in sessions_to_close:
+        sess.end = now
+        closed_ids.append(sess.id)
+    db.session.commit()
+    return jsonify({'closed': closed_ids}), 200
+
+
 @app.route('/sessions')
 @is_connected
 @is_admin
@@ -1964,7 +2011,12 @@ def show_sessions():
     # Reverse order query
     sessions = Session.query.filter(Session.end.is_(None)).order_by(desc(Session.id)).all()
     user = get_user_by_id(session['login_id'])
-    return render_template('sessions.html', sessions=sessions, user=user)
+    return render_template(
+        'sessions.html',
+        sessions=sessions,
+        user=user,
+        current_session_id=_current_session_id(),
+    )
 
 
 @app.route('/closed_sessions')
