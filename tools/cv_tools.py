@@ -670,6 +670,43 @@ def merge_cv_data(base: dict | None, incoming: dict | None) -> dict:
     return result
 
 
+def load_pdf_into_canonical(
+    static_folder: str | Path,
+    user_id: int,
+    pdf_filename: str,
+) -> tuple[bool, str]:
+    """Extrait un PDF LinkedIn et fusionne ses données dans ``cv.json``."""
+    cvs_dir = user_cvs_dir(static_folder, user_id)
+    pdf_path = cvs_dir / Path(pdf_filename).name
+    if pdf_path.parent != cvs_dir or pdf_path.suffix.lower() != '.pdf' or not pdf_path.is_file():
+        return False, 'Le fichier PDF sélectionné est introuvable ou invalide.'
+
+    parsed_path = cvs_dir / f'{pdf_path.stem}.json'
+    if not parse_linkedin_pdf_to_json(pdf_path, parsed_path) or not parsed_path.is_file():
+        return False, 'Les données du PDF LinkedIn n’ont pas pu être extraites.'
+    try:
+        incoming = normalize_cv_data(_json.loads(parsed_path.read_text(encoding='utf-8')))
+        canonical_path = ensure_canonical_cv(static_folder, user_id)
+        base = _read_cv_json(canonical_path) if canonical_path else normalize_cv_data({})
+        canonical_path = cvs_dir / CANONICAL_CV_FILENAME
+        canonical = merge_cv_data(base, incoming)
+        canonical_path.write_text(_json.dumps(canonical, ensure_ascii=False, indent=2), encoding='utf-8')
+
+        meta_path = cvs_dir / 'cvs_meta.json'
+        try:
+            meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+        except (OSError, ValueError):
+            meta = {}
+        meta['_default'] = CANONICAL_CV_FILENAME
+        meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
+        meta[pdf_path.name] = pdf_path.name
+        meta[parsed_path.name] = parsed_path.name
+        meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+    except (OSError, ValueError, TypeError) as exc:
+        return False, f'Le JSON extrait du PDF est invalide : {exc}'
+    return True, 'Les données du PDF LinkedIn ont été chargées dans le CV canonique.'
+
+
 def save_cv_json_for_user(static_folder: str | Path, user_id: int, src_json_path: Path, kind: str = 'gitconnected') -> Path:
     """Copie un fichier JSON de CV dans le répertoire utilisateur en appliquant une nomenclature.
 
@@ -711,21 +748,88 @@ def parse_linkedin_pdf_to_json(pdf_path: Path, out_json_path: Path) -> bool:
     Retourne True si le fichier JSON de sortie a été généré, False sinon.
     """
     try:
+        import sys
+        bundled_parser = Path(__file__).parent.parent / 'linkedin-resume-parser'
+        if bundled_parser.is_dir() and str(bundled_parser) not in sys.path:
+            sys.path.insert(0, str(bundled_parser))
         # Try to import as a module if installed
         from linkedin_resume_parser import parser as lp
         data = lp.parse_pdf(str(pdf_path))
-        import json as _json
-        out_json_path.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
-        return True
+        if isinstance(data, dict):
+            out_json_path.write_text(_json.dumps(normalize_cv_data(data), ensure_ascii=False, indent=2), encoding='utf-8')
+            return True
     except Exception:
         pass
     try:
-        # Try to call an external script/cli if available
+        # Try the external CLI when the parser is installed outside the application.
         import subprocess
-        res = subprocess.run(['linkedin-resume-parser', str(pdf_path), '-o', str(out_json_path)], check=False)
+        subprocess.run(
+            ['linkedin-resume-parser', str(pdf_path), '-o', str(out_json_path)],
+            check=False,
+            timeout=60,
+        )
         return out_json_path.exists()
     except Exception:
-        return False
+        pass
+    try:
+        # Last fallback: PyPDF2 is portable and handles LinkedIn's text-based PDFs.
+        import PyPDF2
+        reader = PyPDF2.PdfReader(str(pdf_path))
+        text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+        data = _parse_linkedin_text(text)
+        if data['basics'] or any(data[section] for section in CV_SECTIONS[1:]):
+            out_json_path.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _parse_linkedin_text(text: str) -> dict:
+    """Extrait les sections principales d'un export PDF LinkedIn texte."""
+    lines = [re.sub(r'\s+', ' ', line).strip() for line in text.splitlines()]
+    lines = [line for line in lines if line and not re.fullmatch(r'Page \d+ of \d+', line, re.I)]
+    headings = {
+        'experience': 'work',
+        'education': 'education',
+        'skills': 'skills',
+        'top skills': 'skills',
+        'languages': 'languages',
+        'certifications': 'certificates',
+        'volunteer experience': 'volunteer',
+    }
+    sections = {section: [] for section in CV_SECTIONS[1:]}
+    current = None
+    for line in lines:
+        key = headings.get(line.casefold())
+        if key:
+            current = key
+            continue
+        if line.casefold() in {'contact', 'interests'}:
+            current = None
+            continue
+        if current == 'skills':
+            sections['skills'].append({'name': line})
+        elif current == 'languages':
+            sections['languages'].append({'language': line})
+        elif current == 'education':
+            sections['education'].append({'institution': line})
+        elif current == 'work':
+            if not sections['work'] or not sections['work'][-1].get('name'):
+                sections['work'].append({'name': line, 'summary': ''})
+            else:
+                sections['work'][-1]['summary'] += f"{line}\n"
+
+    name = ''
+    for index, line in enumerate(lines):
+        if line.casefold() == 'languages' and index + 1 < len(lines):
+            for candidate in lines[index + 1:index + 8]:
+                if candidate.casefold() not in headings and not candidate.startswith('Page '):
+                    name = candidate
+                    break
+            if name:
+                break
+    return normalize_cv_data({'basics': {'name': name}, **sections})
 
 
 def load_cv_data(static_folder) -> dict:

@@ -65,7 +65,8 @@ from tools.cv_tools import (build_cv_pdf_filename,
                             get_user_contact_info, save_user_contact_info,
                             validate_user_contact_info, load_cv_data,
                             ensure_canonical_cv, normalize_cv_data,
-                            merge_cv_data, CANONICAL_CV_FILENAME)
+                            CANONICAL_CV_FILENAME,
+                            load_pdf_into_canonical)
 from tools.merge_cvs import merge_cv_jsons
 from tools.import_cv import parse_json_cv, fetch_linkedin_profile
 from tools.document_tools import (build_cover_letter_pdf_filename,
@@ -1179,17 +1180,7 @@ def import_cv():
             from tools.cv_tools import parse_linkedin_pdf_to_json
             parsed_ok = parse_linkedin_pdf_to_json(pdf_path, parsed_path)
             if parsed_ok and parsed_path.exists():
-                parsed_data = normalize_cv_data(_json.loads(parsed_path.read_text(encoding='utf-8')))
-                canonical_path = ensure_canonical_cv(app.static_folder, target_id)
-                base_data = _json.loads(canonical_path.read_text(encoding='utf-8')) if canonical_path else {}
-                canonical_path = cvs_dir / CANONICAL_CV_FILENAME
-                canonical_data = merge_cv_data(base_data, parsed_data)
-                canonical_path.write_text(
-                    _json.dumps(canonical_data, ensure_ascii=False, indent=2),
-                    encoding='utf-8',
-                )
-                meta['_default'] = CANONICAL_CV_FILENAME
-                meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
+                meta[parsed_path.name] = parsed_path.name
             meta[filename] = filename
             meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
         except (OSError, ValueError, RuntimeError) as exc:
@@ -1199,9 +1190,9 @@ def import_cv():
                 return jsonify({'ok': False, 'message': message}), 400
             flash(message, 'error')
             return redirect(url_for('update_account', id=target_id))
-        message = 'CV PDF importé avec succès.'
-        if not meta.get('_default'):
-            message += ' Le PDF est enregistré, mais aucun CV JSON exploitable n’a pu être généré.'
+        message = 'CV PDF importé. Utilisez « Charger dans cv.json » pour intégrer ses données au CV canonique.'
+        if not parsed_ok or not parsed_path.exists():
+            message = 'CV PDF importé, mais aucune donnée exploitable n’a pu être extraite.'
         return jsonify({'ok': True, 'message': message}) if is_ajax else redirect(
             url_for('update_account', id=target_id)
         )
@@ -1211,6 +1202,20 @@ def import_cv():
         return jsonify({'ok': False, 'message': message}), 400
     flash(message, 'warning')
     return redirect(url_for('update_account', id=target_id))
+
+
+@app.route('/load_pdf_to_canonical/<int:user_id>', methods=['POST'])
+@is_connected
+def load_pdf_to_canonical_route(user_id):
+    """Charge à la demande les données d'un PDF LinkedIn dans cv.json."""
+    current_user = get_user_by_id(session['login_id'])
+    if not (current_user.is_admin or current_user.id == user_id):
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('welcome'))
+    filename = request.form.get('file', '').strip()
+    success, message = load_pdf_into_canonical(app.static_folder, user_id, filename)
+    flash(message, 'success' if success else 'error')
+    return redirect(url_for('manage_cvs_view', user_id=user_id))
 
 
 @app.route('/manage_cvs/<int:user_id>', methods=['GET'])

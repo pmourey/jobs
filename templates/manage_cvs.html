@@ -40,6 +40,10 @@
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('view_cv', user_id=user_id, file=f.name) }}">Visualiser</a>
               {% else %}
                 <a class="btn btn-sm btn-outline-primary" href="{{ url_for('static', filename=f.path) }}" target="_blank">Aperçu PDF</a>
+                <form method="post" action="{{ url_for('load_pdf_to_canonical_route', user_id=user_id) }}" style="display:inline-block;">
+                  <input type="hidden" name="file" value="{{ f.name }}">
+                  <button class="btn btn-sm btn-success" type="submit">Charger dans cv.json</button>
+                </form>
               {% endif %}
               <form method="post" action="{{ url_for('manage_cvs', user_id=user_id) }}" style="display:inline-block;">
                 <input type="hidden" name="file" value="{{ f.name }}">
