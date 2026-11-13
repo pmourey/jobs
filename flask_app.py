@@ -38,8 +38,9 @@ import pytz
 from _socket import gethostbyname
 from apscheduler.schedulers.background import BackgroundScheduler
 from dateutil.relativedelta import relativedelta
-from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
-                   send_file, send_from_directory, session, url_for)
+from flask import (Flask, Response, abort, flash, jsonify, redirect,
+                   render_template, request, send_file, send_from_directory,
+                   session, url_for)
 from flask_debugtoolbar import DebugToolbarExtension
 from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
@@ -95,6 +96,39 @@ def google_site_verification():
         app.root_path,
         'google075dc122689af97b.html',
     )
+
+
+@app.route('/sitemap.xml')
+def sitemap():
+    """Expose les pages publiques du site aux moteurs de recherche."""
+    content = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://ftaccount.eu.pythonanywhere.com/</loc>
+  </url>
+  <url>
+    <loc>https://ftaccount.eu.pythonanywhere.com/legal</loc>
+  </url>
+</urlset>
+"""
+    return Response(content, mimetype='application/xml')
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    """Empêche l'indexation des espaces privés et déclare le sitemap."""
+    content = """User-agent: *
+Allow: /
+Disallow: /suivi
+Disallow: /login
+Disallow: /register
+Disallow: /update
+Disallow: /delete
+Disallow: /static/uploads/
+
+Sitemap: https://ftaccount.eu.pythonanywhere.com/sitemap.xml
+"""
+    return Response(content, mimetype='text/plain')
 
 
 db.init_app(app)
