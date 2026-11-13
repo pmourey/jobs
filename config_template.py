@@ -17,6 +17,8 @@ class Config:
     SMTP_PORT = 465
     GMAIL_FULLNAME = 'Philippe Mourey'
     GMAIL_USER = 'philippe.mourey@gmail.com'
+    # Gmail requires 2FA plus an application password for SMTP authentication.
+    # Do not use the normal account password and never commit the real value.
     GMAIL_APP_PWD = "your GMail Application password"
     CV_RESUME = 'https://www.linkedin.com/in/pmourey/<br>https://github.com/pmourey/jobs<br>https://pmourey.github.io/portfolio/'
     GITHUB_TOKEN = 'ollama-local'

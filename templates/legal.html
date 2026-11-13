@@ -5,136 +5,183 @@
 <main class="container py-5">
     <div class="mb-4">
         <h1 class="display-6">Mentions, confidentialité et conditions d'utilisation</h1>
-        <p class="text-muted mb-0">Informations générales pour les utilisateurs du service.</p>
+        <p class="text-muted mb-0">Informations applicables à l'instance communautaire de suivi de candidatures.</p>
     </div>
 
     <div class="alert alert-warning">
-        <strong>Information importante :</strong> ce document constitue une base d'information pour ce projet.
-        Il doit être adapté et validé juridiquement avant toute exploitation commerciale, notamment pour définir
-        l'identité du responsable de traitement, les durées de conservation et les coordonnées de contact.
+        <strong>Document à compléter :</strong> cette page décrit le fonctionnement actuel du logiciel.
+        Elle ne remplace pas une validation juridique. L'exploitant de chaque instance doit compléter
+        son identité, ses coordonnées, ses durées de conservation, ses sous-traitants et ses procédures
+        RGPD avant toute mise à disposition durable ou activité commerciale.
     </div>
 
     <section class="mb-4">
-        <h2 class="h4">1. Éditeur et propriété intellectuelle</h2>
+        <h2 class="h4">1. Éditeur et projet</h2>
         <p>
-            Le site et son code sont édités par Philippe Mourey. Le code source est disponible sur
-            <a href="https://github.com/pmourey/jobs">GitHub</a>, selon la licence indiquée dans le dépôt
-            lorsqu'elle est applicable. Les textes, visuels, marques, modèles de documents et éléments
-            graphiques du site ne peuvent pas être réutilisés sans autorisation lorsqu'ils sont protégés.
+            Le logiciel est développé et maintenu par Philippe Mourey. Le code source est disponible sur
+            <a href="https://github.com/pmourey/jobs" rel="noopener">GitHub</a>, selon la licence indiquée
+            dans le dépôt lorsqu'elle est applicable.
+        </p>
+        <p>
+            L'instance présentée ici est un projet communautaire gratuit. Elle peut être modifiée,
+            déplacée, arrêtée ou remplacée par une installation auto-hébergée. L'identité et les
+            coordonnées de l'exploitant effectif doivent être précisées par la personne qui déploie
+            l'instance.
         </p>
     </section>
 
     <section class="mb-4">
-        <h2 class="h4">2. Fonctionnement du service</h2>
+        <h2 class="h4">2. Fonctionnalités réellement proposées</h2>
+        <ul>
+            <li>création d'un compte, authentification, récupération du mot de passe et gestion du profil ;</li>
+            <li>suivi de candidatures, contacts, relances, notes et documents associés ;</li>
+            <li>import d'un CV JSON ou PDF, avec un CV canonique propre à chaque utilisateur ;</li>
+            <li>extraction et chargement volontaire des données d'un PDF LinkedIn dans le CV canonique ;</li>
+            <li>génération de lettres et de CV personnalisés, avec des replis locaux lorsque l'IA distante n'est pas disponible ;</li>
+            <li>recherche d'offres auprès des fournisseurs activés par l'administrateur, notamment France Travail, Adzuna ou Jooble selon la configuration ;</li>
+            <li>configuration facultative d'un fournisseur IA personnel ou utilisation encadrée de l'API IA de l'instance.</li>
+        </ul>
         <p>
-            Le service permet de gérer des candidatures, rechercher des offres, importer un CV et générer
-            des documents d'aide à la candidature. Les suggestions générées automatiquement doivent être
-            relues et validées par l'utilisateur avant envoi à un recruteur.
-        </p>
-        <p>
-            L'utilisateur s'engage à fournir des informations exactes, à protéger ses identifiants et à ne
-            pas importer de données pour lesquelles il ne dispose pas d'une autorisation. Le service peut
-            évoluer, être interrompu pour maintenance ou dépendre de services tiers (messagerie, France Travail,
-            fournisseur IA).
+            Les documents et suggestions générés sont des aides à la candidature. L'utilisateur doit les
+            relire, les corriger et vérifier les informations avant toute transmission à un recruteur.
+            Aucune promesse d'embauche, de pertinence, de disponibilité ou de résultat n'est faite.
         </p>
     </section>
 
     <section class="mb-4">
-        <h2 class="h4">3. Projet communautaire gratuit</h2>
+        <h2 class="h4">3. Gratuité et fonctionnement communautaire</h2>
         <p>
-            Le projet est distribué gratuitement et son code source est mis à disposition selon la licence
-            indiquée dans le dépôt. L'instance hébergée peut évoluer, être interrompue ou être remplacée par
-            une installation auto-hébergée. Aucun paiement n'est nécessaire pour accéder aux fonctionnalités
-            actuellement proposées.
+            Aucun paiement n'est nécessaire pour créer un compte ou utiliser les fonctionnalités
+            actuellement proposées. Les crédits IA affichés dans l'application sont des compteurs
+            d'appels et non une monnaie, un portefeuille ou un abonnement payant.
         </p>
         <p>
-            Une éventuelle contribution financière est facultative et ne donne droit à aucune fonctionnalité
-            supplémentaire, priorité de support ou garantie de disponibilité. Elle ne doit pas être interprétée
-            comme le paiement d'un abonnement ou d'un accès premium.
+            Lorsqu'un utilisateur utilise sa propre clé API, il reste responsable des conditions,
+            quotas et coûts de son fournisseur. Lorsqu'il utilise l'API de l'instance, un quota mensuel
+            par utilisateur peut être appliqué. Une augmentation peut être demandée à l'administrateur
+            et est actuellement traitée manuellement. Aucun paiement en ligne ni accès premium n'est
+            implémenté par le logiciel.
+        </p>
+        <p>
+            Une éventuelle contribution au projet est facultative et ne donne droit à aucune
+            fonctionnalité supplémentaire, priorité de support ou garantie de disponibilité. Elle ne
+            doit pas être présentée comme le prix d'un accès.
         </p>
     </section>
 
     <section class="mb-4">
         <h2 class="h4">4. Données traitées</h2>
-        <p>Selon les fonctionnalités utilisées, le site peut traiter :</p>
+        <p>Selon les fonctionnalités utilisées, l'application peut traiter :</p>
         <ul>
-            <li>les données de compte : nom d'utilisateur, adresse e-mail, mot de passe haché et validation du compte ;</li>
-            <li>les coordonnées, CV, candidatures, contacts recruteurs et documents importés ou générés ;</li>
-            <li>les données techniques de session, comme l'adresse IP et les informations du navigateur ;</li>
-            <li>les recherches et résultats d'offres demandés par l'utilisateur.</li>
+            <li>nom d'utilisateur, adresse e-mail, mot de passe haché et état de validation du compte ;</li>
+            <li>coordonnées, photo, CV, données de carrière, formations, compétences et certifications ;</li>
+            <li>candidatures, contacts recruteurs, notes, dates, recherches et résultats d'offres ;</li>
+            <li>fichiers PDF ou JSON importés et documents générés ;</li>
+            <li>sessions, adresse IP et informations techniques du navigateur ;</li>
+            <li>configuration IA personnelle chiffrée, fournisseur, modèle, date d'utilisation et compteur
+                mensuel des appels de l'API du site ;</li>
+            <li>motif et historique des demandes d'augmentation de quota IA.</li>
         </ul>
         <p>
-            Ces données sont utilisées pour fournir le service, sécuriser les comptes, générer les documents
-            demandés et permettre le suivi des candidatures. Elles ne doivent être transmises à un fournisseur
-            externe que lorsque la fonctionnalité utilisée le nécessite et selon sa configuration.
+            Ces données servent à authentifier l'utilisateur, fournir les fonctionnalités demandées,
+            sécuriser l'application, générer les documents et administrer les quotas. Les informations
+            de candidature ne doivent pas être importées lorsque l'utilisateur n'est pas autorisé à les
+            traiter.
         </p>
     </section>
 
     <section class="mb-4">
-        <h2 class="h4">5. IA, sous-traitants et transferts</h2>
+        <h2 class="h4">5. IA et services externes</h2>
         <p>
-            L'assistance IA peut être configurée avec Ollama en local ou avec un fournisseur compatible.
-            En mode local, les prompts restent sur l'environnement configuré. En mode distant, les contenus
-            envoyés peuvent être traités par le fournisseur choisi : l'utilisateur ou l'administrateur doit
-            vérifier ses conditions, sa localisation des données et ses garanties contractuelles.
+            L'IA peut fonctionner avec Ollama local, une clé personnelle auprès d'un fournisseur autorisé
+            ou la configuration IA administrateur de l'instance. Les clés personnelles sont stockées
+            sous forme chiffrée et la clé complète n'est jamais affichée dans l'interface. La clé maître
+            est détenue par l'exploitant ; sa perte peut rendre les clés enregistrées indéchiffrables.
         </p>
         <p>
-            Les e-mails, l'API France Travail et les autres intégrations sont également des services distincts.
-            Leurs propres politiques de confidentialité s'appliquent aux données qu'ils reçoivent.
+            Si un fournisseur distant est utilisé, les contenus nécessaires à la génération peuvent
+            quitter l'instance et être traités par ce fournisseur. L'utilisateur et l'exploitant doivent
+            vérifier ses conditions, sa politique de conservation, ses sous-traitants, ses transferts
+            internationaux et ses options d'entraînement avant d'envoyer un CV ou une candidature.
         </p>
         <p>
-            L'utilisateur peut utiliser sa propre clé API auprès d'un fournisseur autorisé. La clé est
-            chiffrée côté serveur avec une clé maîtresse détenue par l'exploitant et n'est pas affichée,
-            exportée ou communiquée à un autre utilisateur. L'exploitant ne garantit ni les quotas, ni les
-            tarifs, ni la disponibilité du fournisseur choisi. Les abonnements grand public et les accès API
-            peuvent être distincts et restent sous la responsabilité de l'utilisateur.
+            Les recherches d'offres peuvent transmettre les critères de recherche et, pour la recherche
+            automatique à partir du CV, les informations nécessaires à France Travail ou à un autre
+            fournisseur activé. Une restriction réseau, une modification d'API ou une indisponibilité
+            d'un service tiers peut interrompre cette fonctionnalité.
         </p>
         <p>
-            Les recherches France Travail utilisent l'API officielle lorsque les identifiants de l'instance
-            sont configurés et que l'hébergement autorise les connexions sortantes. Les critères de recherche
-            et, en mode automatique, les informations nécessaires du CV peuvent être transmis à France Travail.
-            Les résultats sont ensuite enregistrés dans le compte de l'utilisateur. En cas d'indisponibilité
-            de l'API ou de restriction réseau de l'hébergeur, le service peut être temporairement indisponible.
+            L'envoi de messages utilise la configuration SMTP de l'instance. Les fournisseurs de
+            messagerie appliquent leurs propres règles d'authentification, de conservation et de sécurité.
         </p>
     </section>
 
     <section class="mb-4">
-        <h2 class="h4">6. Droits RGPD</h2>
+        <h2 class="h4">6. Partage et accès aux données</h2>
         <p>
-            Sous réserve des conditions prévues par le RGPD, la personne concernée peut demander l'accès,
-            la rectification, l'effacement, la limitation du traitement, la portabilité ou s'opposer à
-            certains traitements. Elle peut aussi définir des directives relatives à ses données après son décès
-            lorsque le droit applicable le prévoit.
+            Les candidatures sont privées par défaut. L'utilisateur peut autoriser explicitement d'autres
+            utilisateurs de l'instance à consulter ses offres lorsque cette option est proposée.
+            Les contrôles d'accès applicatifs ne doivent pas être considérés comme une garantie absolue
+            contre une mauvaise configuration de l'hébergement.
         </p>
         <p>
-            Pour exercer ces droits, utilisez le contact indiqué par l'exploitant du service et précisez
-            l'adresse du compte concerné. Une vérification d'identité peut être demandée. Une réclamation
-            peut être adressée à la CNIL ou à l'autorité de contrôle compétente.
+            L'exploitant doit notamment protéger les répertoires de fichiers utilisateurs, les sauvegardes,
+            la base de données et les fichiers de configuration. Les secrets, clés API et données
+            utilisateurs ne doivent jamais être publiés dans le dépôt ou les journaux.
         </p>
     </section>
 
     <section class="mb-4">
-        <h2 class="h4">7. Sécurité et conservation</h2>
+        <h2 class="h4">7. Droits, suppression et conservation</h2>
         <p>
-            Le service applique des contrôles d'accès, des mots de passe hachés, des sessions contrôlées,
-            une validation des fichiers importés et une séparation des répertoires utilisateurs. Aucun système
-            connecté à Internet ne garantit toutefois une sécurité absolue : les secrets et fichiers de
-            configuration ne doivent pas être publiés.
+            Selon le rôle de l'exploitant et le droit applicable, la personne concernée peut demander
+            l'accès, la rectification, l'effacement, la limitation du traitement, la portabilité ou
+            s'opposer à certains traitements. Elle peut également demander la suppression de son compte,
+            de ses CV et de ses documents associés selon les fonctions disponibles sur l'instance.
         </p>
         <p>
-            Les données sont conservées pendant la durée nécessaire au fonctionnement du compte et aux finalités
-            demandées, selon la politique de conservation définie par l'exploitant. Les durées précises doivent
-            être publiées avant une mise en production commerciale.
+            Les durées précises de conservation ne sont pas définies par le logiciel seul : elles doivent
+            être fixées et publiées par l'exploitant, notamment pour les comptes, sessions, candidatures,
+            fichiers, sauvegardes, journaux, demandes de quota et compteurs IA. Pour exercer un droit,
+            utilisez le contact indiqué par l'exploitant de l'instance. Une vérification d'identité peut
+            être demandée ; une réclamation peut être adressée à la CNIL ou à l'autorité compétente.
+        </p>
+        <p>
+            Un administrateur peut suspendre un compte en conservant le motif de suspension et le
+            réactiver ultérieurement. Lors de la suppression d'un compte, l'administrateur peut soit
+            créer une sauvegarde privée puis supprimer les données actives, soit demander une purge
+            définitive sans sauvegarde ; une archive reste soumise à la politique de conservation et
+            doit être supprimée lorsque cette politique ou une demande d'effacement l'impose.
+        </p>
+    </section>
+
+    <section class="mb-4">
+        <h2 class="h4">8. Sécurité et disponibilité</h2>
+        <p>
+            Le logiciel prévoit notamment des mots de passe hachés, des contrôles d'accès, une validation
+            des fichiers importés, un stockage chiffré des clés IA personnelles et des replis locaux pour
+            certains parcours. Aucun système connecté à Internet ne garantit toutefois une sécurité ou
+            une disponibilité absolue.
+        </p>
+        <p>
+            L'instance peut être interrompue pour maintenance, incident, changement d'hébergeur ou
+            restriction d'un service tiers. L'exploitant doit organiser ses propres sauvegardes et
+            procédures de restauration ; le logiciel ne promet pas une sauvegarde automatique ou une
+            conservation permanente des données.
         </p>
     </section>
 
     <section>
-        <h2 class="h4">8. Cookies et contact</h2>
+        <h2 class="h4">9. Cookies et contact</h2>
+        <p>
+            L'application utilise les mécanismes nécessaires à l'authentification et aux sessions.
+            Aucun outil de mesure d'audience ou cookie publicitaire n'est décrit comme activé par défaut
+            par le logiciel. Si l'exploitant ajoute de tels outils, il doit mettre à jour cette page et
+            fournir l'information ou le consentement requis.
+        </p>
         <p class="mb-0">
-            Le site utilise principalement les mécanismes nécessaires à l'authentification et aux sessions.
-            Si des outils de mesure d'audience ou des cookies non nécessaires sont ajoutés, un mécanisme
-            d'information et de consentement devra être mis en place. Pour toute question, contactez l'éditeur
-            ou l'exploitant à l'adresse publiée dans la version commerciale du service.
+            Pour toute question, demande de suppression ou exercice de droits, contactez l'exploitant à
+            l'adresse qu'il doit publier pour cette instance.
         </p>
     </section>
 </main>

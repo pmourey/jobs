@@ -7,7 +7,60 @@
     La clé est chiffrée avec la clé maîtresse du serveur. Elle n'est jamais affichée ni enregistrée dans les journaux.
     Les abonnements de conversation et les accès API sont généralement facturés séparément.
   </div>
+  {% if credential_display %}
+  <div class="alert alert-secondary small">
+    Pour des raisons de sécurité, la clé complète n'est jamais affichée. Seuls
+    son fournisseur, son modèle et ses quatre derniers caractères sont visibles.
+    Utilisez <strong>Supprimer cette clé</strong> puis saisissez une nouvelle clé
+    pour remplacer une clé existante.
+  </div>
+  {% endif %}
+  <div class="alert alert-info small">
+    <strong>Comment sont comptés les crédits IA&nbsp;?</strong>
+    Une utilisation IA correspond à un appel au fournisseur pour produire des
+    suggestions, une lettre ou un CV. Ce compteur représente des appels, pas
+    un montant financier ni le solde de votre compte chez le fournisseur.
+    <ul class="mb-0 mt-2">
+      <li>Avec votre propre clé API, vous utilisez les quotas et la facturation de votre fournisseur.</li>
+      <li>Sans clé personnelle, l'application peut utiliser l'API du site si elle est configurée par l'administrateur.</li>
+      <li>Les appels effectués avec l'API du site sont soumis à un quota mensuel par utilisateur.</li>
+      <li>Si le quota est atteint, une demande d'augmentation peut être envoyée depuis la page de suivi des candidatures.</li>
+    </ul>
+  </div>
+  {% if credential_display %}
+  <section class="card card-body mb-3 border-success">
+    <h3 class="h5">Configuration enregistrée</h3>
+    <dl class="row small mb-3">
+      <dt class="col-sm-4">Fournisseur</dt>
+      <dd class="col-sm-8">{{ credential_display.provider_name }}</dd>
+      <dt class="col-sm-4">Modèle</dt>
+      <dd class="col-sm-8"><code>{{ credential_display.model }}</code></dd>
+      <dt class="col-sm-4">Clé API</dt>
+      <dd class="col-sm-8">
+        {% if credential_display.masked_key %}
+        <code>{{ credential_display.masked_key }}</code>
+        {% else %}
+        {{ credential_display.key_status }}
+        {% endif %}
+      </dd>
+      <dt class="col-sm-4">Dernière modification</dt>
+      <dd class="col-sm-8">{{ credential_display.updated_at.strftime('%d/%m/%Y à %H:%M') if credential_display.updated_at else 'inconnue' }}</dd>
+      <dt class="col-sm-4">Dernière utilisation</dt>
+      <dd class="col-sm-8">{{ credential_display.last_used_at.strftime('%d/%m/%Y à %H:%M') if credential_display.last_used_at else 'jamais' }}</dd>
+    </dl>
+    {% if credential_display.key_status == 'Clé enregistrée mais indéchiffrable' %}
+    <div class="alert alert-warning small">
+      La clé ne peut plus être déchiffrée, probablement parce que la clé maître du serveur a changé.
+      Enregistrez une nouvelle clé pour remplacer cette configuration.
+    </div>
+    {% endif %}
+    <form method="post" onsubmit="return confirm('Supprimer cette configuration IA et sa clé chiffrée ?');">
+      <button class="btn btn-outline-danger" type="submit" name="action" value="delete">Supprimer cette clé</button>
+    </form>
+  </section>
+  {% endif %}
   <form method="post" class="card card-body mb-3">
+    <h3 class="h5">{% if credential %}Remplacer la configuration{% else %}Ajouter une configuration{% endif %}</h3>
     <div class="mb-3">
       <label class="form-label" for="provider">Fournisseur autorisé</label>
       <select class="form-select" id="provider" name="provider" required>
@@ -31,11 +84,6 @@
     </div>
     <button class="btn btn-primary" type="submit" name="action" value="save">Enregistrer</button>
   </form>
-  {% if credential %}
-  <form method="post">
-    <button class="btn btn-outline-danger" type="submit" name="action" value="delete">Supprimer ma configuration IA</button>
-  </form>
-  {% endif %}
   <p class="mt-3">
     <a href="{{ url_for('ai_providers_help') }}">Consulter l'aide sur les fournisseurs</a>
     <span class="mx-1">·</span>

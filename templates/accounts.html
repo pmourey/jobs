@@ -3,10 +3,40 @@
 {% extends 'base.html' %}
 {% block main %}
 <script>
-    function confirmDelete(userId) {
-        var result = confirm("Êtes-vous sûr de vouloir supprimer cet utilisateur ?");
+    function submitAccountAction(url, fields) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        Object.entries(fields).forEach(([name, value]) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    function confirmDelete(userId, mode) {
+        const archive = mode === 'archive';
+        var result = confirm(
+            archive
+                ? "Le compte sera sauvegardé dans une archive privée puis supprimé. Continuer ?"
+                : "Cette suppression définitive effacera les données et fichiers sans archive. Continuer ?"
+        );
         if (result) {
-            window.location.href = "delete_account/" + userId;
+            submitAccountAction("{{ url_for('delete_account', user_id=0) }}".replace('/0', '/' + userId), {mode: mode});
+        }
+    }
+
+    function suspendAccount(userId) {
+        const reason = prompt("Motif de suspension (obligatoire) :");
+        if (reason && reason.trim()) {
+            submitAccountAction("{{ url_for('account_suspension', user_id=0) }}".replace('/0', '/' + userId), {
+                action: 'suspend',
+                reason: reason.trim()
+            });
         }
     }
 </script>
@@ -44,11 +74,17 @@
                 <td>
                     {% if user.id != account.id %}
                     <a href="{{ url_for('update_account', id=account.id) }}" class="btn btn-sm btn-primary" title="Modifier #{{account.id}}">✏️</a>
+                    {% if account.suspended %}
+                    <button onclick="submitAccountAction('{{ url_for('account_suspension', user_id=account.id) }}', {action: 'reactivate'})" class="btn btn-sm btn-success" title="Réactiver">▶️</button>
+                    {% else %}
+                    <button onclick="suspendAccount({{ account.id }})" class="btn btn-sm btn-warning" title="Suspendre">⏸️</button>
+                    {% endif %}
                     {% endif %}
                 </td>
                 <td>
                     {% if user.id != account.id %}
-                    <button onclick="confirmDelete({{ account.id }})" class="btn btn-sm btn-danger" title="Supprimer #{{account.id}}">🗑️</button>
+                    <button onclick="confirmDelete({{ account.id }}, 'archive')" class="btn btn-sm btn-danger" title="Archiver puis supprimer #{{account.id}}">🗄️</button>
+                    <button onclick="confirmDelete({{ account.id }}, 'purge')" class="btn btn-sm btn-outline-danger" title="Suppression RGPD définitive #{{account.id}}">⚠️</button>
                     {% endif %}
                 </td>
                 {% endif %}
@@ -64,6 +100,10 @@
                         <span class="badge bg-warning">Editeur</span>
                     {% else %}
                         <span class="badge bg-secondary">Utilisateur</span>
+                    {% endif %}
+                    {% if account.suspended %}
+                        <span class="badge bg-dark">Suspendu</span>
+                        {% if account.suspension_reason %}<div class="small text-muted">{{ account.suspension_reason }}</div>{% endif %}
                     {% endif %}
                 </td>
             </tr>
@@ -91,7 +131,13 @@
                     {% if user.is_admin and user.id != account.id %}
                     <div>
                         <a href="{{ url_for('update_account', id=account.id) }}" class="btn btn-sm btn-primary me-1" title="Modifier">✏️</a>
-                        <button onclick="confirmDelete({{ account.id }})" class="btn btn-sm btn-danger" title="Supprimer">🗑️</button>
+                        {% if account.suspended %}
+                        <button onclick="submitAccountAction('{{ url_for('account_suspension', user_id=account.id) }}', {action: 'reactivate'})" class="btn btn-sm btn-success me-1" title="Réactiver">▶️</button>
+                        {% else %}
+                        <button onclick="suspendAccount({{ account.id }})" class="btn btn-sm btn-warning me-1" title="Suspendre">⏸️</button>
+                        {% endif %}
+                        <button onclick="confirmDelete({{ account.id }}, 'archive')" class="btn btn-sm btn-danger me-1" title="Archiver puis supprimer">🗄️</button>
+                        <button onclick="confirmDelete({{ account.id }}, 'purge')" class="btn btn-sm btn-outline-danger" title="Suppression RGPD définitive">⚠️</button>
                     </div>
                     {% endif %}
                 </div>
@@ -104,6 +150,9 @@
                 <div class="small text-muted">
                     📊 {{ account.connection_count }} connexion{{ 's' if account.connection_count > 1 else '' }}
                 </div>
+                {% if account.suspended %}
+                <div class="small text-danger">⏸️ Suspendu{% if account.suspension_reason %} : {{ account.suspension_reason }}{% endif %}</div>
+                {% endif %}
             </div>
         </div>
         {% endfor %}

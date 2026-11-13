@@ -35,8 +35,12 @@
   <h3 class="h5 mt-4">Demandes en attente</h3>
   {% for quota_request in quota_requests %}
   <div class="border rounded p-2 mb-2">
-    <div><strong>{{ quota_request.user_id }}</strong> demande
+    <div><strong>{{ quota_request.requester.username if quota_request.requester else 'Utilisateur supprimé' }}</strong> demande
       {% if quota_request.requested_quota is not none %}{{ quota_request.requested_quota }} appels/mois{% else %}une augmentation{% endif %}</div>
+    <div class="small text-muted">
+      {% if quota_request.requester %}{{ quota_request.requester.email }} · {% endif %}
+      Demandée le {{ quota_request.created_at|format_paris_time }}
+    </div>
     {% if quota_request.reason %}<div class="small text-muted">{{ quota_request.reason }}</div>{% endif %}
     <form method="post" class="row g-2 mt-1 align-items-end">
       <input type="hidden" name="action" value="review_quota">

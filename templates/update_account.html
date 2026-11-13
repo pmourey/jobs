@@ -12,13 +12,25 @@
                 </div>
                 <div class="card-body">
                     <form action="{{ url_for('update_account', id=user.id) }}" method="POST" enctype="multipart/form-data" onsubmit="return confirmSubmit();">
+                        {% if current_user_id != user.id and user.is_admin %}
                         <div class="mb-3">
                             <label for="role" class="form-label">Sélectionnez un nouveau rôle pour <strong>{{ user.username }}</strong>:</label>
                             <select id="role" name="role" class="form-select">
-                                <option value="Administrateur" {% if user.is_admin %} selected {% endif %}>🔴 Administrateur</option>
-                                <option value="Utilisateur" {% if user.is_user %} selected {% endif %}>🟠 Utilisateur</option>
+                                <option value="Administrateur" selected>🔴 Administrateur</option>
+                                <option value="Utilisateur">🟠 Utilisateur</option>
                             </select>
+                            <div class="form-text">Nommer cet utilisateur Administrateur transférera automatiquement ce rôle et rétrogradera l’administrateur actuel.</div>
                         </div>
+                        {% elif current_user_id != user.id and user.is_user %}
+                        <div class="mb-3">
+                            <label for="role" class="form-label">Sélectionnez un nouveau rôle pour <strong>{{ user.username }}</strong>:</label>
+                            <select id="role" name="role" class="form-select">
+                                <option value="Administrateur">🔴 Administrateur</option>
+                                <option value="Utilisateur" selected>🟠 Utilisateur</option>
+                            </select>
+                            <div class="form-text">Il ne peut y avoir qu’un seul Administrateur par instance.</div>
+                        </div>
+                        {% endif %}
                         {# allow_view_offers editable only by the account owner #}
                         {% if current_user_id == user.id %}
                         <div class="mb-3 form-check">

@@ -136,6 +136,33 @@ def delete_user_credential(user_id: int) -> None:
         db.session.commit()
 
 
+def credential_display(credential: UserAiCredential) -> dict:
+    """Construit un résumé sûr à afficher sans exposer la clé API."""
+    provider = AI_PROVIDERS.get(credential.provider_key)
+    if not credential.encrypted_api_key:
+        key_status = 'Aucune clé requise'
+        masked_key = None
+    else:
+        try:
+            api_key = _decrypt(credential)
+        except (InvalidToken, RuntimeError, UnicodeDecodeError):
+            key_status = 'Clé enregistrée mais indéchiffrable'
+            masked_key = None
+        else:
+            key_status = 'Clé enregistrée'
+            masked_key = f'••••••••{api_key[-4:]}' if api_key else None
+    return {
+        'provider_key': credential.provider_key,
+        'provider_name': provider['name'] if provider else credential.provider_key,
+        'model': credential.model or (provider['default_model'] if provider else ''),
+        'key_status': key_status,
+        'masked_key': masked_key,
+        'created_at': credential.created_at,
+        'updated_at': credential.updated_at,
+        'last_used_at': credential.last_used_at,
+    }
+
+
 def _decrypt(credential: UserAiCredential) -> str:
     if not credential.encrypted_api_key:
         return ''

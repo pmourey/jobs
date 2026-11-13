@@ -743,12 +743,26 @@
 {% if site_ai_usage %}
 <div class="container-fluid mb-3">
 	<div class="alert alert-info d-flex align-items-center justify-content-between mb-0">
-		<span>Utilisation de l’API IA du site ce mois-ci : <strong>{{ site_ai_usage[0] }}/{{ site_ai_usage[1] }}</strong></span>
+		<div>
+			<strong>Crédits IA disponibles</strong> :
+			<strong>{{ site_ai_remaining }}</strong>
+			appel{{ 's' if site_ai_remaining != 1 else '' }} restant{{ 's' if site_ai_remaining != 1 else '' }}
+			ce mois-ci ({{ site_ai_usage[0] }}/{{ site_ai_usage[1] }} utilisés).
+			<div class="small">
+				{% if site_ai_managed %}
+				Ce quota concerne l’API fournie par le site.
+				{% else %}
+				Une clé IA personnelle est active ; son quota fournisseur n’est pas suivi par l’application.
+				{% endif %}
+			</div>
+		</div>
+		{% if site_ai_managed %}
 		<form method="post" action="{{ url_for('ai_quota_request') }}" class="d-flex gap-2 align-items-center">
 			<input type="number" min="0" name="requested_quota" class="form-control form-control-sm" style="width: 110px;" placeholder="Nouveau quota">
 			<input type="text" name="reason" class="form-control form-control-sm" placeholder="Motif (facultatif)">
 			<button class="btn btn-sm btn-outline-primary text-nowrap" type="submit">Demander une augmentation</button>
 		</form>
+		{% endif %}
 	</div>
 </div>
 {% endif %}

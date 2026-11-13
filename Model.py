@@ -35,6 +35,10 @@ class User(db.Model):
     recovery_token = db.Column(db.String(128))
     token_expiration = db.Column(db.DateTime)
     validated = db.Column(db.Boolean, default=False)
+    suspended = db.Column(db.Boolean, nullable=False, default=False, server_default='0')
+    suspension_reason = db.Column(db.Text, nullable=True)
+    suspended_at = db.Column(db.DateTime, nullable=True)
+    suspended_by = db.Column(db.Integer, nullable=True)
 
     def __repr__(self):
         # Use safe enum conversion to avoid ValueError for legacy/unknown values stored in DB
@@ -292,6 +296,9 @@ class AiQuotaRequest(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     reviewed_at = db.Column(db.DateTime, nullable=True)
     reviewed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    requester = relationship('User', foreign_keys=[user_id])
+    reviewer = relationship('User', foreign_keys=[reviewed_by])
 
 
 class FtSearch(db.Model):

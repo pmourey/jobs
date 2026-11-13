@@ -80,3 +80,28 @@ La perte de cette clé rend les clés enregistrées indéchiffrables. Elle doit
 donc être sauvegardée dans le gestionnaire de secrets de l'hébergeur, jamais
 dans `config.py` ou Git. L'administrateur gère la liste blanche depuis
 **Fournisseurs IA** ; Ollama reste désactivé par défaut pour PythonAnywhere.
+
+### Utilisation de l'API administrateur et crédits du site
+
+Si l'utilisateur n'enregistre pas de fournisseur personnel, l'application peut
+utiliser la configuration IA du site (`GITHUB_TOKEN`,
+`GITHUB_MODELS_BASE_URL` et `GITHUB_MODELS_MODEL`). Les appels réalisés avec
+cette configuration sont comptés comme des crédits IA du site : un crédit
+correspond à un appel IA, et non à une somme d'argent ou à un crédit affiché
+par le fournisseur externe.
+
+L'administrateur définit un quota mensuel global par utilisateur dans
+**Fournisseurs IA** et peut accorder un quota individuel après réception d'une
+demande. Un utilisateur utilisant sa propre clé reste soumis aux quotas et à
+la facturation de son fournisseur, mais n'est pas décompté du quota de l'API du
+site. Lorsque le quota du site est atteint, l'application répond avec une
+erreur HTTP 429 et l'utilisateur peut demander une augmentation depuis la
+page de suivi.
+Chaque instance possède un seul profil Administrateur : la promotion d'un
+autre compte transfère automatiquement ce rôle et les demandes de quota sont
+notifiées à cet administrateur.
+
+Une clé personnelle chiffrée avec une ancienne clé maître ne doit pas rendre
+la page inaccessible : l'application journalise le problème et tente la
+configuration IA du site. La clé maître doit néanmoins être restaurée ou la
+clé personnelle saisie à nouveau pour rétablir son usage.

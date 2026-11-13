@@ -1,148 +1,105 @@
 # Suivi de candidatures
 
-Application web Flask pour organiser une recherche d'emploi, suivre ses candidatures et préparer des documents personnalisés. Une page publique présente le service avant connexion ; les fonctionnalités de gestion sont accessibles après création et validation d'un compte. Le projet évolue vers un modèle communautaire gratuit, documenté dans [docs/COMMUNITY_PROJECT.md](docs/COMMUNITY_PROJECT.md).
+Application monolithique Flask pour organiser une recherche d'emploi, suivre
+les candidatures et générer des CV/lettres personnalisés. Les fonctions
+principales sont protégées par authentification ; les données de candidature
+sont privées par défaut.
 
-## Pour les utilisateurs
+## Architecture essentielle
 
-### Ce que le service permet
+- `flask_app.py` : routes Flask et orchestration de l'application.
+- `Model.py` : modèles SQLAlchemy (`User`, `Job`, `Session`, recherches,
+  configuration IA, quotas).
+- `Controller.py` : authentification, uploads et e-mails.
+- `tools/` : CV/LM, PDF, France Travail, fournisseurs IA et quotas.
+- `templates/` : interface Jinja2.
+- `static/uploads/users/<user_id>/` : données et documents propres à un
+  utilisateur.
+- `instance/backups/deleted_users/` : archives privées des comptes supprimés.
 
-- **Centraliser ses candidatures** : entreprise, poste, contact, dates, statut, relances et notes.
-- **Retrouver ses documents** : CV source, CV générés, lettres de motivation et captures PDF.
-- **Préparer chaque candidature** : génération d'une lettre PDF et personnalisation du CV à partir du profil et de l'offre.
-- **Utiliser une assistance IA** : suggestions de contenu, aperçu et génération de CV/lettre ; les résultats doivent toujours être relus avant envoi.
-- **Rechercher des offres** : France Travail et, selon la configuration, des job boards compatibles.
-- **Garder le contrôle** : les candidatures sont privées par défaut ; le partage avec d'autres utilisateurs est une option explicite.
-- **Gérer son compte** : validation e-mail, changement/récupération du mot de passe, coordonnées, CV et photo.
+Le CV de référence est
+`static/uploads/users/<user_id>/cvs/cv.json`. Les imports PDF sont réalisés en
+deux étapes : extraction, puis chargement explicite dans ce CV canonique.
 
-### Workflow CV
-
-Chaque utilisateur dispose d'un seul CV canonique dans `static/uploads/users/<id>/cvs/cv.json`.
-Ce fichier suit une structure JSON Resume fixe et est utilisé par les fonctionnalités CV et lettres
-de motivation. Un import JSON le remplace après normalisation ; un import PDF conserve le PDF source
-et son extraction, puis l'utilisateur peut charger explicitement les données extraites dans le CV canonique.
-Les anciens fichiers JSON sont migrés
-automatiquement vers `cv.json` et conservés comme sources, sans fusion manuelle obligatoire.
-
-La page d'accueil publique est disponible sur `/`. Les informations de confidentialité et les conditions d'utilisation sont accessibles sur `/legal`.
-
-## Démonstration
-
-[https://pmourey.pythonanywhere.com/](https://pmourey.pythonanywhere.com/)
-
-## Démarrage local
-
-### Prérequis
-
-- Python 3.10 ou plus récent ;
-- pip ;
-- un compte Gmail et un mot de passe d'application si les e-mails sont activés ;
-- des identifiants France Travail pour la recherche d'offres en mode réel ;
-- un fournisseur IA local ou distant si l'assistance IA est activée.
-
-### Installation
+## Installation locale
 
 ```bash
-git clone <repository-url>
-cd jobs
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 cp config_template.py config.py
+python3 flask_app.py
 ```
 
-La génération PDF fonctionne avec ReportLab, inclus dans les dépendances
-Python. LibreOffice est facultatif : installez-le et rendez le binaire
-`soffice` disponible dans le `PATH` uniquement si vous souhaitez convertir des
-templates DOCX/DOTX avec la mise en page LibreOffice. Il n'est pas nécessaire
-pour l'installation ou le fonctionnement standard sur PythonAnywhere.
+Configurer au minimum dans `config.py` ou l'environnement :
 
-Renseignez ensuite `SECRET_KEY`, `SQLALCHEMY_DATABASE_URI`, les paramètres SMTP et, si nécessaire, les identifiants France Travail et IA. Ne commitez jamais `config.py`, les mots de passe, les tokens ou les données utilisateurs.
+- `SECRET_KEY` et `SQLALCHEMY_DATABASE_URI` ;
+- SMTP (`GMAIL_*`, `SMTP_SERVER`, `SMTP_PORT`) si les e-mails sont utilisés ;
+- `FT_CLIENT_ID` et `FT_CLIENT_SECRET` pour France Travail en mode réel ;
+- la configuration IA du site (`GITHUB_TOKEN`,
+  `GITHUB_MODELS_BASE_URL`, `GITHUB_MODELS_MODEL`) si nécessaire ;
+- `AI_CREDENTIALS_MASTER_KEY` pour chiffrer les clés IA personnelles.
 
-Pour permettre aux utilisateurs d'enregistrer une clé IA personnelle, définissez
-également `AI_CREDENTIALS_MASTER_KEY` dans l'environnement avec une clé générée
-par `Fernet.generate_key()`. Cette clé ne doit jamais être committée. Les
-fournisseurs autorisés se gèrent dans l'interface administrateur ; Ollama est
-désactivé par défaut.
+`config.py`, les tokens, mots de passe et données utilisateurs ne doivent
+jamais être ajoutés au dépôt ou aux journaux.
 
-Pour France Travail, configurez `FT_CLIENT_ID` et `FT_CLIENT_SECRET` dans
-l'environnement du processus Flask (variables du fichier WSGI sur
-PythonAnywhere). Le diagnostic réseau peut être lancé sans afficher les
-secrets :
+Les tables sont créées automatiquement. Les colonnes ajoutées au modèle
+utilisateur sont complétées par une migration légère au démarrage/requête ;
+aucune migration externe n'est actuellement requise.
 
-```bash
-python scripts/check_ft_proxy.py
-```
+## Fonctionnalités administrateur
 
-Par défaut, l'application laisse `requests` utiliser le proxy de
-l'environnement. Si le réseau local impose une connexion directe vers France
-Travail, activez explicitement `FT_BYPASS_PROXY=true`. Ne l'activez pas sur
-PythonAnywhere sans vérifier que les connexions directes sont autorisées.
+- Une seule instance possède un seul profil Administrateur. Promouvoir un
+  utilisateur transfère automatiquement le rôle et rétrograde les autres
+  administrateurs.
+- **IA et quotas** permet de configurer les fournisseurs, le quota mensuel et
+  de traiter les demandes d'augmentation.
+- Chaque utilisateur voit son quota IA de l'instance, ses appels utilisés et
+  ses appels restants dans `/suivi`. Une clé personnelle utilise les quotas de
+  son fournisseur et n'est pas comptabilisée dans le quota du site.
+- Depuis **Comptes**, un administrateur peut suspendre/réactiver un compte
+  avec un motif.
+- La suppression peut archiver les données dans
+  `instance/backups/deleted_users/` ou effectuer une purge définitive. Les
+  reliquats de fichiers sont nettoyés même si le compte n'existe déjà plus en
+  base.
 
-Un compte PythonAnywhere gratuit peut bloquer les connexions sortantes vers les
-domaines France Travail. Dans ce cas, il faut vérifier l'autorisation réseau
-de l'offre d'hébergement ou utiliser une instance disposant d'un accès
-sortant autorisé ; le code applicatif ne peut pas contourner cette restriction.
+## Quotas IA
 
-Les recherches d'offres peuvent aussi utiliser Adzuna ou Jooble lorsqu'une clé
-API est configurée (`ADZUNA_APP_ID`/`ADZUNA_APP_KEY` ou `JOOBLE_API_KEY`).
-L'administrateur active les fournisseurs utilisables depuis
-**Fournisseurs d'offres**. Une recherche est bloquée si aucun fournisseur
-activé ne possède des identifiants complets. Ces intégrations utilisent les
-APIs officielles ; LinkedIn et Indeed ne proposent pas une API publique
-générale équivalente pour une recherche d'offres indépendante.
+Les appels effectués avec la configuration IA du site sont comptés dans
+`AiUsage`, par utilisateur et par mois UTC. Le quota global est stocké dans
+`AppSetting` sous `ai_site_monthly_quota`; un quota individuel peut être stocké
+sous `ai_site_monthly_quota_user_<user_id>`. Le quota par défaut est de
+20 appels mensuels par utilisateur.
 
-```bash
-python flask_app.py
-```
+À quota atteint, les routes IA retournent une erreur HTTP 429. Une demande
+peut être envoyée depuis `/suivi` et est visible dans **Admin → IA et quotas**.
 
-Puis ouvrez l'URL affichée par Flask. Les tables SQLite sont créées automatiquement au démarrage des requêtes selon la configuration actuelle du projet.
+## Routes utiles
 
-## Configuration et documentation technique
-
-Les détails opérationnels sont volontairement séparés de cette présentation :
-
-- [Configuration IA locale avec Ollama](docs/OLLAMA.md)
-- [Architecture technique et flux de données](docs/ARCHITECTURE.md)
-- [Trajectoire du projet communautaire gratuit](docs/COMMUNITY_PROJECT.md)
-- [Fournisseurs IA utilisables par API](docs/AI_API_PROVIDERS.md)
-- [Configuration de référence](config_template.py)
-
-Le fonctionnement d'Ollama est optionnel. Sans service IA disponible, les parcours CV/LM disposent de replis locaux lorsque la fonctionnalité le permet.
-
-## Principales routes authentifiées
-
-- `/suivi` : candidatures de l'utilisateur ;
-- `/new/` et `/update/<id>` : création et modification ;
-- `/generate_cover_letter_pdf/<id>` : lettre de motivation PDF ;
-- `/preview_cv_data/<id>`, `/save_cv_pdf/<id>`, `/generate_cv_pdf/<id>` : CV personnalisé ;
-- `/preview_lm_ai/<id>` et `/save_lm_text/<id>` : assistance IA pour la lettre ;
-- `/france_travail` : recherches et résultats d'offres ;
-- `/update_account/<id>` : coordonnées, CV source et préférences du compte.
-
-## Données personnelles, sécurité et usage commercial
-
-Le service peut traiter des coordonnées, CV, candidatures, documents, données de session et recherches d'offres. Les mesures prévues dans l'application comprennent notamment l'authentification, les mots de passe hachés, les contrôles d'accès par rôle, la séparation des répertoires utilisateurs, la validation des uploads et le partage des offres désactivé par défaut.
-
-Même dans le cadre communautaire gratuit, l'exploitant de l'instance reste responsable de la protection des données. Avant d'accepter des contributions régulières ou de proposer une contrepartie, il doit faire vérifier le cadre fiscal et juridique applicable. Les mentions accessibles sur [`/legal`](templates/legal.html) restent une base à compléter, notamment pour l'identité du responsable de traitement, les bases légales, les durées de conservation, les sous-traitants, les transferts hors UE, les procédures d'exercice des droits et les coordonnées RGPD.
+- `/` : accueil ;
+- `/suivi` : candidatures, documents et compteur IA ;
+- `/update_account/<id>` : profil, coordonnées et CV ;
+- `/france_travail` : recherche d'offres ;
+- `/admin/ai-providers` : fournisseurs IA, quotas et demandes ;
+- `/accounts` : gestion administrateur des comptes ;
+- `/legal` : informations publiques sur les données et la conservation.
 
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest -q
+python3 -m pytest -q
 ```
 
-Les tests ciblés utiles comprennent `test/test_user_contact_info.py`, `test/test_generate_cover_letter_pdf.py`, `test/test_new_route.py` et `test/test_delete_sessions.py`.
+Tests ciblés utiles :
 
-## Structure du projet
+```bash
+python3 -m pytest -q test/test_admin_roles.py
+python3 -m pytest -q test/test_user_contact_info.py
+```
 
-- `flask_app.py` : routes et orchestration ;
-- `Model.py` : modèles SQLAlchemy ;
-- `Controller.py` : authentification, uploads et e-mails ;
-- `tools/cv_tools.py` : CV, coordonnées et assistance IA ;
-- `tools/document_tools.py` : lettres et PDF ;
-- `tools/france_travail.py` : API France Travail ;
-- `templates/` : interface Jinja2 ;
-- `static/` : ressources, modèles et fichiers générés.
+## Documentation complémentaire
 
-## Copyright
-
-Copyright © 2024-2026 Philippe Mourey. Le code est publié selon la licence présente dans le dépôt lorsqu'elle est définie. Les contenus, modèles de documents, marques et données utilisateurs peuvent être soumis à des droits distincts.
+- [Fournisseurs IA et crédits](docs/AI_API_PROVIDERS.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Configuration Ollama](docs/OLLAMA.md)
+- [Projet communautaire](docs/COMMUNITY_PROJECT.md)
+- [Relais technique](docs/ANTIGRAVITY_HANDOFF.md)

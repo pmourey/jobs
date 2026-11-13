@@ -10,6 +10,7 @@ import atexit
 import locale
 import logging
 import os
+import shutil
 
 from flask import (Flask, flash, redirect, render_template, request, session,
                    url_for)
@@ -47,7 +48,7 @@ from flask_login import (LoginManager, current_user, login_required,
 from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import Serializer, URLSafeSerializer
 from pytz import timezone
-from sqlalchemy import DateTime, case, desc, func
+from sqlalchemy import DateTime, case, desc, func, inspect as sqlalchemy_inspect, text
 from user_agents import parse
 from user_agents.parsers import UserAgent
 from validators import url
@@ -58,8 +59,8 @@ from Controller import (check, check_password_and_upgrade,
                         get_session_by_login, get_user_by_id,
                         handle_file_upload, send_confirmation_email,
                         send_password_recovery_email)
-from Model import (AiQuotaRequest, AppSetting, FtSearch, Job, Session, User,
-                   UserAiCredential, db)
+from Model import (AiQuotaRequest, AiUsage, AppSetting, FtSearch, Job, Role,
+                   Session, User, UserAiCredential, db)
 from tools.cv_tools import (build_cv_pdf_filename,
                             generate_tailored_cv_pdf_bytes,
                             get_ai_cover_letter_text, get_ai_cv_suggestions,
@@ -81,9 +82,10 @@ from tools.france_travail import (ATS_KEYWORDS_PROFILE, CONTRACT_TYPES,
                                   evaluate_offer_with_gemini,
                                   format_connection_error)
 from tools.send_emails import send_email
-from tools.ai_credentials import (AI_PROVIDERS, delete_user_credential,
-                                  enabled_provider_keys, provider_options,
-                                  resolve_user_ai_config, save_user_credential)
+from tools.ai_credentials import (AI_PROVIDERS, credential_display,
+                                  delete_user_credential, enabled_provider_keys,
+                                  provider_options, resolve_user_ai_config,
+                                  save_user_credential)
 from tools.ai_quota import consume_site_quota, get_site_monthly_quota, monthly_usage
 from tools.jobboard_providers import (JOB_OFFER_PROVIDERS,
                                       available_job_offer_provider_keys,
@@ -96,6 +98,28 @@ app = Flask(__name__, static_folder='static', static_url_path='/static')
 # Replace 'development' with the appropriate value for your environment
 app.config.from_object('config.Config')
 # app.config.from_pyfile(config_filename)
+
+
+def _ensure_user_status_columns() -> None:
+    existing_columns = {
+        column['name']
+        for column in sqlalchemy_inspect(db.engine).get_columns('user')
+    }
+    new_columns = {
+        'suspended': "BOOLEAN NOT NULL DEFAULT 0",
+        'suspension_reason': 'TEXT',
+        'suspended_at': 'DATETIME',
+        'suspended_by': 'INTEGER',
+    }
+    changed = False
+    for column_name, definition in new_columns.items():
+        if column_name not in existing_columns:
+            db.session.execute(
+                text(f'ALTER TABLE "user" ADD COLUMN {column_name} {definition}')
+            )
+            changed = True
+    if changed:
+        db.session.commit()
 
 
 @app.route('/google075dc122689af97b.html')
@@ -143,6 +167,7 @@ Sitemap: https://ftaccount.eu.pythonanywhere.com/sitemap.xml
 db.init_app(app)
 with app.app_context():
     db.create_all()
+    _ensure_user_status_columns()
 
 toolbar = DebugToolbarExtension(app)
 
@@ -157,6 +182,7 @@ login_manager.login_view = 'login'
 def ensure_database_schema():
     """Crée les nouvelles tables sans migration externe pour les installations SQLite."""
     db.create_all()
+    _ensure_user_status_columns()
 
 
 # Set the secret key to some random bytes. Keep this really secret!
@@ -258,6 +284,13 @@ def is_admin(func):
                 from flask import jsonify
                 return jsonify({ 'error': error }), 403
             return render_template('login.html', error=error)
+        connected_user = get_user_by_id(session['login_id'])
+        if connected_user and connected_user.suspended:
+            session.clear()
+            return render_template(
+                'login.html',
+                error='Votre compte est suspendu. Contactez un administrateur.',
+            )
         return func(*args, **kwargs)
     return wrapper
 
@@ -272,6 +305,133 @@ def is_editor_or_admin(func):
             return render_template('login.html', error=error)
         return func(*args, **kwargs)
     return wrapper
+
+
+def transfer_admin_role(target_user: User) -> None:
+    """Make one user the sole administrator of this application instance."""
+    for administrator in User.query.filter_by(role=Role.ADMIN.value).all():
+        if administrator.id != target_user.id:
+            administrator.role = Role.USER.value
+    target_user.role = Role.ADMIN.value
+
+
+def _account_backup_dir(user_id: int, username: str | None = None) -> Path:
+    safe_username = secure_filename(username or 'user') or 'user'
+    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+    backup_dir = (
+        Path(app.instance_path)
+        / 'backups'
+        / 'deleted_users'
+        / f'{timestamp}_{user_id}_{safe_username}'
+    )
+    backup_dir.mkdir(parents=True, exist_ok=False)
+    return backup_dir
+
+
+def _model_row(instance) -> dict:
+    return {
+        attribute.key: getattr(instance, attribute.key)
+        for attribute in sqlalchemy_inspect(instance).mapper.column_attrs
+    }
+
+
+def _archive_user_data(
+    user_id: int,
+    user: User | None,
+    jobs: list[Job],
+    sessions: list[Session],
+    searches: list[FtSearch],
+    credentials: list[UserAiCredential],
+    usages: list,
+    quota_requests: list[AiQuotaRequest],
+) -> Path:
+    backup_dir = _account_backup_dir(user_id, user.username if user else None)
+    manifest = {
+        'archived_at': datetime.utcnow().isoformat(),
+        'user': _model_row(user) if user else None,
+        'jobs': [_model_row(job) for job in jobs],
+        'sessions': [_model_row(item) for item in sessions],
+        'ft_searches': [_model_row(item) for item in searches],
+        'ai_credentials': [_model_row(item) for item in credentials],
+        'ai_usage': [_model_row(item) for item in usages],
+        'ai_quota_requests': [_model_row(item) for item in quota_requests],
+    }
+    (backup_dir / 'manifest.json').write_text(
+        _json.dumps(manifest, ensure_ascii=False, default=str, indent=2),
+        encoding='utf-8',
+    )
+
+    user_upload_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id)
+    if user_upload_dir.exists():
+        shutil.copytree(user_upload_dir, backup_dir / 'uploads')
+    for job in jobs:
+        capture = Path(app.static_folder) / 'images' / f'capture_{job.id}.pdf'
+        if capture.exists():
+            images_dir = backup_dir / 'images'
+            images_dir.mkdir(exist_ok=True)
+            shutil.copy2(capture, images_dir / capture.name)
+    return backup_dir
+
+
+def _delete_user_account(user_id: int, archive: bool) -> tuple[bool, Path | None]:
+    """Delete an account and all owned data, tolerating legacy leftovers."""
+    user = User.query.get(user_id)
+    jobs = Job.query.filter_by(user_id=user_id).all()
+    sessions = Session.query.filter_by(login_id=user_id).all()
+    searches = FtSearch.query.filter_by(user_id=user_id).all()
+    credentials = UserAiCredential.query.filter_by(user_id=user_id).all()
+    usages = AiUsage.query.filter_by(user_id=user_id).all()
+    quota_requests = AiQuotaRequest.query.filter_by(user_id=user_id).all()
+    backup_dir = None
+    if archive:
+        backup_dir = _archive_user_data(
+            user_id,
+            user,
+            jobs,
+            sessions,
+            searches,
+            credentials,
+            usages,
+            quota_requests,
+        )
+
+    job_ids = [job.id for job in jobs]
+    for job in jobs:
+        db.session.delete(job)
+    for item in sessions + searches + credentials + usages + quota_requests:
+        db.session.delete(item)
+    AiQuotaRequest.query.filter_by(reviewed_by=user_id).update(
+        {'reviewed_by': None},
+        synchronize_session=False,
+    )
+    AppSetting.query.filter(
+        AppSetting.key.like(f'ai_site_monthly_quota_user_{user_id}')
+    ).delete(synchronize_session=False)
+    if user:
+        db.session.delete(user)
+    db.session.commit()
+
+    user_upload_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id)
+    if user_upload_dir.exists():
+        shutil.rmtree(user_upload_dir)
+    for job_id in job_ids:
+        capture = Path(app.static_folder) / 'images' / f'capture_{job_id}.pdf'
+        if capture.exists():
+            capture.unlink()
+    return user is not None, backup_dir
+
+
+def _set_account_suspension(user: User, suspended: bool, reason: str, admin_id: int) -> None:
+    user.suspended = suspended
+    if suspended:
+        user.suspension_reason = reason
+        user.suspended_at = datetime.utcnow()
+        user.suspended_by = admin_id
+    else:
+        user.suspension_reason = None
+        user.suspended_at = None
+        user.suspended_by = None
+
 
 def get_client_ip():
     # Check headers in order of reliability
@@ -758,12 +918,12 @@ def login():
     # Logique de connexion ici
     error = None
     if request.method == 'POST':
-        user = User.query.filter_by(username=request.form['username']).first()
-        app.logger.debug(f'user = {user} - password: {user.password} - clear pwd = {request.form["password"]}')
-        if user and check_password_and_upgrade(user, password=request.form['password']):
-            if user.validated:
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_and_upgrade(user, password):
+            if user.validated and not user.suspended:
                 session['login_id'] = user.id
-                app.logger.debug(f'user (login) = {user.username} - id = {user.id} - session: {session}')
                 # client_ip = request.remote_addr
                 client_ip = get_client_ip()
                 user_agent_string = request.headers.get('User-Agent')
@@ -775,7 +935,11 @@ def login():
                 db.session.commit()
                 return redirect(url_for('welcome'))
             else:
-                error = 'Your account is not yet validated! Please check your email for the confirmation link.'
+                error = (
+                    'Votre compte est suspendu. Contactez un administrateur.'
+                    if user and user.suspended
+                    else 'Your account is not yet validated! Please check your email for the confirmation link.'
+                )
                 return render_template('login.html', error=error)
         else:
             error = 'Incorrect login credentials. Please try again.'
@@ -791,8 +955,6 @@ def change_password():
         user = get_user_by_id(session['login_id'])
         new_password: str = request.form["new_password"]
         confirm_new_password: str = request.form["confirm_new_password"]
-        app.logger.debug(
-            f'user (change pwd) = {user.username} - new pwd = {new_password} - confirm new_pwd = {confirm_new_password}')
         if new_password == confirm_new_password:
             # user.password = generate_password_hash(new_password, method='sha256')
             user.password = generate_password_hash(new_password)
@@ -949,6 +1111,64 @@ def show_accounts():
     return render_template('accounts.html', accounts=accounts, user=user)
 
 
+@app.route('/account/<int:user_id>/suspension', methods=['POST'])
+@is_connected
+@is_admin
+def account_suspension(user_id):
+    current_user = get_user_by_id(session['login_id'])
+    user = User.query.get(user_id)
+    if user is None:
+        flash('Le compte demandé n’existe plus en base ; aucun changement effectué.', 'warning')
+        return redirect(url_for('show_accounts'))
+    if user.id == current_user.id:
+        flash('Vous ne pouvez pas suspendre votre propre compte.', 'error')
+        return redirect(url_for('show_accounts'))
+
+    action = request.form.get('action', 'suspend')
+    if action == 'reactivate':
+        _set_account_suspension(user, False, '', current_user.id)
+        db.session.commit()
+        flash(f'Le compte {user.username} a été réactivé.', 'success')
+    elif action == 'suspend':
+        reason = request.form.get('reason', '').strip()
+        if not reason:
+            flash('Un motif est obligatoire pour suspendre un compte.', 'error')
+        else:
+            _set_account_suspension(user, True, reason, current_user.id)
+            db.session.commit()
+            flash(f'Le compte {user.username} a été suspendu.', 'success')
+    else:
+        flash('Action de compte invalide.', 'error')
+    return redirect(url_for('show_accounts'))
+
+
+@app.route('/delete_account/<int:user_id>', methods=['GET', 'POST'])
+@is_connected
+@is_admin
+def delete_account(user_id):
+    current_user = get_user_by_id(session['login_id'])
+    if user_id == current_user.id:
+        flash('Vous ne pouvez pas supprimer votre propre compte administrateur.', 'error')
+        return redirect(url_for('show_accounts'))
+
+    mode = request.values.get('mode', 'archive')
+    archive = mode != 'purge'
+    existed, backup_dir = _delete_user_account(user_id, archive=archive)
+    if not existed:
+        flash(
+            'Le compte n’existe plus en base ; les reliquats associés ont été nettoyés.',
+            'warning',
+        )
+    elif backup_dir:
+        flash(
+            f'Compte supprimé et sauvegardé dans {backup_dir.relative_to(app.instance_path)}.',
+            'success',
+        )
+    else:
+        flash('Compte et données supprimés définitivement.', 'success')
+    return redirect(url_for('show_accounts'))
+
+
 @app.route('/ai-providers')
 @is_connected
 def ai_providers_help():
@@ -1024,16 +1244,73 @@ def ai_quota_request():
         flash('Le quota demandé doit être un entier positif.', 'error')
         return redirect(url_for('show_all'))
     pending = AiQuotaRequest.query.filter_by(user_id=user_id, status='pending').first()
+    quota_request = pending or AiQuotaRequest(
+        user_id=user_id,
+        requested_quota=requested_value,
+        reason=reason,
+    )
     if pending:
-        flash('Une demande de quota est déjà en attente.', 'info')
+        if requested_value is not None:
+            quota_request.requested_quota = requested_value
+        if reason:
+            quota_request.reason = reason
+        flash_message = 'Votre demande en attente sera renotifiée à l’administrateur.'
     else:
-        db.session.add(AiQuotaRequest(
-            user_id=user_id,
-            requested_quota=requested_value,
-            reason=reason,
-        ))
-        db.session.commit()
-        flash('Votre demande d’augmentation de quota a été envoyée à l’administrateur.', 'success')
+        db.session.add(quota_request)
+        flash_message = 'Votre demande de quota a été enregistrée et sera notifiée à l’administrateur.'
+    db.session.commit()
+
+    requester = get_user_by_id(user_id)
+    administrator = (
+        User.query.filter_by(role=Role.ADMIN.value)
+        .order_by(User.id)
+        .first()
+    )
+    admin_emails = (
+        {administrator.email.strip()}
+        if administrator and administrator.email and administrator.email.strip()
+        else set()
+    )
+    sender_email = app.config.get('GMAIL_USER', '').strip()
+    if not admin_emails and sender_email:
+        admin_emails.add(sender_email)
+    sent_count = 0
+    if sender_email and app.config.get('GMAIL_APP_PWD'):
+        body = (
+            f"Bonjour,\n\n"
+            f"{requester.username if requester else user_id} demande une augmentation "
+            f"du quota IA du site.\n\n"
+            f"Quota demandé : {quota_request.requested_quota if quota_request.requested_quota is not None else 'non précisé'} appels/mois\n"
+            f"Motif : {quota_request.reason or 'non précisé'}\n\n"
+            f"Traiter cette demande depuis le panneau d'administration IA."
+        )
+        for admin_email in sorted(admin_emails):
+            if send_email(
+                subject='Demande d’augmentation du quota IA',
+                body=body,
+                sender_email=sender_email,
+                recipient_email=admin_email,
+                bcc_recipients=[],
+                smtp_server=app.config.get('SMTP_SERVER', 'smtp.gmail.com'),
+                smtp_port=int(app.config.get('SMTP_PORT', 465)),
+                username=sender_email,
+                password=app.config.get('GMAIL_APP_PWD', ''),
+                author=app.config.get('GMAIL_FULLNAME', sender_email),
+            ):
+                sent_count += 1
+    if sent_count:
+        flash(flash_message.replace('sera renotifiée', 'a été renotifiée').replace('sera notifiée', 'a été notifiée'), 'success')
+    else:
+        app.logger.error(
+            'La demande de quota %s a été enregistrée, mais aucun e-mail administrateur n’a été envoyé.',
+            quota_request.id,
+        )
+        flash(
+            'La demande est enregistrée, mais la notification e-mail n’a pas pu être envoyée. '
+            'Vous pouvez la renvoyer en soumettant à nouveau le formulaire ; l’administrateur peut aussi '
+            'la consulter dans son panneau IA.',
+            'warning',
+        )
     return redirect(url_for('show_all'))
 
 
@@ -1088,6 +1365,7 @@ def account_ai_settings(user_id):
         'ai_settings.html',
         user=user,
         credential=credential,
+        credential_display=credential_display(credential) if credential else None,
         providers=provider_options(),
     )
 
@@ -1114,9 +1392,9 @@ def update_account(id):
         if current_user.is_admin and not is_owner:
             role = request.form.get('role')
             if role == 'Administrateur':
-                user.role = 0
+                transfer_admin_role(user)
             elif role == 'Utilisateur':
-                user.role = 1
+                user.role = Role.USER.value
 
         if (is_owner or current_user.is_admin) and any(f in request.form for f in ('name', 'phone', 'street', 'postal_code', 'city', 'email')):
             contact_data = {
@@ -1824,7 +2102,9 @@ def show_all():
     users_list = User.query.filter((User.id == user_id) | (User.allow_view_offers == True)).order_by(User.username).all()
     is_profile_complete, missing_contact_fields, _ = validate_user_contact_info(user_id, app.static_folder)
     effective_ai = resolve_user_ai_config(user_id)
-    site_ai_usage = monthly_usage(user_id) if effective_ai and effective_ai.get('site_managed') else None
+    site_ai_usage = monthly_usage(user_id)
+    site_ai_remaining = max(site_ai_usage[1] - site_ai_usage[0], 0)
+    site_ai_managed = bool(effective_ai and effective_ai.get('site_managed'))
     default_cv_available = {
         job.id: _has_user_default_cv(job.user_id)
         for job in jobs
@@ -1836,7 +2116,9 @@ def show_all():
                            is_profile_complete=is_profile_complete,
                            missing_contact_fields=missing_contact_fields,
                            default_cv_available=default_cv_available,
-                           site_ai_usage=site_ai_usage)
+                           site_ai_usage=site_ai_usage,
+                           site_ai_remaining=site_ai_remaining,
+                           site_ai_managed=site_ai_managed)
 
 
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
