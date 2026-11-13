@@ -30,7 +30,7 @@ class Config:
     # Fernet key generated with:
     # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     # Never commit the value; set AI_CREDENTIALS_MASTER_KEY in the environment.
-    AI_CREDENTIALS_MASTER_KEY = 'JPx1wh6t1THsxiVp_42cA1A3BdWbAzIq3fr-3RhR2ag='
+    AI_CREDENTIALS_MASTER_KEY = ''
     AI_ENABLED_PROVIDERS = 'gemini,openai,mistral,openrouter,groq'
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24

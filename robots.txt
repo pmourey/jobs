@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /suivi
+Disallow: /login
+Disallow: /register
+Disallow: /update
+Disallow: /delete
+Disallow: /static/uploads/
+
+Sitemap: https://ftaccount.eu.pythonanywhere.com/sitemap.xml

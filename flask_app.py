@@ -39,7 +39,7 @@ from _socket import gethostbyname
 from apscheduler.schedulers.background import BackgroundScheduler
 from dateutil.relativedelta import relativedelta
 from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
-                   send_file, session, url_for)
+                   send_file, send_from_directory, session, url_for)
 from flask_debugtoolbar import DebugToolbarExtension
 from flask_login import (LoginManager, current_user, login_required,
                          login_user, logout_user)
@@ -80,11 +80,22 @@ from tools.ai_credentials import (AI_PROVIDERS, delete_user_credential,
                                   enabled_provider_keys, provider_options,
                                   resolve_user_ai_config, save_user_credential)
 
+
 app = Flask(__name__, static_folder='static', static_url_path='/static')
 # Set the environment (development, production, etc.)
 # Replace 'development' with the appropriate value for your environment
 app.config.from_object('config.Config')
 # app.config.from_pyfile(config_filename)
+
+
+@app.route('/google075dc122689af97b.html')
+def google_site_verification():
+    """Sert le fichier de validation Google depuis la racine du projet."""
+    return send_from_directory(
+        app.root_path,
+        'google075dc122689af97b.html',
+    )
+
 
 db.init_app(app)
 with app.app_context():
