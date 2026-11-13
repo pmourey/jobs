@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block main %}
+<main class="container">
+  {% include './partials/_menu.html' %}
+  <h2 class="h4 mb-3">⚙️ Fournisseurs d’offres d’emploi</h2>
+  <div class="alert alert-warning small">
+    Un fournisseur doit être activé et correctement configuré dans les variables
+    d’environnement ou dans <code>config.py</code> pour être utilisable.
+    Les clés secrètes ne sont jamais affichées ni enregistrées dans la base.
+  </div>
+  <form method="post">
+    {% for provider in providers %}
+    <div class="d-flex align-items-start gap-2 mb-2 p-2 border rounded">
+      <input class="form-check-input flex-shrink-0 mt-1" type="checkbox"
+             name="providers" value="{{ provider.key }}"
+             id="offer-provider-{{ provider.key }}"
+             {% if provider.enabled %}checked{% endif %}
+             {% if not provider.configured %}disabled{% endif %}>
+      <label class="form-check-label flex-grow-1" for="offer-provider-{{ provider.key }}">
+        <strong>{{ provider.name }}</strong>
+        {% if provider.configured %}
+        <span class="badge text-bg-success ms-2">configuré</span>
+        {% else %}
+        <span class="badge text-bg-warning ms-2">non configuré</span>
+        <span class="d-block small text-muted">
+          Variables manquantes : {{ provider.missing | join(', ') }}
+        </span>
+        {% endif %}
+        <a class="d-block small" href="{{ provider.help_url }}" target="_blank" rel="noopener">
+          Documentation du fournisseur
+        </a>
+      </label>
+    </div>
+    {% endfor %}
+    <button class="btn btn-primary mt-3" type="submit">Enregistrer les autorisations</button>
+  </form>
+</main>
+{% endblock main %}

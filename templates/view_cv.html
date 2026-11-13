@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block main %}
+{% macro render_value(value) %}
+  {% if value is mapping %}
+    <dl class="row mb-0">
+      {% for key, nested_value in value.items() %}
+      <dt class="col-sm-4 text-capitalize">{{ key|replace('_', ' ') }}</dt>
+      <dd class="col-sm-8">{{ render_value(nested_value) }}</dd>
+      {% endfor %}
+    </dl>
+  {% elif value is sequence and value is not string %}
+    {% if value %}
+    <ul class="mb-0">
+      {% for item in value %}
+      <li>{{ render_value(item) }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <span class="text-muted">—</span>
+    {% endif %}
+  {% elif value %}
+    {{ value }}
+  {% else %}
+    <span class="text-muted">—</span>
+  {% endif %}
+{% endmacro %}
+
+<main class="container mt-4 mb-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-1">{{ cv_data.get('basics', {}).get('name', 'CV sans nom') }}</h1>
+      <p class="text-muted mb-0">{{ filename }}</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-primary" href="{{ url_for('edit_cv', user_id=user_id, file=filename) }}">Modifier</a>
+      <a class="btn btn-secondary" href="{{ url_for('manage_cvs_view', user_id=user_id) }}">Retour</a>
+    </div>
+  </div>
+
+  {% set basics = cv_data.get('basics', {}) if cv_data.get('basics', {}) is mapping else {} %}
+  <section class="card mb-4">
+    <div class="card-body">
+      <h2 class="h4">{{ basics.get('label', '') }}</h2>
+      <div class="small text-muted mb-3">
+        {% if basics.get('email') %}{{ basics.email }}{% endif %}
+        {% if basics.get('phone') %} · {{ basics.phone }}{% endif %}
+      </div>
+      {% if basics.get('summary') %}<p class="mb-0">{{ basics.summary }}</p>{% endif %}
+      {% if basics.get('location') %}<div class="mt-3">{{ render_value(basics.location) }}</div>{% endif %}
+    </div>
+  </section>
+
+  {% for section, values in cv_data.items() if section != 'basics' %}
+    <section class="mb-4">
+      <h2 class="h5 text-capitalize border-bottom pb-2">{{ section|replace('_', ' ') }}</h2>
+      {% if values is sequence and values is not string %}
+        {% for item in values %}
+        <article class="card mb-2">
+          <div class="card-body py-3">{{ render_value(item) }}</div>
+        </article>
+        {% endfor %}
+      {% elif values %}
+        <div class="card"><div class="card-body">{{ render_value(values) }}</div></div>
+      {% else %}
+        <p class="text-muted small">Aucune information.</p>
+      {% endif %}
+    </section>
+  {% endfor %}
+</main>
+{% endblock main %}
