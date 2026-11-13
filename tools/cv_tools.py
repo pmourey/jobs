@@ -466,6 +466,7 @@ def save_user_contact_info(user_id: int, contact_data: dict, static_folder: str 
 
     cvs_dir = user_cvs_dir(static_folder, user_id)
     cvs_dir.mkdir(parents=True, exist_ok=True)
+    ensure_canonical_cv(static_folder, user_id)
     meta_path = cvs_dir / 'cvs_meta.json'
     meta = {}
     if meta_path.exists():
@@ -474,24 +475,8 @@ def save_user_contact_info(user_id: int, contact_data: dict, static_folder: str 
         except Exception:
             meta = {}
 
-    target_filename = meta.get('_default')
-    target_path = None
-    if target_filename and (cvs_dir / target_filename).exists() and target_filename.endswith('.json'):
-        target_path = cvs_dir / target_filename
-    else:
-        for p in ('cv_gitconnected.json', 'cv_linkedin_parsed.json'):
-            if (cvs_dir / p).exists():
-                target_path = cvs_dir / p
-                target_filename = p
-                break
-        if not target_path:
-            jsons = [p for p in cvs_dir.glob('*.json') if p.name != 'cvs_meta.json']
-            if jsons:
-                target_path = jsons[0]
-                target_filename = target_path.name
-            else:
-                target_filename = 'cv_gitconnected.json'
-                target_path = cvs_dir / target_filename
+    target_filename = CANONICAL_CV_FILENAME
+    target_path = cvs_dir / target_filename
 
     cv_data = {}
     if target_path.exists():
@@ -585,6 +570,104 @@ def user_cvs_dir(static_folder: str | Path, user_id: int) -> Path:
     Convention: static/uploads/users/{user_id}/cvs
     """
     return Path(static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
+
+
+CANONICAL_CV_FILENAME = 'cv.json'
+CV_SECTIONS = (
+    'basics', 'work', 'education', 'skills', 'projects',
+    'certificates', 'references', 'languages', 'volunteer',
+)
+
+
+def normalize_cv_data(data: dict | None) -> dict:
+    """Retourne un CV JSON Resume avec une structure stable et complète."""
+    source = data if isinstance(data, dict) else {}
+    basics = source.get('basics')
+    normalized = dict(source)
+    normalized['basics'] = dict(basics) if isinstance(basics, dict) else {}
+    for section in CV_SECTIONS[1:]:
+        value = source.get(section)
+        normalized[section] = list(value) if isinstance(value, list) else []
+    return normalized
+
+
+def _read_cv_json(path: Path) -> dict:
+    try:
+        return normalize_cv_data(_json.loads(path.read_text(encoding='utf-8')))
+    except (OSError, ValueError, TypeError):
+        return normalize_cv_data({})
+
+
+def _cv_source_candidates(cvs_dir: Path, meta: dict) -> list[Path]:
+    candidates: list[Path] = []
+    default_name = meta.get('_default')
+    if isinstance(default_name, str):
+        default_path = cvs_dir / default_name
+        if default_path.suffix.lower() == '.json' and default_path.is_file():
+            candidates.append(default_path)
+        elif default_path.suffix.lower() == '.pdf':
+            parsed = cvs_dir / f'{default_path.stem}.json'
+            if parsed.is_file():
+                candidates.append(parsed)
+    for name in ('cv_linkedin_parsed.json', 'cv_gitconnected.json'):
+        path = cvs_dir / name
+        if path.is_file() and path not in candidates:
+            candidates.append(path)
+    candidates.extend(
+        path for path in sorted(cvs_dir.glob('*.json'))
+        if path.name not in ('cvs_meta.json', CANONICAL_CV_FILENAME) and path not in candidates
+    )
+    return candidates
+
+
+def ensure_canonical_cv(static_folder: str | Path, user_id: int) -> Path | None:
+    """Crée idempotemment cv.json à partir des anciens CV si nécessaire."""
+    cvs_dir = user_cvs_dir(static_folder, user_id)
+    cvs_dir.mkdir(parents=True, exist_ok=True)
+    canonical = cvs_dir / CANONICAL_CV_FILENAME
+    if canonical.is_file():
+        normalized = _read_cv_json(canonical)
+        canonical.write_text(_json.dumps(normalized, ensure_ascii=False, indent=2), encoding='utf-8')
+        return canonical
+
+    meta_path = cvs_dir / 'cvs_meta.json'
+    try:
+        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+    except (OSError, ValueError):
+        meta = {}
+    source_paths = _cv_source_candidates(cvs_dir, meta)
+    if not source_paths and int(user_id) == 1:
+        legacy = Path(static_folder) / 'cv.json'
+        if legacy.is_file():
+            source_paths = [legacy]
+    if not source_paths:
+        return None
+
+    source = _read_cv_json(source_paths[0])
+    canonical.write_text(_json.dumps(source, ensure_ascii=False, indent=2), encoding='utf-8')
+    meta['_default'] = CANONICAL_CV_FILENAME
+    meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
+    meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+    return canonical
+
+
+def merge_cv_data(base: dict | None, incoming: dict | None) -> dict:
+    """Complète le CV canonique sans remplacer ses valeurs existantes."""
+    result = normalize_cv_data(base)
+    source = normalize_cv_data(incoming)
+    for key, value in source.items():
+        if key == 'basics':
+            for field, field_value in value.items():
+                if not result['basics'].get(field) and field_value:
+                    result['basics'][field] = field_value
+            continue
+        if not isinstance(value, list):
+            continue
+        existing = result[key]
+        for item in value:
+            if item not in existing:
+                existing.append(item)
+    return result
 
 
 def save_cv_json_for_user(static_folder: str | Path, user_id: int, src_json_path: Path, kind: str = 'gitconnected') -> Path:
@@ -1498,11 +1581,6 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
                 photo_path = candidate
     except Exception:
         photo_path = None
-    if photo_path is None:
-        photo_path = Path(static_folder) / 'Photo_CV.png'
-        if not photo_path.exists():
-            photo_path = Path(static_folder) / 'photo.jpg'
-
     name_cell = [
         Paragraph(SENDER_NAME, st_name),
         Spacer(1, 4),
@@ -1518,7 +1596,7 @@ def generate_tailored_cv_pdf_bytes(job: Job, cv_data: dict, suggestions: dict,
         name_cell.append(Spacer(1, 2))
         name_cell.append(Paragraph(f'<b>Statut\u00a0:</b> {rqth_label}', st_contact))
 
-    if photo_path.exists():
+    if photo_path and photo_path.exists():
         try:
             from PIL import Image as PILImage
             pil_img = PILImage.open(str(photo_path))

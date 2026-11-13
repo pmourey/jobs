@@ -14,6 +14,14 @@ Application web Flask pour organiser une recherche d'emploi, suivre ses candidat
 - **Garder le contrôle** : les candidatures sont privées par défaut ; le partage avec d'autres utilisateurs est une option explicite.
 - **Gérer son compte** : validation e-mail, changement/récupération du mot de passe, coordonnées, CV et photo.
 
+### Workflow CV
+
+Chaque utilisateur dispose d'un seul CV canonique dans `static/uploads/users/<id>/cvs/cv.json`.
+Ce fichier suit une structure JSON Resume fixe et est utilisé par les fonctionnalités CV et lettres
+de motivation. Un import JSON le remplace après normalisation ; un import PDF conserve le PDF source
+et complète le CV canonique avec les données extraites. Les anciens fichiers JSON sont migrés
+automatiquement vers `cv.json` et conservés comme sources, sans fusion manuelle obligatoire.
+
 La page d'accueil publique est disponible sur `/`. Les informations de confidentialité et les conditions d'utilisation sont accessibles sur `/legal`.
 
 ## Démonstration

@@ -775,24 +775,39 @@
 							{% else %}
 							<span class="text-muted">—</span>
 							{% endif %}
+							{% if default_cv_available.get(job.id) %}
 							<a href="{{ url_for('generate_cover_letter_pdf', id=job.id) }}"
 								class="btn btn-sm btn-outline-secondary"
 								title="Générer la lettre de motivation en PDF">PDF</a>
+							{% else %}
+							<span class="btn btn-sm btn-outline-secondary disabled"
+								title="Importez et définissez un CV par défaut avant de générer une lettre">PDF</span>
+							{% endif %}
 							<!-- LM IA: allow opening AI generation modal -->
+							{% if default_cv_available.get(job.id) %}
 							<button type="button" class="btn btn-sm btn-outline-success"
 								title="Générer une lettre de motivation avec l'IA"
 								onclick='openLmAiModal({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'>
 								🤖 LM
 							</button>
+							{% else %}
+							<span class="btn btn-sm btn-outline-success disabled"
+								title="Importez et définissez un CV par défaut avant de générer une lettre">🤖 LM</span>
+							{% endif %}
 						</div>
 					</td>
 					<td>
 						<div class="d-flex align-items-center gap-1 flex-wrap">
+							{% if default_cv_available.get(job.id) %}
 							<button type="button" class="btn btn-sm btn-outline-primary"
 								title="Générer CV personnalisé IA"
 								onclick='showCVPreview({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'>
 								🤖 CV
 							</button>
+							{% else %}
+							<span class="btn btn-sm btn-outline-primary disabled"
+								title="Importez et définissez un CV par défaut avant de générer un CV personnalisé">🤖 CV</span>
+							{% endif %}
 							{% if cv_pdf_urls.get(job.id) %}
 							<a href="{{ cv_pdf_urls.get(job.id) }}" class="btn btn-sm btn-success cv-download-link"
 								title="Télécharger CV PDF" data-filename="{{ cv_pdf_filenames.get(job.id) or ('cv_%s.pdf' % job.id) }}">⬇️ PDF</a>
@@ -855,16 +870,31 @@
 						{% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a
 							href="{{ url_for('static', filename=capture) }}" target="_blank"
 							class="btn btn-sm btn-outline-success py-0">PDF</a>{% endif %}
+						{% if default_cv_available.get(job.id) %}
 						<a href="{{ url_for('generate_cover_letter_pdf', id=job.id) }}"
 							class="btn btn-sm btn-outline-secondary py-0 ms-1"
 							title="Générer la lettre de motivation en PDF">LM PDF</a>
+						{% else %}
+						<span class="btn btn-sm btn-outline-secondary py-0 ms-1 disabled"
+							title="Importez et définissez un CV par défaut avant de générer une lettre">LM PDF</span>
+						{% endif %}
 						<!-- Mobile: LM IA button opens AI modal -->
+						{% if default_cv_available.get(job.id) %}
 						<button type="button" class="btn btn-sm btn-outline-success py-0 ms-1"
 							title="Générer une lettre de motivation avec l'IA"
 							onclick='openLmAiModal({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'>🤖 LM</button>
+						{% else %}
+						<span class="btn btn-sm btn-outline-success py-0 ms-1 disabled"
+							title="Importez et définissez un CV par défaut avant de générer une lettre">🤖 LM</span>
+						{% endif %}
+						{% if default_cv_available.get(job.id) %}
 						<button type="button" class="btn btn-sm btn-outline-primary py-0 ms-1"
 							onclick='showCVPreview({{ job.id }}, {{ job.name|tojson|safe }}, {{ job.company|tojson|safe }})'
 							title="Générer CV personnalisé IA">🤖 CV</button>
+						{% else %}
+						<span class="btn btn-sm btn-outline-primary py-0 ms-1 disabled"
+							title="Importez et définissez un CV par défaut avant de générer un CV personnalisé">🤖 CV</span>
+						{% endif %}
 						{% if cv_pdf_urls.get(job.id) %}
 						<a href="{{ cv_pdf_urls.get(job.id) }}" class="btn btn-sm btn-success py-0 ms-1 cv-download-link"
 							title="Télécharger CV PDF" data-filename="{{ cv_pdf_filenames.get(job.id) or ('cv_%s.pdf' % job.id) }}">⬇️ PDF</a>

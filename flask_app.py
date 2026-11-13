@@ -63,7 +63,9 @@ from tools.cv_tools import (build_cv_pdf_filename,
                             generate_tailored_cv_pdf_bytes,
                             get_ai_cover_letter_text, get_ai_cv_suggestions,
                             get_user_contact_info, save_user_contact_info,
-                            validate_user_contact_info, load_cv_data)
+                            validate_user_contact_info, load_cv_data,
+                            ensure_canonical_cv, normalize_cv_data,
+                            merge_cv_data, CANONICAL_CV_FILENAME)
 from tools.merge_cvs import merge_cv_jsons
 from tools.import_cv import parse_json_cv, fetch_linkedin_profile
 from tools.document_tools import (build_cover_letter_pdf_filename,
@@ -275,6 +277,9 @@ def _resolve_user_cv_data(user_id: int) -> dict:
     ou pour les autres utilisateurs un profil de base construit à partir de leurs coordonnées.
     """
     try:
+        canonical = ensure_canonical_cv(app.static_folder, user_id)
+        if canonical:
+            return normalize_cv_data(_json.loads(canonical.read_text(encoding='utf-8')))
         cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs'
         meta_path = cvs_dir / 'cvs_meta.json'
         meta = {}
@@ -338,6 +343,18 @@ def _resolve_user_cv_data(user_id: int) -> dict:
         if user_id == 1:
             return load_cv_data(app.static_folder)
         return {'basics': {}}
+
+
+def _has_user_default_cv(user_id: int) -> bool:
+    """Vérifie qu'un CV canonique exploitable est disponible."""
+    canonical = ensure_canonical_cv(app.static_folder, user_id)
+    if not canonical or not canonical.is_file():
+        return False
+    try:
+        data = _json.loads(canonical.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and isinstance(data.get('basics'), dict)
 
 
 def _list_user_cvs(user_id: int) -> tuple[list[dict], dict]:
@@ -1010,6 +1027,7 @@ def update_account(id):
         flash('Action non autorisée.', 'error')
         return redirect(url_for('welcome'))
 
+    ensure_canonical_cv(app.static_folder, user.id)
     cvs_files, cvs_meta = _list_user_cvs(user.id)
     if request.method == 'POST':
         if 'allow_view_offers' in request.form and is_owner:
@@ -1087,6 +1105,114 @@ def update_account(id):
     )
 
 
+@app.route('/import_cv', methods=['POST'])
+@is_connected
+def import_cv():
+    """Importe un CV JSON ou un PDF dans le portefeuille de l'utilisateur."""
+    current_user = get_user_by_id(session['login_id'])
+    try:
+        target_id = int(request.form.get('user_id') or current_user.id)
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'message': 'Utilisateur invalide.'}), 400
+    if target_id != current_user.id and not current_user.is_admin:
+        return jsonify({'ok': False, 'message': 'Action non autorisée.'}), 403
+
+    is_ajax = (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or request.accept_mimetypes.best == 'application/json'
+    )
+    cvs_dir = Path(app.static_folder) / 'uploads' / 'users' / str(target_id) / 'cvs'
+    cvs_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = cvs_dir / 'cvs_meta.json'
+    try:
+        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+    except (OSError, ValueError):
+        meta = {}
+
+    json_file = request.files.get('cv_json')
+    if json_file and json_file.filename:
+        source_filename = secure_filename(json_file.filename) or 'import.json'
+        if not source_filename.lower().endswith('.json'):
+            source_filename += '.json'
+        try:
+            parsed = normalize_cv_data(parse_json_cv(json_file.read()))
+            if source_filename != CANONICAL_CV_FILENAME:
+                (cvs_dir / source_filename).write_text(
+                    _json.dumps(parsed, ensure_ascii=False, indent=2),
+                    encoding='utf-8',
+                )
+            (cvs_dir / CANONICAL_CV_FILENAME).write_text(
+                _json.dumps(parsed, ensure_ascii=False, indent=2),
+                encoding='utf-8',
+            )
+            meta['_default'] = CANONICAL_CV_FILENAME
+            meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
+            meta[source_filename] = source_filename
+            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+        except (OSError, ValueError) as exc:
+            message = f'JSON invalide ou impossible à enregistrer : {exc}'
+            if is_ajax:
+                return jsonify({'ok': False, 'message': message}), 400
+            flash(message, 'error')
+            return redirect(url_for('update_account', id=target_id))
+        return jsonify({'ok': True, 'message': 'CV JSON importé avec succès.'}) if is_ajax else redirect(
+            url_for('update_account', id=target_id)
+        )
+
+    pdf_file = request.files.get('cv_pdf')
+    if pdf_file and pdf_file.filename:
+        filename = secure_filename(pdf_file.filename) or 'cv.pdf'
+        if not filename.lower().endswith('.pdf'):
+            message = 'Le fichier sélectionné doit être un PDF.'
+            if is_ajax:
+                return jsonify({'ok': False, 'message': message}), 400
+            flash(message, 'error')
+            return redirect(url_for('update_account', id=target_id))
+        pdf_path = cvs_dir / filename
+        try:
+            pdf_file.save(pdf_path)
+            raw_header = pdf_path.read_bytes()[:5]
+            if raw_header != b'%PDF-':
+                pdf_path.unlink(missing_ok=True)
+                raise ValueError('Le fichier ne semble pas être un PDF valide.')
+            parsed_path = cvs_dir / f'{pdf_path.stem}.json'
+            from tools.cv_tools import parse_linkedin_pdf_to_json
+            parsed_ok = parse_linkedin_pdf_to_json(pdf_path, parsed_path)
+            if parsed_ok and parsed_path.exists():
+                parsed_data = normalize_cv_data(_json.loads(parsed_path.read_text(encoding='utf-8')))
+                canonical_path = ensure_canonical_cv(app.static_folder, target_id)
+                base_data = _json.loads(canonical_path.read_text(encoding='utf-8')) if canonical_path else {}
+                canonical_path = cvs_dir / CANONICAL_CV_FILENAME
+                canonical_data = merge_cv_data(base_data, parsed_data)
+                canonical_path.write_text(
+                    _json.dumps(canonical_data, ensure_ascii=False, indent=2),
+                    encoding='utf-8',
+                )
+                meta['_default'] = CANONICAL_CV_FILENAME
+                meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
+            meta[filename] = filename
+            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+        except (OSError, ValueError, RuntimeError) as exc:
+            app.logger.exception('CV PDF import failed for user %s', target_id)
+            message = f'Impossible d’importer ou d’analyser le PDF : {exc}'
+            if is_ajax:
+                return jsonify({'ok': False, 'message': message}), 400
+            flash(message, 'error')
+            return redirect(url_for('update_account', id=target_id))
+        message = 'CV PDF importé avec succès.'
+        if not meta.get('_default'):
+            message += ' Le PDF est enregistré, mais aucun CV JSON exploitable n’a pu être généré.'
+        return jsonify({'ok': True, 'message': message}) if is_ajax else redirect(
+            url_for('update_account', id=target_id)
+        )
+
+    message = 'Sélectionnez un fichier CV JSON ou PDF.'
+    if is_ajax:
+        return jsonify({'ok': False, 'message': message}), 400
+    flash(message, 'warning')
+    return redirect(url_for('update_account', id=target_id))
+
+
 @app.route('/manage_cvs/<int:user_id>', methods=['GET'])
 @is_connected
 def manage_cvs_view(user_id):
@@ -1133,11 +1259,22 @@ def manage_cvs(user_id):
 
     target = cvs_dir / filename if filename else None
     if action == 'set_default' and filename:
-        if target and target.exists():
-            meta['_default'] = filename
+        if target and target.exists() and target.suffix.lower() == '.json':
+            canonical_data = normalize_cv_data(_json.loads(target.read_text(encoding='utf-8')))
+            (cvs_dir / CANONICAL_CV_FILENAME).write_text(
+                _json.dumps(canonical_data, ensure_ascii=False, indent=2),
+                encoding='utf-8',
+            )
+            meta['_default'] = CANONICAL_CV_FILENAME
+            meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
             meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
-            flash('CV par défaut mis à jour.', 'success')
+            flash('CV importé dans le CV canonique.', 'success')
+        else:
+            flash('Seuls les fichiers JSON peuvent alimenter le CV canonique.', 'warning')
     elif action == 'delete' and target and target.exists():
+        if filename == CANONICAL_CV_FILENAME:
+            flash('Le CV canonique ne peut pas être supprimé depuis cette vue.', 'warning')
+            return redirect(url_for('manage_cvs_view', user_id=user_id))
         try:
             target.unlink()
             if meta.get('_default') == filename:
@@ -1177,7 +1314,12 @@ def merge_cvs(user_id):
         merged = merge_cv_jsons(json_paths, selections)
         out_name = f'merged_cv_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.json'
         out_path = cvs_dir / out_name
-        out_path.write_text(_json.dumps(merged, ensure_ascii=False, indent=2), encoding='utf-8')
+        normalized_merged = normalize_cv_data(merged)
+        out_path.write_text(_json.dumps(normalized_merged, ensure_ascii=False, indent=2), encoding='utf-8')
+        (cvs_dir / CANONICAL_CV_FILENAME).write_text(
+            _json.dumps(normalized_merged, ensure_ascii=False, indent=2),
+            encoding='utf-8',
+        )
         meta_path = cvs_dir / 'cvs_meta.json'
         meta = {}
         if meta_path.exists():
@@ -1185,7 +1327,8 @@ def merge_cvs(user_id):
                 meta = _json.loads(meta_path.read_text(encoding='utf-8'))
             except Exception:
                 meta = {}
-        meta['_default'] = out_name
+        meta['_default'] = CANONICAL_CV_FILENAME
+        meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
         meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
         flash('CV fusionné avec succès.', 'success')
     except Exception as exc:
@@ -1217,15 +1360,13 @@ def edit_cv(user_id):
     requested_file = request.args.get('file', '').strip() if request.method == 'GET' else request.form.get('file', '').strip()
     filename = secure_filename(requested_file) if requested_file else ''
     if create_new:
-        filename = 'cv_nouveau.json'
-        if (cvs_dir / filename).exists():
-            filename = f'cv_nouveau_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.json'
+        filename = CANONICAL_CV_FILENAME
+        create_new = not (cvs_dir / filename).exists()
     elif not filename or not filename.lower().endswith('.json') or filename == 'cvs_meta.json':
         default_name = meta.get('_default', '')
         filename = secure_filename(default_name) if isinstance(default_name, str) else ''
     if not create_new and (not filename or not filename.lower().endswith('.json') or filename == 'cvs_meta.json'):
-        candidates = sorted(p.name for p in cvs_dir.glob('*.json') if p.name != 'cvs_meta.json')
-        filename = candidates[0] if candidates else 'cv_editable.json'
+        filename = CANONICAL_CV_FILENAME
 
     target = cvs_dir / filename
     try:
@@ -1287,8 +1428,10 @@ def edit_cv(user_id):
                 flash(error, 'error')
         else:
             try:
+                cv_data = normalize_cv_data(cv_data)
                 target.write_text(_json.dumps(cv_data, ensure_ascii=False, indent=2), encoding='utf-8')
-                meta['_default'] = filename
+                meta['_default'] = CANONICAL_CV_FILENAME
+                meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
                 meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
                 flash('CV enregistré.', 'success')
                 return redirect(url_for('edit_cv', user_id=user_id, file=filename))
@@ -1600,12 +1743,17 @@ def show_all():
     # Prepare list of users for the selector: include current user and users who opted-in
     users_list = User.query.filter((User.id == user_id) | (User.allow_view_offers == True)).order_by(User.username).all()
     is_profile_complete, missing_contact_fields, _ = validate_user_contact_info(user_id, app.static_folder)
+    default_cv_available = {
+        job.id: _has_user_default_cv(job.user_id)
+        for job in jobs
+    }
     return render_template('candidatures.html', jobs=jobs, user=user, users=users_list, cv_pdf_urls=cv_pdf_urls,
                            cv_pdf_filenames=cv_pdf_filenames,
                            cv_education=cv_education, cv_certificates=cv_certificates,
                            cv_skills=cv_skills, cv_references=cv_references, cv_projects=cv_projects,
                            is_profile_complete=is_profile_complete,
-                           missing_contact_fields=missing_contact_fields)
+                           missing_contact_fields=missing_contact_fields,
+                           default_cv_available=default_cv_available)
 
 
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
@@ -1646,6 +1794,9 @@ def update(id):
 @is_connected
 def generate_cover_letter_pdf(id):
     job = Job.query.get_or_404(id)
+    if not _has_user_default_cv(job.user_id):
+        flash('Importez et définissez un CV par défaut avant de générer une lettre de motivation.', 'warning')
+        return redirect(url_for('show_all'))
     is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
     if not is_complete:
         missing_str = ', '.join(missing)
@@ -1718,6 +1869,11 @@ def _search_job_offer_provider(provider_key: str, *, client_id: str, client_secr
 def preview_cv_data(id):
     """Retourne les suggestions IA de personnalisation du CV au format JSON (pour l'aperçu modal)."""
     job = Job.query.get_or_404(id)
+    if not _has_user_default_cv(job.user_id):
+        return jsonify({
+            'error': 'Importez et définissez un CV par défaut avant de générer votre CV personnalisé.',
+            'default_cv_missing': True,
+        }), 400
     is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
     if not is_complete:
         return jsonify({
@@ -1877,6 +2033,11 @@ def preview_cv_data(id):
 def save_cv_pdf(id):
     """Génère le CV personnalisé IA, le sauvegarde sur disque et retourne l'URL de téléchargement."""
     job = Job.query.get_or_404(id)
+    if not _has_user_default_cv(job.user_id):
+        return jsonify({
+            'error': 'Importez et définissez un CV par défaut avant d’enregistrer votre CV personnalisé.',
+            'default_cv_missing': True,
+        }), 400
     is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
     if not is_complete:
         return jsonify({
@@ -2041,6 +2202,9 @@ def save_cv_pdf(id):
 def generate_cv_pdf(id):
     """Télécharge directement le CV PDF sauvegardé sur disque, ou génère à la volée si absent."""
     job = Job.query.get_or_404(id)
+    if not _has_user_default_cv(job.user_id):
+        flash('Importez et définissez un CV par défaut avant de générer un CV personnalisé.', 'warning')
+        return redirect(url_for('show_all'))
     is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
     if not is_complete:
         missing_str = ', '.join(missing)
@@ -2108,6 +2272,11 @@ def generate_cv_pdf(id):
 def preview_lm_ai(id):
     """Génère une lettre de motivation par IA et retourne le texte au format JSON."""
     job = Job.query.get_or_404(id)
+    if not _has_user_default_cv(job.user_id):
+        return jsonify({
+            'error': 'Importez et définissez un CV par défaut avant de générer une lettre de motivation.',
+            'default_cv_missing': True,
+        }), 400
     is_complete, missing, _ = validate_user_contact_info(job.user_id, app.static_folder)
     if not is_complete:
         return jsonify({
