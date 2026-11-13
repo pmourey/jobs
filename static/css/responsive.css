@@ -1,0 +1,73 @@
+/* Surcharges responsive (chargées après style.css) */
+
+/* style.css impose un body margin-top: 10% : inadapté à une barre de navigation */
+body { margin-top: 0 !important; }
+
+/* Champs de formulaire : ne pas déborder sur petits écrans (style.css fixe 100% + padding large) */
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="file"]) { padding: .5rem .75rem; }
+
+img, video, canvas { max-width: 100%; height: auto; }
+
+/* Barre de navigation */
+.app-navbar .nav-icon { display: inline-block; width: 1.4em; text-align: center; }
+.app-navbar .nav-link.active { font-weight: 600; border-bottom: 2px solid #0d6efd; }
+.app-navbar .dropdown-item { padding-top: .5rem; padding-bottom: .5rem; }
+
+/* Mobile et tablette : zones tactiles confortables, menu latéral */
+@media (max-width: 991.98px) {
+    .app-navbar .nav-link { padding: .75rem 1rem; border-bottom: 1px solid rgba(0, 0, 0, .06); }
+    .app-navbar .nav-link.active { border-bottom: 1px solid rgba(0, 0, 0, .06); background: rgba(13, 110, 253, .08); }
+    .app-navbar .dropdown-menu { border: 0; background: rgba(0, 0, 0, .03); }
+    .app-navbar .dropdown-item { padding: .75rem 1.5rem; }
+    .offcanvas { max-width: 85vw; }
+}
+
+/* Smartphone : tableaux défilables, boutons pleine largeur dans les formulaires et modales */
+@media (max-width: 767.98px) {
+    .container, .container-fluid { padding-left: .75rem; padding-right: .75rem; }
+    .table-responsive-auto, main table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .modal-dialog { margin: .5rem; }
+    .modal-dialog.modal-xl, .modal-dialog.modal-lg { max-width: calc(100vw - 1rem); }
+    .btn { min-height: 2.5rem; }
+    .text-end > .btn, .modal-footer .btn { margin-bottom: .25rem; }
+    h1 { font-size: 1.6rem; }
+    h5 { font-size: 1.1rem; }
+}
+
+/* Grands écrans : limiter la largeur de lecture des pages texte */
+@media (min-width: 1400px) {
+    .app-content > main.container { max-width: 1320px; }
+}
+
+/* Encoche iPhone */
+@supports (padding: max(0px)) {
+    .app-navbar, .app-footer {
+        padding-left: max(.75rem, env(safe-area-inset-left));
+        padding-right: max(.75rem, env(safe-area-inset-right));
+    }
+}
+
+/* Onglets de la page « Mon compte » : défilement horizontal sur petits écrans, libellés masqués sur smartphone */
+.account-tabs { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: .5rem .5rem 0; }
+.account-tabs::-webkit-scrollbar { display: none; }
+.account-tabs .nav-link { white-space: nowrap; }
+@media (max-width: 575.98px) {
+    .account-tabs .nav-link { padding: .6rem .75rem; font-size: 1.05rem; }
+    .account-tabs .nav-link:not(.active) .tab-label { display: none; }
+    .w-sm-auto { width: 100% !important; }
+}
+@media (min-width: 576px) { .w-sm-auto { width: auto !important; } }
+
+/* ── Page Candidatures ───────────────────────────────────────────── */
+.cand-quota-input { width: 100%; }
+@media (min-width: 576px) { .cand-quota-input { width: 110px; } }
+@media (max-width: 767.98px) {
+    /* Actions de la barre d'outils en pleine largeur, zones tactiles confortables */
+    .cand-toolbar-actions .btn { flex: 1 1 auto; }
+    .cand-toolbar .btn-sm, .cand-toolbar .form-select-sm { min-height: 2.5rem; }
+    .cand-toolbar .form-check-input { transform: none !important; width: 2.5em; height: 1.3em; }
+}
+/* Cartes : boutons d'action plus grands au toucher (écrase py-0) */
+.cand-cards .btn.btn-sm { padding-top: .3rem !important; padding-bottom: .3rem !important; margin-bottom: .25rem; }
+.cand-cards .card-body { overflow-wrap: anywhere; }
+.cand-cards .form-check-input { width: 1.4em; height: 1.4em; }

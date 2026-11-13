@@ -1,0 +1,26 @@
+<!-- jobs/templates/upload.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload de fichier</title>
+</head>
+<body>
+    <h1>Upload de fichier</h1>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <input type="submit" value="Envoyer">
+    </form>
+    <div>
+        {% if result %}
+            <h2>Résultat :</h2>
+            <p>{{ result }}</p>
+            {% if result_file %}
+                <p><a href="{{ result_file }}" download>Télécharger le fichier résultat</a></p>
+            {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>

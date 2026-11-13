@@ -1,0 +1,24 @@
+body {
+    font-family: Arial, sans-serif;
+}
+
+.grid-container {
+    display: grid;
+    justify-items: center; /* Centre le contenu horizontalement dans le conteneur de grille */
+}
+
+.grid-table {
+    width: 100%;
+    border-collapse: collapse;
+    grid-template-columns: repeat(3, 1fr); /* Trois colonnes égales */
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+}

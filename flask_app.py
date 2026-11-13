@@ -169,6 +169,7 @@ with app.app_context():
     db.create_all()
     _ensure_user_status_columns()
 
+
 toolbar = DebugToolbarExtension(app)
 
 locale.setlocale(locale.LC_TIME, 'fr_FR')
@@ -183,6 +184,23 @@ def ensure_database_schema():
     """Crée les nouvelles tables sans migration externe pour les installations SQLite."""
     db.create_all()
     _ensure_user_status_columns()
+
+
+@app.context_processor
+def inject_navigation_user():
+    """Expose l'utilisateur connecté (nav_user) à tous les templates pour la barre de navigation."""
+    nav_user = None
+    profile_missing = []
+    try:
+        login_id = session.get('login_id')
+        if login_id:
+            nav_user = User.query.filter_by(id=login_id).first()
+            if nav_user and request.endpoint not in ('static', None):
+                from tools.cv_tools import validate_user_contact_info
+                _ok, profile_missing, _info = validate_user_contact_info(nav_user.id, app.static_folder)
+    except Exception:
+        profile_missing = []
+    return {'nav_user': nav_user, 'profile_missing': profile_missing}
 
 
 # Set the secret key to some random bytes. Keep this really secret!
@@ -1412,10 +1430,8 @@ def update_account(id):
     ensure_canonical_cv(app.static_folder, user.id)
     cvs_files, cvs_meta = _list_user_cvs(user.id)
     if request.method == 'POST':
-        if 'allow_view_offers' in request.form and is_owner:
-            user.allow_view_offers = True
-        elif is_owner:
-            user.allow_view_offers = False
+        if is_owner and 'privacy_form' in request.form:
+            user.allow_view_offers = 'allow_view_offers' in request.form
 
         if current_user.is_admin and not is_owner:
             role = request.form.get('role')

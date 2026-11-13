@@ -1,7 +1,6 @@
 {% extends 'base.html' %}
 {% block main %}
 <main class="container">
-  {% include './partials/_menu.html' %}
   <h2 class="h4 mb-3">⚙️ Fournisseurs IA autorisés</h2>
   <div class="alert alert-warning small">Désactiver un fournisseur bloque les nouveaux appels et l'enregistrement de nouvelles clés. Les clés existantes restent chiffrées mais inutilisables.</div>
   <form method="post">
@@ -55,7 +54,6 @@
   {% endfor %}
   {% endif %}
   <div class="mt-3">
-    <a class="btn btn-secondary" href="{{ url_for('welcome') }}">Retour à l'accueil</a>
   </div>
 </main>
 {% endblock main %}

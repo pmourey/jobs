@@ -1,20 +1,77 @@
-<!-- jobs/templates/partials/_menu.html -->
+<!-- jobs/templates/partials/_menu.html : barre de navigation responsive (incluse par base.html) -->
+{% set ep = request.endpoint or '' %}
+{% macro nav_item(endpoint, label, icon, params={}) -%}
+    <li class="nav-item">
+        <a class="nav-link{% if ep == endpoint or ep in extra_endpoints %} active{% endif %}"
+           {% if ep == endpoint or ep in extra_endpoints %}aria-current="page"{% endif %}
+           href="{{ url_for(endpoint, **params) }}"><span class="nav-icon" aria-hidden="true">{{ icon }}</span> {{ label }}</a>
+    </li>
+{%- endmacro %}
+{% macro dd_item(endpoint, label, icon, params={}) -%}
+    <li><a class="dropdown-item{% if ep == endpoint %} active{% endif %}" href="{{ url_for(endpoint, **params) }}">{{ icon }} {{ label }}</a></li>
+{%- endmacro %}
 
-<nav class="navbar navbar-expand-sm navbar-light bg-light mb-3">
-	<div class="container-fluid">
-		<span class="navbar-brand mb-0 h1">💼 Candidatures</span>
-		<div class="navbar-nav ms-auto">
-			<a href="{{ url_for('welcome') }}" class="nav-link">🏠 Accueil</a>
-			{% if 'login_id' in session %}
-			<a href="{{ url_for('france_travail') }}" class="nav-link">🇫🇷 France Travail</a>
-			<a href="{{ url_for('ft_searches') }}" class="nav-link">📋 Mes recherches FT</a>
-			<a href="{{ url_for('update_account', id=session['login_id']) }}" class="nav-link">⚙️ Mon compte</a>
-			{% if user and user.is_admin %}
-			<a href="{{ url_for('admin_job_offer_providers') }}" class="nav-link">🔌 Fournisseurs d’offres</a>
-			<a href="{{ url_for('admin_ai_providers') }}" class="nav-link">🤖 IA et quotas</a>
-			{% endif %}
-			<a href="{{ url_for('logout') }}" class="nav-link text-danger">🚪 Déconnexion</a>
-			{% endif %}
-		</div>
-	</div>
+<nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom sticky-top app-navbar" aria-label="Navigation principale">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-semibold" href="{{ url_for('welcome') }}">💼 Candidatures</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#appNavOffcanvas"
+                aria-controls="appNavOffcanvas" aria-label="Ouvrir le menu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="offcanvas offcanvas-end" tabindex="-1" id="appNavOffcanvas" aria-labelledby="appNavOffcanvasLabel">
+            <div class="offcanvas-header">
+                <h5 class="offcanvas-title" id="appNavOffcanvasLabel">💼 Menu</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Fermer"></button>
+            </div>
+            <div class="offcanvas-body">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    {{ nav_item('welcome', 'Accueil', '🏠') }}
+                    {% if nav_user %}
+                    {{ nav_item('show_all', 'Candidatures', '📄') }}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle{% if ep in ['france_travail', 'ft_searches'] %} active{% endif %}" href="#" role="button"
+                           data-bs-toggle="dropdown" aria-expanded="false">🔎 Recherche d’offres</a>
+                        <ul class="dropdown-menu">
+                            {{ dd_item('france_travail', 'Nouvelle recherche', '🇫🇷') }}
+                            {{ dd_item('ft_searches', 'Mes recherches enregistrées', '📋') }}
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle{% if ep in ['update_account', 'manage_cvs_view', 'account_ai_settings'] %} active{% endif %}" href="#" role="button"
+                           data-bs-toggle="dropdown" aria-expanded="false">👤 Mon profil</a>
+                        <ul class="dropdown-menu">
+                            {{ dd_item('update_account', 'Mon compte et coordonnées', '⚙️', {'id': nav_user.id}) }}
+                            {{ dd_item('manage_cvs_view', 'Mes CV', '📎', {'user_id': nav_user.id}) }}
+                            {{ dd_item('account_ai_settings', 'Mes clés et paramètres IA', '🤖', {'user_id': nav_user.id}) }}
+                        </ul>
+                    </li>
+                    {% if nav_user.is_admin %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle{% if ep in ['show_accounts', 'show_sessions', 'show_closed_sessions', 'admin_job_offer_providers', 'admin_ai_providers'] %} active{% endif %}" href="#" role="button"
+                           data-bs-toggle="dropdown" aria-expanded="false">🛠️ Administration</a>
+                        <ul class="dropdown-menu">
+                            {{ dd_item('show_accounts', 'Comptes', '👥') }}
+                            {{ dd_item('show_sessions', 'Sessions actives', '🟢') }}
+                            {{ dd_item('show_closed_sessions', 'Sessions fermées', '⚪') }}
+                            <li><hr class="dropdown-divider"></li>
+                            {{ dd_item('admin_job_offer_providers', 'Fournisseurs d’offres', '🔌') }}
+                            {{ dd_item('admin_ai_providers', 'IA et quotas', '🤖') }}
+                        </ul>
+                    </li>
+                    {% endif %}
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav ms-lg-auto align-items-lg-center">
+                    {% if nav_user %}
+                    <li class="nav-item"><span class="navbar-text small me-lg-3">Connecté : <strong>{{ nav_user.username }}</strong></span></li>
+                    <li class="nav-item"><a class="nav-link text-danger" href="{{ url_for('logout') }}">🚪 Déconnexion</a></li>
+                    {% else %}
+                    {{ nav_item('login', 'Connexion', '🔑') }}
+                    {{ nav_item('register', 'Inscription', '📝') }}
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </div>
 </nav>

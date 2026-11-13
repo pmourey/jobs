@@ -1,328 +1,246 @@
 {% extends 'base.html' %}
 {% block main %}
+{% set is_owner = (current_user_id == user.id) %}
 
-<main class="container mt-4">
+<main class="container mt-3 mb-4">
     <!-- Placeholder for JS-inserted Bootstrap alerts -->
     <div id="flash_placeholder"></div>
-    <div class="row justify-content-center">
-        <div class="col-md-8 col-lg-10">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">👥 Modification du compte</h5>
+
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <h1 class="h4 mb-0">👤 {% if is_owner %}Mon compte{% else %}Compte de {{ user.username }}{% endif %}</h1>
+        {% if is_owner %}
+            {% if is_profile_complete %}
+            <span class="badge bg-success">✅ Profil complet</span>
+            {% else %}
+            <span class="badge bg-warning text-dark">⚠️ Profil incomplet</span>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header p-0 border-bottom-0">
+            <ul class="nav nav-tabs account-tabs flex-nowrap" id="accountTabs" role="tablist">
+                {% if is_owner %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-contact-btn" data-bs-toggle="tab" data-bs-target="#tab-contact" type="button" role="tab" aria-controls="tab-contact" aria-selected="true">
+                        📋 <span class="tab-label">Coordonnées</span>{% if not is_profile_complete %} <span class="badge bg-warning text-dark">!</span>{% endif %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-photo-btn" data-bs-toggle="tab" data-bs-target="#tab-photo" type="button" role="tab" aria-controls="tab-photo" aria-selected="false">📷 <span class="tab-label">Photo</span></button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-cv-btn" data-bs-toggle="tab" data-bs-target="#tab-cv" type="button" role="tab" aria-controls="tab-cv" aria-selected="false">📎 <span class="tab-label">CV</span></button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-ai-btn" data-bs-toggle="tab" data-bs-target="#tab-ai" type="button" role="tab" aria-controls="tab-ai" aria-selected="false">🤖 <span class="tab-label">IA</span></button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-privacy-btn" data-bs-toggle="tab" data-bs-target="#tab-privacy" type="button" role="tab" aria-controls="tab-privacy" aria-selected="false">🔒 <span class="tab-label">Confidentialité</span></button>
+                </li>
+                {% else %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-role-btn" data-bs-toggle="tab" data-bs-target="#tab-role" type="button" role="tab" aria-controls="tab-role" aria-selected="true">🛡️ <span class="tab-label">Rôle</span></button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-privacy-btn" data-bs-toggle="tab" data-bs-target="#tab-privacy" type="button" role="tab" aria-controls="tab-privacy" aria-selected="false">🔒 <span class="tab-label">Confidentialité</span></button>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+
+        <div class="card-body tab-content">
+
+            {% if is_owner %}
+            <!-- ═══ Coordonnées ═══ -->
+            <div class="tab-pane fade show active" id="tab-contact" role="tabpanel" aria-labelledby="tab-contact-btn" tabindex="0">
+                <h2 class="h6">Coordonnées du profil (pour CV et lettres de motivation)</h2>
+                {% if not is_profile_complete %}
+                <div class="alert alert-warning py-2 mb-3 small" role="alert">
+                    <strong>Informations obligatoires manquantes :</strong> {{ missing_contact_fields | join(', ') }}.
+                    <br>Ces données sont nécessaires pour générer vos CV et lettres de motivation personnalisés avec vos coordonnées réelles.
                 </div>
-                <div class="card-body">
-                    <form action="{{ url_for('update_account', id=user.id) }}" method="POST" enctype="multipart/form-data" onsubmit="return confirmSubmit();">
-                        {% if current_user_id != user.id and user.is_admin %}
-                        <div class="mb-3">
-                            <label for="role" class="form-label">Sélectionnez un nouveau rôle pour <strong>{{ user.username }}</strong>:</label>
-                            <select id="role" name="role" class="form-select">
-                                <option value="Administrateur" selected>🔴 Administrateur</option>
-                                <option value="Utilisateur">🟠 Utilisateur</option>
-                            </select>
-                            <div class="form-text">Nommer cet utilisateur Administrateur transférera automatiquement ce rôle et rétrogradera l’administrateur actuel.</div>
+                {% endif %}
+                <form action="{{ url_for('update_account', id=user.id) }}" method="POST">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label for="contact_name" class="form-label">Nom et prénom <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="contact_name" name="name" value="{{ contact_info.name or '' }}" placeholder="Ex: Jean Dupont" autocomplete="name" required>
                         </div>
-                        {% elif current_user_id != user.id and user.is_user %}
-                        <div class="mb-3">
-                            <label for="role" class="form-label">Sélectionnez un nouveau rôle pour <strong>{{ user.username }}</strong>:</label>
-                            <select id="role" name="role" class="form-select">
-                                <option value="Administrateur">🔴 Administrateur</option>
-                                <option value="Utilisateur" selected>🟠 Utilisateur</option>
-                            </select>
-                            <div class="form-text">Il ne peut y avoir qu’un seul Administrateur par instance.</div>
+                        <div class="col-12 col-md-6">
+                            <label for="contact_email" class="form-label">Email de contact <span class="text-danger">*</span></label>
+                            <input type="email" class="form-control" id="contact_email" name="email" value="{{ contact_info.email or user.email or '' }}" placeholder="Ex: jean.dupont@email.com" autocomplete="email" inputmode="email" required>
                         </div>
-                        {% endif %}
-                        {# allow_view_offers editable only by the account owner #}
-                        {% if current_user_id == user.id %}
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="allow_view_offers" name="allow_view_offers" {% if user.allow_view_offers %}checked{% endif %}>
-                            <label class="form-check-label" for="allow_view_offers">Autoriser les autres utilisateurs de l'application à consulter mes offres</label>
+                        <div class="col-12 col-md-6">
+                            <label for="contact_phone" class="form-label">Numéro de téléphone <span class="text-danger">*</span></label>
+                            <input type="tel" class="form-control" id="contact_phone" name="phone" value="{{ contact_info.phone or '' }}" placeholder="Ex: 06 12 34 56 78" autocomplete="tel" inputmode="tel" required>
                         </div>
-                        {% else %}
-                        <div class="mb-3">
-                            <small class="text-muted">Les options de partage des offres ne peuvent être modifiées que par le propriétaire du compte.</small>
+                        <div class="col-12 col-md-6">
+                            <label for="contact_street" class="form-label">Adresse postale (rue, voie) <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="contact_street" name="street" value="{{ contact_info.street or '' }}" placeholder="Ex: 12 rue des Fleurs" autocomplete="street-address" required>
                         </div>
-                        {% endif %}
-
-                        {# CV JSON upload - only owner can upload their original CV JSON #}
-                        {% if current_user_id == user.id %}
-                        <!-- end role form here -->
-                        <div class="text-end">
-                            <!-- Removed 'Annuler' per request; provide a navigation button back to main menu -->
-                            <a href="{{ url_for('welcome') }}" class="btn btn-secondary me-2">← Retour au menu</a>
-                            <button type="submit" class="btn btn-primary">✅ Mettre à jour le rôle</button>
+                        <div class="col-5 col-md-4">
+                            <label for="contact_postal_code" class="form-label">Code postal <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="contact_postal_code" name="postal_code" value="{{ contact_info.postal_code or '' }}" placeholder="Ex: 75001" autocomplete="postal-code" inputmode="numeric" required>
                         </div>
-                    </form>
-
-                    <!-- Coordonnées du profil (pour CV et lettres de motivation) -->
-                    <hr />
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h6 class="mb-0">📋 Coordonnées du profil (pour CV et lettres de motivation)</h6>
-                        {% if is_profile_complete %}
-                        <span class="badge bg-success">✅ Profil complet</span>
-                        {% else %}
-                        <span class="badge bg-warning text-dark">⚠️ Profil incomplet</span>
-                        {% endif %}
+                        <div class="col-7 col-md-8">
+                            <label for="contact_city" class="form-label">Ville <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="contact_city" name="city" value="{{ contact_info.city or '' }}" placeholder="Ex: Paris" autocomplete="address-level2" required>
+                        </div>
                     </div>
-                    {% if not is_profile_complete %}
-                    <div class="alert alert-warning py-2 mb-3 small" role="alert">
-                        <strong>Informations obligatoires manquantes :</strong> {{ missing_contact_fields | join(', ') }}.
-                        <br>Ces données sont nécessaires pour générer vos CV et lettres de motivation personnalisés avec vos coordonnées réelles.
+                    <div class="text-end mt-3">
+                        <button type="submit" class="btn btn-primary w-100 w-sm-auto">💾 Enregistrer mes coordonnées</button>
                     </div>
-                    {% endif %}
-                    <div class="card mb-3">
-                      <div class="card-body">
-                        <form action="{{ url_for('update_account', id=user.id) }}" method="POST">
-                          <div class="row g-3">
-                            <div class="col-md-6">
-                              <label for="contact_name" class="form-label">Nom et prénom <span class="text-danger">*</span></label>
-                              <input type="text" class="form-control" id="contact_name" name="name" value="{{ contact_info.name or '' }}" placeholder="Ex: Jean Dupont" required>
-                            </div>
-                            <div class="col-md-6">
-                              <label for="contact_email" class="form-label">Email de contact <span class="text-danger">*</span></label>
-                              <input type="email" class="form-control" id="contact_email" name="email" value="{{ contact_info.email or user.email or '' }}" placeholder="Ex: jean.dupont@email.com" required>
-                            </div>
-                            <div class="col-md-6">
-                              <label for="contact_phone" class="form-label">Numéro de téléphone <span class="text-danger">*</span></label>
-                              <input type="tel" class="form-control" id="contact_phone" name="phone" value="{{ contact_info.phone or '' }}" placeholder="Ex: 06 12 34 56 78" required>
-                            </div>
-                            <div class="col-md-6">
-                              <label for="contact_street" class="form-label">Adresse postale (rue, voie) <span class="text-danger">*</span></label>
-                              <input type="text" class="form-control" id="contact_street" name="street" value="{{ contact_info.street or '' }}" placeholder="Ex: 12 rue des Fleurs" required>
-                            </div>
-                            <div class="col-md-4">
-                              <label for="contact_postal_code" class="form-label">Code postal <span class="text-danger">*</span></label>
-                              <input type="text" class="form-control" id="contact_postal_code" name="postal_code" value="{{ contact_info.postal_code or '' }}" placeholder="Ex: 75001" required>
-                            </div>
-                            <div class="col-md-8">
-                              <label for="contact_city" class="form-label">Ville <span class="text-danger">*</span></label>
-                              <input type="text" class="form-control" id="contact_city" name="city" value="{{ contact_info.city or '' }}" placeholder="Ex: Paris" required>
-                            </div>
-                          </div>
-                          <div class="text-end mt-3">
-                            <button type="submit" class="btn btn-primary">💾 Enregistrer mes coordonnées</button>
-                          </div>
-                        </form>
-                      </div>
-                    </div>
+                </form>
+            </div>
 
-                    <!-- Photo de profil (upload vers update_account) -->
-                    <hr />
-                    <h6>Photo de profil</h6>
-                    <div class="card mb-3">
-                      <div class="card-body">
-                        <div class="row mb-3">
-                          <div class="col-md-3">
-                            {% set user_photo = ('uploads/users/' ~ user.id ~ '/photo.jpg') %}
-                            <img id="profilePhotoPreview" src="{{ url_for('static', filename=user_photo) }}" alt="Photo" class="img-fluid rounded" onerror="this.src='{{ url_for('static', filename='photo.jpg') }}'" />
-                          </div>
-                          <div class="col-md-9">
-                            <form id="profilePhotoForm" action="{{ url_for('update_account', id=user.id) }}" method="POST" enctype="multipart/form-data">
-                              <div class="mb-3">
+            <!-- ═══ Photo ═══ -->
+            <div class="tab-pane fade" id="tab-photo" role="tabpanel" aria-labelledby="tab-photo-btn" tabindex="0">
+                <h2 class="h6">Photo de profil</h2>
+                <div class="row g-3 align-items-start">
+                    <div class="col-5 col-sm-3 col-lg-2">
+                        {% set user_photo = ('uploads/users/' ~ user.id ~ '/photo.jpg') %}
+                        <img id="profilePhotoPreview" src="{{ url_for('static', filename=user_photo) }}" alt="Photo" class="img-fluid rounded" onerror="this.src='{{ url_for('static', filename='photo.jpg') }}'" />
+                    </div>
+                    <div class="col-12 col-sm-9 col-lg-10">
+                        <form id="profilePhotoForm" action="{{ url_for('update_account', id=user.id) }}" method="POST" enctype="multipart/form-data">
+                            <div class="mb-3">
                                 <label for="profile_photo" class="form-label">Télécharger une photo de profil (jpg/png)</label>
                                 <input class="form-control" type="file" id="profile_photo" name="profile_photo" accept="image/png,image/jpeg">
-                              </div>
-                              <div class="text-end">
+                            </div>
+                            <div class="text-end">
                                 <button type="button" id="btnUploadPhoto" class="btn btn-primary">Enregistrer la photo</button>
-                              </div>
-                            </form>
-                          </div>
-                        </div>
-                      </div>
+                            </div>
+                        </form>
                     </div>
+                </div>
+            </div>
 
-                    <!-- Gestion du compte: upload et gestion des CV séparée -->
-                    <hr />
-                    <h6>Gestion du compte</h6>
-                    <div class="card mb-3">
-                      <div class="card-body">
-                        <div class="mb-3">
-                            <label for="cv_json" class="form-label">Importer votre CV (JSON GitConnected)</label>
-                            <div class="input-group">
-                                <input class="form-control" type="file" id="cv_json" name="cv_json" accept="application/json">
-                                <button class="btn btn-outline-primary" type="button" id="btnUploadJson">Charger</button>
-                            </div>
-                            <div class="form-text">Ce fichier sera stocké dans votre dossier utilisateur et utilisé pour les fonctionnalités IA.</div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="cv_pdf" class="form-label">Importer un CV (PDF export LinkedIn)</label>
-                            <div class="input-group">
-                                <input class="form-control" type="file" id="cv_pdf" name="cv_pdf" accept="application/pdf">
-                                <button class="btn btn-outline-primary" type="button" id="btnUploadPdf">Charger</button>
-                            </div>
-                            <div class="form-text">Exemples : "Profile_soso.pdf" — le PDF sera stocké et listé ci-dessous.</div>
-                        </div>
-
-
-                        <hr />
-                        <h6>CV chargés</h6>
-                        {% set cvs_dir = ('uploads/users/' ~ user.id ~ '/cvs') %}
-                        {% set meta_path = None %}
-                        {# We'll list files by checking the static path at render time is not possible here, so provide fallback: show links if files exist on disk via URL construction #}
-                        <div class="mb-3">
-                            <small class="text-muted">Les CV importés sont listés ci-dessous. Vous pouvez définir un CV par défaut, renommer l'affichage, ou supprimer le fichier. L'édition du contenu est disponible uniquement pour les CV JSON.</small>
-                        </div>
-                        <div id="cvsList">
-                            {# Provide link to manage page; editing JSON is no longer available from this menu #}
-                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('manage_cvs_view', user_id=user.id) }}">Gérer mes CVs</a>
-                            {% if cvs_files and cvs_files|length > 0 %}
-                            <div class="mt-2">
-                                <label for="default_cv" class="form-label">CV par défaut pour les aperçus et la génération IA</label>
-                                <div class="input-group">
-                                    <select id="default_cv" name="default_cv" class="form-select">
-                                        {% for cf in cvs_files %}
-                                            <option value="{{ cf.name }}" {% if cvs_meta and cvs_meta._default == cf.name %}selected{% endif %}>{{ cf.label }} ({{ cf.name }})</option>
-                                        {% endfor %}
-                                    </select>
-                                    <button class="btn btn-outline-secondary" type="button" id="btnSetDefault">Définir par défaut</button>
-                                </div>
-                            </div>
-                            {% endif %}
-                            <form action="/manage_cvs/{{ user.id }}" method="POST" id="manageCvsForm" class="mt-2">
-                                <input type="hidden" name="action" id="manage_action">
-                                <input type="hidden" name="file" id="manage_file">
-                                <input type="hidden" name="newname" id="manage_newname">
-                            </form>
-                        </div>
-                      </div>
+            <!-- ═══ CV ═══ -->
+            <div class="tab-pane fade" id="tab-cv" role="tabpanel" aria-labelledby="tab-cv-btn" tabindex="0">
+                <h2 class="h6">Importer un CV</h2>
+                <div class="mb-3">
+                    <label for="cv_json" class="form-label">Importer votre CV (JSON GitConnected)</label>
+                    <div class="input-group">
+                        <input class="form-control" type="file" id="cv_json" name="cv_json" accept="application/json">
+                        <button class="btn btn-outline-primary" type="button" id="btnUploadJson">Charger</button>
                     </div>
+                    <div class="form-text">Ce fichier sera stocké dans votre dossier utilisateur et utilisé pour les fonctionnalités IA.</div>
+                </div>
+                <div class="mb-3">
+                    <label for="cv_pdf" class="form-label">Importer un CV (PDF export LinkedIn)</label>
+                    <div class="input-group">
+                        <input class="form-control" type="file" id="cv_pdf" name="cv_pdf" accept="application/pdf">
+                        <button class="btn btn-outline-primary" type="button" id="btnUploadPdf">Charger</button>
+                    </div>
+                    <div class="form-text">Exemples : "Profile_soso.pdf" — le PDF sera stocké et listé ci-dessous.</div>
+                </div>
 
-                    <div class="card mb-3 border-info">
-                      <div class="card-body">
-                        <h6 class="card-title">🤖 Utiliser votre propre fournisseur IA</h6>
-                        <p class="card-text small mb-2">
-                          Utilisez une clé API souscrite directement auprès d'un fournisseur compatible.
-                          Elle est chiffrée sur le serveur et n'est jamais affichée après son enregistrement.
-                        </p>
-                        <a class="btn btn-sm btn-outline-info" href="{{ url_for('account_ai_settings', user_id=user.id) }}">Configurer ma clé IA</a>
-                        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('ai_providers_help') }}">Aide et fournisseurs compatibles</a>
-                      </div>
+                <hr>
+                <h2 class="h6">CV chargés</h2>
+                <p class="text-muted small">Les CV importés sont gérés depuis la page dédiée : définir un CV par défaut, renommer l'affichage ou supprimer le fichier. L'édition du contenu est disponible uniquement pour les CV JSON.</p>
+                <div id="cvsList">
+                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('manage_cvs_view', user_id=user.id) }}">Gérer mes CVs</a>
+                    {% if cvs_files and cvs_files|length > 0 %}
+                    <div class="mt-3">
+                        <label for="default_cv" class="form-label">CV par défaut pour les aperçus et la génération IA</label>
+                        <div class="input-group">
+                            <select id="default_cv" name="default_cv" class="form-select">
+                                {% for cf in cvs_files %}
+                                <option value="{{ cf.name }}" {% if cvs_meta and cvs_meta._default == cf.name %}selected{% endif %}>{{ cf.label }} ({{ cf.name }})</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-outline-secondary" type="button" id="btnSetDefault">Définir par défaut</button>
+                        </div>
                     </div>
                     {% endif %}
+                    <form action="/manage_cvs/{{ user.id }}" method="POST" id="manageCvsForm" class="mt-2">
+                        <input type="hidden" name="action" id="manage_action">
+                        <input type="hidden" name="file" id="manage_file">
+                        <input type="hidden" name="newname" id="manage_newname">
+                    </form>
                 </div>
+            </div>
+
+            <!-- ═══ IA ═══ -->
+            <div class="tab-pane fade" id="tab-ai" role="tabpanel" aria-labelledby="tab-ai-btn" tabindex="0">
+                <h2 class="h6">🤖 Utiliser votre propre fournisseur IA</h2>
+                <p class="small">
+                    Utilisez une clé API souscrite directement auprès d'un fournisseur compatible.
+                    Elle est chiffrée sur le serveur et n'est jamais affichée après son enregistrement.
+                </p>
+                <div class="d-flex flex-wrap gap-2">
+                    <a class="btn btn-sm btn-outline-info" href="{{ url_for('account_ai_settings', user_id=user.id) }}">Configurer ma clé IA</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('ai_providers_help') }}">Aide et fournisseurs compatibles</a>
+                </div>
+            </div>
+
+            {% else %}
+            <!-- ═══ Rôle (administrateur sur le compte d'un autre utilisateur) ═══ -->
+            <div class="tab-pane fade show active" id="tab-role" role="tabpanel" aria-labelledby="tab-role-btn" tabindex="0">
+                {% if user.is_admin or user.is_user %}
+                <form action="{{ url_for('update_account', id=user.id) }}" method="POST" onsubmit="return confirmSubmit();">
+                    <div class="mb-3">
+                        <label for="role" class="form-label">Sélectionnez un nouveau rôle pour <strong>{{ user.username }}</strong> :</label>
+                        <select id="role" name="role" class="form-select">
+                            <option value="Administrateur" {% if user.is_admin %}selected{% endif %}>🔴 Administrateur</option>
+                            <option value="Utilisateur" {% if not user.is_admin %}selected{% endif %}>🟠 Utilisateur</option>
+                        </select>
+                        <div class="form-text">
+                            {% if user.is_admin %}Nommer cet utilisateur Administrateur transférera automatiquement ce rôle et rétrogradera l’administrateur actuel.{% else %}Il ne peut y avoir qu’un seul Administrateur par instance.{% endif %}
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <button type="submit" class="btn btn-primary">✅ Mettre à jour le rôle</button>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- ═══ Confidentialité ═══ -->
+            <div class="tab-pane fade" id="tab-privacy" role="tabpanel" aria-labelledby="tab-privacy-btn" tabindex="0">
+                <h2 class="h6">Partage des offres</h2>
+                {% if is_owner %}
+                <form action="{{ url_for('update_account', id=user.id) }}" method="POST">
+                    <input type="hidden" name="privacy_form" value="1">
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="allow_view_offers" name="allow_view_offers" {% if user.allow_view_offers %}checked{% endif %}>
+                        <label class="form-check-label" for="allow_view_offers">Autoriser les autres utilisateurs de l'application à consulter mes offres</label>
+                    </div>
+                    <div class="text-end">
+                        <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+                    </div>
+                </form>
+                <hr>
+                <p class="small mb-0"><a href="{{ url_for('legal') }}">Consulter les mentions légales, la confidentialité et les conditions</a></p>
+                {% else %}
+                <p class="text-muted small mb-0">Les options de partage des offres ne peuvent être modifiées que par le propriétaire du compte.</p>
+                {% endif %}
             </div>
         </div>
     </div>
-    
+
     <script>
         function confirmSubmit() {
-            var result = confirm("Êtes-vous sûr de vouloir modifier ce rôle ?");
-            return result;
+            return confirm("Êtes-vous sûr de vouloir modifier ce rôle ?");
         }
         document.addEventListener('DOMContentLoaded', function(){
-            // JSON upload handled by btnUploadJson below
-            // Handle PDF upload via separate POST to /import_cv to avoid mixing with account update
-            const btnPdf = document.getElementById('btnUploadPdf');
-            if (btnPdf){
-                btnPdf.addEventListener('click', async function(){
-                    const input = document.getElementById('cv_pdf');
-                    if (!input || !input.files || input.files.length === 0){
-                        showMessage('warning', 'Veuillez sélectionner un fichier PDF à charger');
-                        return;
-                    }
-                    const file = input.files[0];
-                    const fd = new FormData();
-                    fd.append('cv_pdf', file);
-                    fd.append('user_id', '{{ user.id }}');
-                    try {
-                        const resp = await fetch('/import_cv', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
-                        // read body as text first to avoid clone() errors
-                        const bodyText = await resp.text();
-                        let data;
-                        try {
-                            data = JSON.parse(bodyText);
-                        } catch (err) {
-                            data = { ok: false, text: bodyText };
-                        }
-                        if (resp.ok && data.ok) {
-                            // display a friendly message then reload to refresh file list
-                            showMessage('success', data.message || 'Upload effectué.');
-                            window.location.reload();
-                        } else {
-                            showMessage('danger', 'Erreur lors de l\'upload : ' + (data.message || data.text || resp.status));
-                        }
-                    } catch (e) {
-                        showMessage('danger', 'Erreur réseau lors de l\'upload: ' + e);
-                    }
-                });
+            // ── Onglets : mémorisation de l'onglet actif (hash d'URL puis sessionStorage)
+            const storeKey = 'account_tab_{{ user.id }}';
+            const wanted = (location.hash || sessionStorage.getItem(storeKey) || '').replace('#', '');
+            if (wanted) {
+                const btn = document.querySelector('#accountTabs [data-bs-target="#' + wanted + '"]');
+                if (btn && window.bootstrap) { bootstrap.Tab.getOrCreateInstance(btn).show(); }
             }
-            const btnJson = document.getElementById('btnUploadJson');
-            if (btnJson){
-                btnJson.addEventListener('click', async function(){
-                    const input = document.getElementById('cv_json');
-                    if (!input || !input.files || input.files.length === 0){
-                        showMessage('warning', 'Veuillez sélectionner un fichier JSON à charger');
-                        return;
-                    }
-                    const file = input.files[0];
-                    const fd = new FormData();
-                    fd.append('cv_json', file);
-                    fd.append('user_id', '{{ user.id }}');
-                    try {
-                        const resp = await fetch('/import_cv', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
-                        // read body as text first to avoid clone() errors
-                        const bodyText2 = await resp.text();
-                        let data;
-                        try {
-                            data = JSON.parse(bodyText2);
-                        } catch (err) {
-                            data = { ok: false, text: bodyText2 };
-                        }
-                        if (resp.ok && data.ok) {
-                            showMessage('success', data.message || 'Upload effectué.');
-                            window.location.reload();
-                        } else {
-                            showMessage('danger', 'Erreur lors de l\'upload : ' + (data.message || data.text || resp.status));
-                        }
-                    } catch (e) {
-                        showMessage('danger', 'Erreur réseau lors de l\'upload: ' + e);
-                    }
+            document.querySelectorAll('#accountTabs [data-bs-toggle="tab"]').forEach(function(btn){
+                btn.addEventListener('shown.bs.tab', function(ev){
+                    const target = ev.target.getAttribute('data-bs-target').replace('#', '');
+                    sessionStorage.setItem(storeKey, target);
+                    history.replaceState(null, '', '#' + target);
                 });
-            }
-            const btnSetDefault = document.getElementById('btnSetDefault');
-            if (btnSetDefault){
-                btnSetDefault.addEventListener('click', function(){
-                    const sel = document.getElementById('default_cv');
-                    if (!sel) return showMessage('warning','Aucun CV sélectionné');
-                    const filename = sel.value;
-                    const form = document.getElementById('manageCvsForm');
-                    document.getElementById('manage_action').value = 'set_default';
-                    document.getElementById('manage_file').value = filename;
-                    form.submit();
-                });
-            }
-                    // Handle profile photo upload
-                    const btnUploadPhoto = document.getElementById('btnUploadPhoto');
-                    if (btnUploadPhoto){
-                        btnUploadPhoto.addEventListener('click', async function(){
-                            const input = document.getElementById('profile_photo');
-                            if (!input || !input.files || input.files.length === 0){
-                                showMessage('warning', 'Veuillez sélectionner une image à charger');
-                                return;
-                            }
-                            const file = input.files[0];
-                            const fd = new FormData(document.getElementById('profilePhotoForm'));
-                            fd.append('profile_photo', file);
-                            try {
-                                const resp = await fetch('{{ url_for('update_account', id=user.id) }}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
-                                const bodyText = await resp.text();
-                                let data;
-                                try { data = JSON.parse(bodyText); } catch(e){ data = { ok: resp.ok, text: bodyText }; }
-                                if (resp.ok){
-                                    showMessage('success', 'Photo enregistrée. Rechargement...');
-                                    // update preview src to bypass cache
-                                    const preview = document.getElementById('profilePhotoPreview');
-                                    if (preview){
-                                        const ts = Date.now();
-                                        preview.src = '{{ url_for('static', filename='uploads/users/' ~ user.id ~ '/photo.jpg') }}' + '?t=' + ts;
-                                    }
-                                } else {
-                                    showMessage('danger', 'Erreur lors de l\'upload : ' + (data.message || data.text || resp.status));
-                                }
-                            } catch (e){
-                                showMessage('danger', 'Erreur réseau lors de l\'upload: ' + e);
-                            }
-                        });
-                    }
+            });
+
             // Utility to show Bootstrap alerts dynamically
             function showMessage(level, message, timeoutMs = 6000){
                 const container = document.getElementById('flash_placeholder');
@@ -333,6 +251,78 @@
                 if (timeoutMs > 0){
                     setTimeout(()=>{ try{ wrapper.remove(); }catch(e){} }, timeoutMs);
                 }
+            }
+
+            // Import CV (JSON ou PDF) via /import_cv
+            async function uploadCv(inputId, field, label){
+                const input = document.getElementById(inputId);
+                if (!input || !input.files || input.files.length === 0){
+                    showMessage('warning', 'Veuillez sélectionner un fichier ' + label + ' à charger');
+                    return;
+                }
+                const fd = new FormData();
+                fd.append(field, input.files[0]);
+                fd.append('user_id', '{{ user.id }}');
+                try {
+                    const resp = await fetch('/import_cv', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+                    const bodyText = await resp.text();
+                    let data;
+                    try { data = JSON.parse(bodyText); } catch (err) { data = { ok: false, text: bodyText }; }
+                    if (resp.ok && data.ok) {
+                        showMessage('success', data.message || 'Upload effectué.');
+                        window.location.reload();
+                    } else {
+                        showMessage('danger', 'Erreur lors de l\'upload : ' + (data.message || data.text || resp.status));
+                    }
+                } catch (e) {
+                    showMessage('danger', 'Erreur réseau lors de l\'upload: ' + e);
+                }
+            }
+            const btnPdf = document.getElementById('btnUploadPdf');
+            if (btnPdf) btnPdf.addEventListener('click', () => uploadCv('cv_pdf', 'cv_pdf', 'PDF'));
+            const btnJson = document.getElementById('btnUploadJson');
+            if (btnJson) btnJson.addEventListener('click', () => uploadCv('cv_json', 'cv_json', 'JSON'));
+
+            const btnSetDefault = document.getElementById('btnSetDefault');
+            if (btnSetDefault){
+                btnSetDefault.addEventListener('click', function(){
+                    const sel = document.getElementById('default_cv');
+                    if (!sel) return showMessage('warning','Aucun CV sélectionné');
+                    document.getElementById('manage_action').value = 'set_default';
+                    document.getElementById('manage_file').value = sel.value;
+                    document.getElementById('manageCvsForm').submit();
+                });
+            }
+
+            // Photo de profil
+            const btnUploadPhoto = document.getElementById('btnUploadPhoto');
+            if (btnUploadPhoto){
+                btnUploadPhoto.addEventListener('click', async function(){
+                    const input = document.getElementById('profile_photo');
+                    if (!input || !input.files || input.files.length === 0){
+                        showMessage('warning', 'Veuillez sélectionner une image à charger');
+                        return;
+                    }
+                    const fd = new FormData(document.getElementById('profilePhotoForm'));
+                    fd.append('profile_photo', input.files[0]);
+                    try {
+                        const resp = await fetch('{{ url_for('update_account', id=user.id) }}', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+                        const bodyText = await resp.text();
+                        let data;
+                        try { data = JSON.parse(bodyText); } catch(e){ data = { ok: resp.ok, text: bodyText }; }
+                        if (resp.ok){
+                            showMessage('success', 'Photo enregistrée.');
+                            const preview = document.getElementById('profilePhotoPreview');
+                            if (preview){
+                                preview.src = '{{ url_for('static', filename='uploads/users/' ~ user.id ~ '/photo.jpg') }}' + '?t=' + Date.now();
+                            }
+                        } else {
+                            showMessage('danger', 'Erreur lors de l\'upload : ' + (data.message || data.text || resp.status));
+                        }
+                    } catch (e){
+                        showMessage('danger', 'Erreur réseau lors de l\'upload: ' + e);
+                    }
+                });
             }
         });
     </script>

@@ -1,7 +1,6 @@
 {% extends 'base.html' %}
 {% block main %}
 <main class="container">
-  {% include './partials/_menu.html' %}
   <h2 class="h4 mb-3">🤖 Configuration IA personnelle</h2>
   <div class="alert alert-warning small">
     La clé est chiffrée avec la clé maîtresse du serveur. Elle n'est jamais affichée ni enregistrée dans les journaux.
@@ -86,8 +85,6 @@
   </form>
   <p class="mt-3">
     <a href="{{ url_for('ai_providers_help') }}">Consulter l'aide sur les fournisseurs</a>
-    <span class="mx-1">·</span>
-    <a href="{{ url_for('update_account', id=user.id) }}">Retour au compte</a>
   </p>
 </main>
 <script>

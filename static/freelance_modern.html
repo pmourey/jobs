@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Présentation Offre Indépendant</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f0f2f5; color: #333; }
+        .container { width: 80%; margin: auto; text-align: center; }
+        header { background: linear-gradient(45deg, #6a11cb, #2575fc); color: white; padding: 40px 20px; }
+        header h1 { margin: 0; }
+        section { padding: 40px 20px; }
+        .services { display: flex; justify-content: space-around; flex-wrap: wrap; }
+        .service-box { padding: 20px; background: white; margin: 10px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); width: 30%; }
+        footer { background: #333; color: white; text-align: center; padding: 20px; margin-top: 20px; }
+        form { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); width: 50%; margin: auto; }
+        input, textarea, button { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; }
+        button { background: #2575fc; color: white; border: none; cursor: pointer; }
+        button:hover { background: #1a5bbf; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Bienvenue sur mon offre indépendante</h1>
+    </header>
+    <div class="container">
+        <section id="about">
+            <h2>À propos</h2>
+            <p>Je suis Philippe, développeur freelance spécialisé en Flask et en solutions web.</p>
+        </section>
+        <section id="services">
+            <h2>Mes Services</h2>
+            <div class="services">
+                <div class="service-box"><h3>Développement Flask</h3><p>Création d'applications web performantes.</p></div>
+                <div class="service-box"><h3>Optimisation</h3><p>Amélioration de la performance et de la sécurité.</p></div>
+                <div class="service-box"><h3>Consulting</h3><p>Accompagnement et conseils sur vos projets.</p></div>
+            </div>
+        </section>
+        <section id="contact">
+            <h2>Contactez-moi</h2>
+            <form action="/submit" method="post">
+                <input type="text" name="name" placeholder="Votre nom" required><br>
+                <input type="email" name="email" placeholder="Votre email" required><br>
+                <textarea name="message" placeholder="Votre message" required></textarea><br>
+                <button type="submit">Envoyer</button>
+            </form>
+        </section>
+    </div>
+    <footer>
+        <p>&copy; 2025 Philippe - Tous droits réservés</p>
+    </footer>
+</body>
+</html>

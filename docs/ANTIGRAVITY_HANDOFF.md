@@ -83,6 +83,12 @@ secret, token ou contenu de `config.py` ne doit être ajouté à ce document.
 - `User.suspended`, `suspension_reason`, `suspended_at` et `suspended_by`
   permettent de suspendre puis réactiver un compte. Le motif est obligatoire ;
   une connexion et une session existante sont bloquées pour un compte suspendu.
+
+## Sessions administrateur
+
+Le panneau **Sessions** mémorise l'identifiant de la session Flask courante.
+Un administrateur peut fermer toutes les autres sessions actives via
+`POST /delete_other_sessions`; la session qui exécute la demande reste active.
 - Les colonnes de suspension sont ajoutées à la table existante `user` par la
   migration légère `_ensure_user_status_columns()` ; `db.create_all()` seul
   n'ajoute pas les colonnes d'une table déjà créée.
