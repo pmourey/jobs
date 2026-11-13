@@ -80,6 +80,10 @@ from tools.send_emails import send_email
 from tools.ai_credentials import (AI_PROVIDERS, delete_user_credential,
                                   enabled_provider_keys, provider_options,
                                   resolve_user_ai_config, save_user_credential)
+from tools.jobboard_providers import (JOB_OFFER_PROVIDERS,
+                                      available_job_offer_provider_keys,
+                                      enabled_job_offer_provider_keys,
+                                      get_provider, job_offer_provider_status)
 
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -940,6 +944,26 @@ def admin_ai_providers():
     )
 
 
+@app.route('/admin/job-offer-providers', methods=['GET', 'POST'])
+@is_connected
+@is_admin
+def admin_job_offer_providers():
+    if request.method == 'POST':
+        selected = {
+            key for key in request.form.getlist('providers')
+            if key in JOB_OFFER_PROVIDERS
+        }
+        AppSetting.set('job_offer_enabled_providers', ','.join(sorted(selected)))
+        flash('Les fournisseurs d’offres autorisés ont été mis à jour.', 'success')
+        return redirect(url_for('admin_job_offer_providers'))
+    return render_template(
+        'admin_job_offer_providers.html',
+        user=get_user_by_id(session['login_id']),
+        providers=job_offer_provider_status(),
+        enabled=enabled_job_offer_provider_keys(),
+    )
+
+
 @app.route('/account/<int:user_id>/ai', methods=['GET', 'POST'])
 @is_connected
 def account_ai_settings(user_id):
@@ -1665,6 +1689,30 @@ def _get_france_travail_credentials() -> tuple[str, str]:
     return client_id, client_secret
 
 
+def _search_job_offer_provider(provider_key: str, *, client_id: str, client_secret: str,
+                               mots_cles: str | None = None,
+                               types_contrat: list[str] | None = None,
+                               departement: str | None = None,
+                               mode_travail: str | None = None,
+                               entreprises_adaptees: bool = False) -> list[dict]:
+    if provider_key == 'france_travail':
+        return search_offers(
+            client_id=client_id,
+            client_secret=client_secret,
+            mots_cles=mots_cles,
+            types_contrat=types_contrat,
+            departement=departement,
+            mode_travail=mode_travail,
+            entreprises_adaptees=entreprises_adaptees,
+        )
+    return get_provider(provider_key).search_offers(
+        q=mots_cles,
+        departement=departement,
+        types_contrat=types_contrat,
+        mode_travail=mode_travail,
+    )
+
+
 @app.route('/preview_cv_data/<int:id>', methods=['POST'])
 @is_connected
 def preview_cv_data(id):
@@ -2187,13 +2235,17 @@ def save_lm_text(id):
 def france_travail_search():
     user = get_user_by_id(session['login_id'])
     client_id, client_secret = _get_france_travail_credentials()
-
-    if not client_id or not client_secret:
+    provider_name = request.form.get('provider', 'france_travail')
+    available_providers = available_job_offer_provider_keys()
+    if not available_providers:
         flash(
-            'Les identifiants France Travail ne sont pas configurés. '
-            'Renseignez FT_CLIENT_ID et FT_CLIENT_SECRET dans config.py.',
+            'Aucun fournisseur d’offres d’emploi n’est configuré et activé. '
+            'Un administrateur doit activer un fournisseur et renseigner ses identifiants.',
             'error',
         )
+        return redirect(url_for('france_travail'))
+    if provider_name not in available_providers:
+        flash('Le fournisseur d’offres sélectionné est désactivé ou non configuré.', 'error')
         return redirect(url_for('france_travail'))
 
     mode       = request.form.get('mode', 'manual')
@@ -2201,6 +2253,9 @@ def france_travail_search():
 
     try:
         if mode == 'auto':
+            if provider_name != 'france_travail':
+                flash('La recherche automatique basée sur le CV utilise France Travail.', 'error')
+                return redirect(url_for('france_travail'))
             # Prefer the connected user's default CV data for automatic searches
             cv_data = _resolve_user_cv_data(user.id) or load_cv_data(app.static_folder)
             min_creation_date = None
@@ -2235,6 +2290,7 @@ def france_travail_search():
                 'departement': departement,
                 'mots_cles': _keywords_to_query(user_selected_ats) or None,
                 'ats_keywords': user_selected_ats or None,
+                'provider': provider_name,
             }
         else:
             mots_cles_raw      = request.form.get('mots_cles', '').strip() or None
@@ -2244,29 +2300,16 @@ def france_travail_search():
             entreprises_adapt  = request.form.get('entreprises_adaptees') == 'on'
             mots_cles          = _keywords_to_query(user_keywords) or _keywords_to_query(mots_cles_raw) or mots_cles_raw
             # Allow selecting an alternative provider (greenhouse, lever, ashby, teamtailor)
-            provider_name = request.form.get('provider', 'france_travail')
-            if provider_name and provider_name != 'france_travail':
-                try:
-                    from tools.jobboard_providers import get_provider
-                    prov = get_provider(provider_name)
-                    # Map our form params into a simple q parameter for provider adapters
-                    q = mots_cles or ''
-                    offers = prov.search_offers(q=q, departement=departement, types_contrat=types_contrat,
-                                                mode_travail=mode_travail)
-                    # provider returns normalized dicts; keep as-is
-                except Exception as exc:
-                    app.logger.error(f'Provider {provider_name} error: {exc}')
-                    offers = []
-            else:
-                offers = search_offers(
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    mots_cles=mots_cles,
-                    types_contrat=types_contrat,
-                    departement=departement,
-                    mode_travail=mode_travail,
-                    entreprises_adaptees=entreprises_adapt,
-                )
+            offers = _search_job_offer_provider(
+                provider_name,
+                client_id=client_id,
+                client_secret=client_secret,
+                mots_cles=mots_cles,
+                types_contrat=types_contrat,
+                departement=departement,
+                mode_travail=mode_travail,
+                entreprises_adaptees=entreprises_adapt,
+            )
             kw   = mots_cles or '(tous)'
             dept = DEPARTMENTS.get(departement or '', departement or 'Toute la France')
             ct   = ', '.join(types_contrat) if types_contrat else 'Tous'
@@ -2281,6 +2324,7 @@ def france_travail_search():
                 'departement': departement, 'mode_travail': mode_travail,
                 'entreprises_adaptees': entreprises_adapt,
                 'ats_keywords': user_keywords or None,
+                'provider': provider_name,
             }
 
     except Exception as exc:
@@ -2360,6 +2404,8 @@ def france_travail():
         prefill_entreprises_adaptees=False,
         prefill_provider='france_travail',
         prefill_ats_keywords=[],
+        job_offer_providers=job_offer_provider_status(),
+        available_job_offer_providers=available_job_offer_provider_keys(),
         edit_search_id=None,
         search_info=None,
     )
@@ -2461,6 +2507,8 @@ def france_travail_edit_page(search_id):
         prefill_entreprises_adaptees=bool(params.get('entreprises_adaptees', False)),
         prefill_provider=params.get('provider') or 'france_travail',
         prefill_ats_keywords=saved_ats_keywords,
+        job_offer_providers=job_offer_provider_status(),
+        available_job_offer_providers=available_job_offer_provider_keys(),
         suggested_ats_keywords=suggested_ats_keywords,
         edit_search_id=ft_search.id,
         search_info=ft_search.search_info,
@@ -2678,13 +2726,24 @@ def ft_search_refresh(search_id):
     """Réactualise une recherche sauvegardée en réexécutant les mêmes paramètres."""
     ft_search = FtSearch.query.get_or_404(search_id)
     client_id, client_secret = _get_france_travail_credentials()
-    if not client_id or not client_secret:
-        flash('Identifiants France Travail non configurés.', 'error')
+    provider_name = (ft_search.params or {}).get('provider') or 'france_travail'
+    if not available_job_offer_provider_keys():
+        flash(
+            'Aucun fournisseur d’offres d’emploi n’est configuré et activé. '
+            'Un administrateur doit activer un fournisseur et renseigner ses identifiants.',
+            'error',
+        )
+        return redirect(url_for('ft_search_view', search_id=search_id))
+    if provider_name not in available_job_offer_provider_keys():
+        flash('Le fournisseur de cette recherche est désactivé ou non configuré.', 'error')
         return redirect(url_for('ft_search_view', search_id=search_id))
 
     p = ft_search.params
     try:
         if p.get('mode') == 'auto':
+            if provider_name != 'france_travail':
+                flash('La recherche automatique basée sur le CV utilise France Travail.', 'error')
+                return redirect(url_for('ft_search_view', search_id=search_id))
             cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
             offers = search_auto_from_cv(
                 client_id=client_id, client_secret=client_secret,
@@ -2699,7 +2758,8 @@ def ft_search_refresh(search_id):
             mots_cles = p.get('mots_cles')
             if not mots_cles:
                 mots_cles = _keywords_to_query(p.get('ats_keywords') or [])
-            offers = search_offers(
+            offers = _search_job_offer_provider(
+                provider_name,
                 client_id=client_id, client_secret=client_secret,
                 mots_cles=mots_cles, types_contrat=p.get('types_contrat'),
                 departement=p.get('departement'), mode_travail=p.get('mode_travail'),

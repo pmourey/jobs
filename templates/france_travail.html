@@ -4,6 +4,13 @@
 {% include 'partials/_menu.html' %}
 
 <div class="container-fluid mt-4">
+	{% if not available_job_offer_providers %}
+	<div class="alert alert-warning">
+		Aucun fournisseur d’offres d’emploi n’est actuellement configuré et activé.
+		Un administrateur doit renseigner les identifiants puis activer au moins un
+		fournisseur dans le menu <strong>Fournisseurs d’offres</strong>.
+	</div>
+	{% endif %}
 	<div class="d-flex align-items-center gap-3 mb-4">
 		<h1 class="h3 mb-0">🇫🇷 France Travail – Recherche d'offres</h1>
 		{% if last_extraction %}
@@ -356,13 +363,16 @@
 							<div class="col-md-6">
 								<label for="provider" class="form-label">Source / Fournisseur</label>
 								<select class="form-select" id="provider" name="provider">
-									<option value="france_travail" {% if (prefill_provider or 'france_travail') == 'france_travail' %}selected{% endif %}>France Travail (par défaut)</option>
-									<option value="greenhouse" {% if prefill_provider == 'greenhouse' %}selected{% endif %}>Greenhouse</option>
-									<option value="lever" {% if prefill_provider == 'lever' %}selected{% endif %}>Lever</option>
-									<option value="ashby" {% if prefill_provider == 'ashby' %}selected{% endif %}>Ashby</option>
-									<option value="teamtailor" {% if prefill_provider == 'teamtailor' %}selected{% endif %}>Teamtailor</option>
-								</select>
-								<div class="form-text">Choisissez une source externe pour tester d'autres flux d'offres.</div>
+								{% for provider in job_offer_providers %}
+								<option value="{{ provider.key }}"
+									{% if prefill_provider == provider.key %}selected{% endif %}
+									{% if not provider.enabled or not provider.configured %}disabled{% endif %}>
+									{{ provider.name }}
+									{% if not provider.enabled %}(désactivé){% elif not provider.configured %}(non configuré){% endif %}
+								</option>
+								{% endfor %}
+							</select>
+							<div class="form-text">Les fournisseurs disponibles sont activés et configurés par un administrateur.</div>
 							</div>
 							<div class="col-md-6 d-flex align-items-end">
 								{% if edit_search_id %}

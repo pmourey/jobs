@@ -9,6 +9,9 @@
 			<a href="{{ url_for('france_travail') }}" class="nav-link">🇫🇷 France Travail</a>
 			<a href="{{ url_for('ft_searches') }}" class="nav-link">📋 Mes recherches FT</a>
 			<a href="{{ url_for('update_account', id=session['login_id']) }}" class="nav-link">⚙️ Mon compte</a>
+			{% if user and user.is_admin %}
+			<a href="{{ url_for('admin_job_offer_providers') }}" class="nav-link">🔌 Fournisseurs d’offres</a>
+			{% endif %}
 			<a href="{{ url_for('logout') }}" class="nav-link text-danger">🚪 Déconnexion</a>
 			{% endif %}
 		</div>

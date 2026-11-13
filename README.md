@@ -73,6 +73,14 @@ domaines France Travail. Dans ce cas, il faut vérifier l'autorisation réseau
 de l'offre d'hébergement ou utiliser une instance disposant d'un accès
 sortant autorisé ; le code applicatif ne peut pas contourner cette restriction.
 
+Les recherches d'offres peuvent aussi utiliser Adzuna ou Jooble lorsqu'une clé
+API est configurée (`ADZUNA_APP_ID`/`ADZUNA_APP_KEY` ou `JOOBLE_API_KEY`).
+L'administrateur active les fournisseurs utilisables depuis
+**Fournisseurs d'offres**. Une recherche est bloquée si aucun fournisseur
+activé ne possède des identifiants complets. Ces intégrations utilisent les
+APIs officielles ; LinkedIn et Indeed ne proposent pas une API publique
+générale équivalente pour une recherche d'offres indépendante.
+
 ```bash
 python flask_app.py
 ```

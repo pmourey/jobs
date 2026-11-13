@@ -1,5 +1,6 @@
 """
-Clients minimalistes pour fournisseurs d'API d'offres : Greenhouse, Lever, Ashby, Teamtailor.
+Clients minimalistes pour fournisseurs d'API d'offres : France Travail, Adzuna,
+Jooble, Greenhouse, Lever, Ashby et Teamtailor.
 But : fournir des adaptateurs simples réutilisables pour intégrer ces sources dans les recherches.
 - Chaque client expose : search_offers(params) -> list[dict]
 - Ces implémentations sont des adaptateurs/boîtes à outils : elles lisent les variables de config
@@ -16,10 +17,84 @@ import time
 from typing import Any, Dict, List, Optional
 
 import requests
+from flask import current_app
 
 
 class ProviderError(RuntimeError):
     pass
+
+
+JOB_OFFER_PROVIDERS = {
+    'france_travail': {
+        'name': 'France Travail',
+        'kind': 'aggregator',
+        'requires': ('FT_CLIENT_ID', 'FT_CLIENT_SECRET'),
+        'help_url': 'https://francetravail.io/produits-partages/catalogue',
+    },
+    'adzuna': {
+        'name': 'Adzuna',
+        'kind': 'aggregator',
+        'requires': ('ADZUNA_APP_ID', 'ADZUNA_APP_KEY'),
+        'help_url': 'https://developer.adzuna.com/',
+    },
+    'jooble': {
+        'name': 'Jooble',
+        'kind': 'aggregator',
+        'requires': ('JOOBLE_API_KEY',),
+        'help_url': 'https://jooble.org/api/about',
+    },
+}
+
+
+def _setting_value(name: str) -> str:
+    environment_value = os.environ.get(name)
+    if environment_value:
+        return environment_value.strip()
+    try:
+        value = current_app.config.get(name)
+    except RuntimeError:
+        value = None
+    return str(value or '').strip()
+
+
+def enabled_job_offer_provider_keys() -> set[str]:
+    raw = _setting_value('JOB_OFFER_ENABLED_PROVIDERS') or 'france_travail'
+    try:
+        from Model import AppSetting
+        raw = AppSetting.get('job_offer_enabled_providers', raw)
+    except Exception:
+        pass
+    values = raw.split(',') if isinstance(raw, str) else raw
+    return {
+        str(value).strip().lower()
+        for value in (values or [])
+        if str(value).strip().lower() in JOB_OFFER_PROVIDERS
+    }
+
+
+def job_offer_provider_status() -> list[dict]:
+    enabled = enabled_job_offer_provider_keys()
+    providers = []
+    for key, data in JOB_OFFER_PROVIDERS.items():
+        missing = [name for name in data['requires'] if not _setting_value(name)]
+        providers.append({
+            'key': key,
+            'name': data['name'],
+            'kind': data['kind'],
+            'help_url': data['help_url'],
+            'enabled': key in enabled,
+            'configured': not missing,
+            'missing': missing,
+        })
+    return providers
+
+
+def available_job_offer_provider_keys() -> set[str]:
+    return {
+        item['key']
+        for item in job_offer_provider_status()
+        if item['enabled'] and item['configured']
+    }
 
 
 def _safe_get(d: dict, *keys, default=''):
@@ -372,6 +447,79 @@ class SmartRecruitersProvider(BaseProvider):
             raise ProviderError(f'SmartRecruiters fetch failed: {exc}') from exc
 
 
+class AdzunaProvider(BaseProvider):
+    name = 'adzuna'
+
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+        super().__init__(api_key=api_key, base_url=base_url)
+        self.app_id = _setting_value('ADZUNA_APP_ID')
+        self.api_key = api_key or _setting_value('ADZUNA_APP_KEY')
+
+    def search_offers(self, q: Optional[str] = None, **params) -> List[Dict[str, Any]]:
+        country = params.get('country') or _setting_value('ADZUNA_COUNTRY') or 'fr'
+        page = int(params.get('page') or 1)
+        url = (
+            self.base_url
+            or f'https://api.adzuna.com/v1/api/jobs/{country}/search/{page}'
+        )
+        query = {
+            'app_id': self.app_id,
+            'app_key': self.api_key,
+            'results_per_page': min(int(params.get('max_results') or 50), 50),
+            'sort_by': 'date',
+        }
+        if q:
+            query['what'] = q
+        if params.get('departement'):
+            query['where'] = params['departement']
+        try:
+            response = requests.get(url, params=query, timeout=15)
+            response.raise_for_status()
+            items = response.json().get('results', [])
+            return [{
+                'id': str(item.get('id') or item.get('title')),
+                'intitule': item.get('title') or '',
+                'entreprise': _safe_get(item.get('company') or {}, 'display_name', 'name'),
+                'lieu': _safe_get(item.get('location') or {}, 'display_name', 'name'),
+                'url': item.get('redirect_url') or '',
+                'dateCreation': item.get('created') or '',
+                'raw': item,
+            } for item in items]
+        except Exception as exc:
+            raise ProviderError(f'Adzuna fetch failed: {exc}') from exc
+
+
+class JoobleProvider(BaseProvider):
+    name = 'jooble'
+
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+        self.api_key = api_key or _setting_value('JOOBLE_API_KEY')
+        self.base_url = base_url or _setting_value('JOOBLE_BASE_URL') or 'https://jooble.org/api'
+
+    def search_offers(self, q: Optional[str] = None, **params) -> List[Dict[str, Any]]:
+        url = f'{self.base_url.rstrip("/")}/{self.api_key}'
+        payload = {
+            'keywords': q or '',
+            'location': params.get('departement') or '',
+            'page': int(params.get('page') or 1),
+        }
+        try:
+            response = requests.post(url, json=payload, timeout=15)
+            response.raise_for_status()
+            items = response.json().get('jobs', [])
+            return [{
+                'id': str(item.get('id') or item.get('title')),
+                'intitule': item.get('title') or '',
+                'entreprise': item.get('company') or '',
+                'lieu': item.get('location') or '',
+                'url': item.get('link') or '',
+                'dateCreation': item.get('updated') or '',
+                'raw': item,
+            } for item in items]
+        except Exception as exc:
+            raise ProviderError(f'Jooble fetch failed: {exc}') from exc
+
+
 # Convenience factory
 def get_provider(name: str, **kwargs) -> BaseProvider:
     name_l = (name or '').lower()
@@ -385,10 +533,11 @@ def get_provider(name: str, **kwargs) -> BaseProvider:
         return TeamtailorProvider(**kwargs)
     if name_l in ('smartrecruiters', 'smart-recruiters'):
         return SmartRecruitersProvider(**kwargs)
+    if name_l == 'adzuna':
+        return AdzunaProvider(**kwargs)
+    if name_l == 'jooble':
+        return JoobleProvider(**kwargs)
     raise ValueError(f'Unknown provider: {name}')
-
-
-
 
 
 

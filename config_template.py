@@ -23,6 +23,16 @@ class Config:
     GITHUB_MODELS_BASE_URL = 'http://localhost:11434'
     GITHUB_MODELS_MODEL = 'llama3.1:8b'
     OLLAMA_LOCAL_TUNING = IMAC_64GB_OLLAMA_TUNING
+    # Fournisseurs d'offres autorisés par défaut ; l'Admin peut les activer
+    # ou désactiver depuis le menu dédié.
+    JOB_OFFER_ENABLED_PROVIDERS = 'france_travail'
+    FT_CLIENT_ID = ''
+    FT_CLIENT_SECRET = ''
+    ADZUNA_APP_ID = ''
+    ADZUNA_APP_KEY = ''
+    ADZUNA_COUNTRY = 'fr'
+    JOOBLE_API_KEY = ''
+    JOOBLE_BASE_URL = 'https://jooble.org/api'
     # Enable or disable outbound AI model calls (GitHub Models / OpenAI-compatible).
     # On hosts that block outgoing connections (ex: PythonAnywhere), set this to False
     # to force local fallbacks for CV / LM generation.
