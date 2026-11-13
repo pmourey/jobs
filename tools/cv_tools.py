@@ -349,7 +349,6 @@ def get_user_contact_info(user_id: int, static_folder: str | Path | None = None)
             from flask import current_app
             static_folder = current_app.static_folder
         except Exception:
-            from pathlib import Path
             static_folder = str(Path(__file__).parent.parent / 'static')
 
     user = None
