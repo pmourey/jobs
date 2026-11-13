@@ -2,7 +2,7 @@
 Client API France Travail v2 pour la recherche d'offres d'emploi.
 
 Authentification : OAuth2 client_credentials
-Documentation : https://francetravail.io/produits-partages/catalogue/offres-emploi/documentation
+Documentation : https://francetravail.io/produits-partages/catalogue
 Base URL : https://api.francetravail.io/partenaire/offresdemploi/v2
 Token URL : https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire
 """
@@ -22,6 +22,26 @@ logger = logging.getLogger(__name__)
 FT_TOKEN_URL = "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire"
 FT_API_BASE  = "https://api.francetravail.io/partenaire/offresdemploi/v2"
 FT_SCOPE     = "api_offresdemploiv2 o2dsoffre"
+
+
+def format_connection_error(exc: Exception) -> str:
+    """Retourne un message utilisateur adapté aux blocages de proxy hébergé."""
+    if isinstance(exc, ProxyError):
+        details = str(exc).lower()
+        if '403' in details or 'tunnel connection failed' in details:
+            return (
+                "La connexion à l'API France Travail est bloquée par le proxy de "
+                "l'hébergeur (HTTP 403). Sur PythonAnywhere, demandez la mise en "
+                "liste blanche de api.francetravail.io et "
+                "entreprise.francetravail.fr, ou déployez l'application sur un "
+                "hébergeur autorisant ces connexions. La même configuration "
+                "fonctionne localement."
+            )
+        return (
+            "La connexion à l'API France Travail est bloquée ou indisponible "
+            "via le proxy de l'hébergeur. Vérifiez la liste blanche réseau."
+        )
+    return str(exc)
 
 # Codes types de contrat France Travail (validés API v2 — IND/CUI/PRO causent 400)
 CONTRACT_TYPES: dict[str, str] = {
