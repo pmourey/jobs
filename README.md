@@ -1,9 +1,16 @@
-# Suivi de candidatures
+# 💼 Suivi de candidatures France Travail & Assistant IA
 
-Application monolithique Flask pour organiser une recherche d'emploi, suivre
-les candidatures et générer des CV/lettres personnalisés. Les fonctions
+Application web communautaire, gratuite et auto-hébergeable permettant de centraliser sa recherche d'emploi, de consulter les offres France Travail et de générer des CV et lettres de motivation adaptés grâce à l'intelligence artificielle. Les fonctions
 principales sont protégées par authentification ; les données de candidature
 sont privées par défaut.
+
+🌐 **Instance communautaire en ligne :** [https://pythonanywhere.com](https://pythonanywhere.com)
+
+## ✨ Fonctionnalités principales
+- **Tableau de bord de suivi :** centralisation des entreprises, contacts, dates clés, statuts et relances.
+- **Intégration France Travail :** recherche d'offres d'emploi directement depuis l'interface.
+- **Génération assistée par IA :** création et personnalisation de CV et lettres de motivation (compatible IA locale ou API distante).
+- **Respect des données (RGPD) :** cloisonnement strict des comptes utilisateurs et partage optionnel.
 
 ## Architecture essentielle
 
@@ -18,8 +25,19 @@ sont privées par défaut.
 - `instance/backups/deleted_users/` : archives privées des comptes supprimés.
 
 Le CV de référence est
-`static/uploads/users/<user_id>/cvs/cv.json`. Les imports PDF sont réalisés en
-deux étapes : extraction, puis chargement explicite dans ce CV canonique.
+`static/uploads/users/<user_id>/cvs/cv.json`. Les imports PDF, DOCX et ODT
+extraient le texte localement puis utilisent l'IA configurée par le site pour
+produire ce CV canonique. Un seul original courant est conservé dans
+`cvs/originals/` et reste accessible depuis la gestion des CV, sous contrôle
+d'authentification. Un nouvel import remplace simplement le CV canonique et
+l'original courant.
+
+Les sources compatibles sont GitConnected (JSON Resume), LinkedIn Export (PDF)
+et les autres CV au format PDF, DOCX ou ODT. Les formats non structurés sont
+convertis par l'IA configurée sur le site. Les dates des expériences,
+formations, certifications et missions bénévoles sont normalisées en
+`YYYY-MM-DD` ; lorsqu'un mois ou une année seulement est fourni, le premier jour
+correspondant est utilisé.
 
 ## Installation locale
 

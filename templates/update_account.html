@@ -118,47 +118,32 @@
 
             <!-- ═══ CV ═══ -->
             <div class="tab-pane fade" id="tab-cv" role="tabpanel" aria-labelledby="tab-cv-btn" tabindex="0">
-                <h2 class="h6">Importer un CV</h2>
-                <div class="mb-3">
-                    <label for="cv_json" class="form-label">Importer votre CV (JSON GitConnected)</label>
-                    <div class="input-group">
-                        <input class="form-control" type="file" id="cv_json" name="cv_json" accept="application/json">
-                        <button class="btn btn-outline-primary" type="button" id="btnUploadJson">Charger</button>
-                    </div>
-                    <div class="form-text">Ce fichier sera stocké dans votre dossier utilisateur et utilisé pour les fonctionnalités IA.</div>
+                <h2 class="h6">Mettre à jour mon CV</h2>
+                <div class="alert alert-info py-2 small">
+                    Choisissez votre fichier CV. Il sera converti automatiquement en CV canonique,
+                    utilisé par le site, et l’original sera archivé.
                 </div>
                 <div class="mb-3">
-                    <label for="cv_pdf" class="form-label">Importer un CV (PDF export LinkedIn)</label>
+                    <label for="cv_file" class="form-label">Fichier CV</label>
                     <div class="input-group">
-                        <input class="form-control" type="file" id="cv_pdf" name="cv_pdf" accept="application/pdf">
-                        <button class="btn btn-outline-primary" type="button" id="btnUploadPdf">Charger</button>
+                        <input class="form-control" type="file" id="cv_file" name="cv_file" accept=".json,.pdf,.docx,.odt,application/json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.oasis.opendocument.text">
+                        <button class="btn btn-primary" type="button" id="btnUploadCvFile">Importer et utiliser</button>
                     </div>
-                    <div class="form-text">Exemples : "Profile_soso.pdf" — le PDF sera stocké et listé ci-dessous.</div>
+                    <div class="form-text">Formats acceptés : JSON Resume, PDF, DOCX et ODT.</div>
+                </div>
+                <div class="small text-muted mb-3">
+                    <strong>Sources compatibles :</strong>
+                    <ul class="mb-0">
+                        {% for provider in cv_import_providers %}
+                        <li><strong>{{ provider.name }}</strong> ({{ provider.format }}) — {{ provider.description }}</li>
+                        {% endfor %}
+                    </ul>
                 </div>
 
                 <hr>
-                <h2 class="h6">CV chargés</h2>
-                <p class="text-muted small">Les CV importés sont gérés depuis la page dédiée : définir un CV par défaut, renommer l'affichage ou supprimer le fichier. L'édition du contenu est disponible uniquement pour les CV JSON.</p>
+                <h2 class="h6">CV actuellement utilisé</h2>
                 <div id="cvsList">
-                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('manage_cvs_view', user_id=user.id) }}">Gérer mes CVs</a>
-                    {% if cvs_files and cvs_files|length > 0 %}
-                    <div class="mt-3">
-                        <label for="default_cv" class="form-label">CV par défaut pour les aperçus et la génération IA</label>
-                        <div class="input-group">
-                            <select id="default_cv" name="default_cv" class="form-select">
-                                {% for cf in cvs_files %}
-                                <option value="{{ cf.name }}" {% if cvs_meta and cvs_meta._default == cf.name %}selected{% endif %}>{{ cf.label }} ({{ cf.name }})</option>
-                                {% endfor %}
-                            </select>
-                            <button class="btn btn-outline-secondary" type="button" id="btnSetDefault">Définir par défaut</button>
-                        </div>
-                    </div>
-                    {% endif %}
-                    <form action="/manage_cvs/{{ user.id }}" method="POST" id="manageCvsForm" class="mt-2">
-                        <input type="hidden" name="action" id="manage_action">
-                        <input type="hidden" name="file" id="manage_file">
-                        <input type="hidden" name="newname" id="manage_newname">
-                    </form>
+                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('manage_cvs_view', user_id=user.id) }}">Voir le CV et les originaux archivés</a>
                 </div>
             </div>
 
@@ -246,7 +231,18 @@
                 const container = document.getElementById('flash_placeholder');
                 if (!container) return;
                 const wrapper = document.createElement('div');
-                wrapper.innerHTML = `<div class="alert alert-${level} alert-dismissible fade show" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                const alert = document.createElement('div');
+                alert.className = `alert alert-${level} alert-dismissible fade show`;
+                alert.setAttribute('role', 'alert');
+                alert.style.whiteSpace = 'pre-line';
+                alert.appendChild(document.createTextNode(message));
+                const close = document.createElement('button');
+                close.type = 'button';
+                close.className = 'btn-close';
+                close.setAttribute('data-bs-dismiss', 'alert');
+                close.setAttribute('aria-label', 'Fermer');
+                alert.appendChild(close);
+                wrapper.appendChild(alert);
                 container.appendChild(wrapper);
                 if (timeoutMs > 0){
                     setTimeout(()=>{ try{ wrapper.remove(); }catch(e){} }, timeoutMs);
@@ -260,6 +256,12 @@
                     showMessage('warning', 'Veuillez sélectionner un fichier ' + label + ' à charger');
                     return;
                 }
+                const uploadButton = document.getElementById('btnUploadCvFile');
+                if (uploadButton) {
+                    uploadButton.disabled = true;
+                    uploadButton.textContent = '⏳ Importation en cours…';
+                }
+                showMessage('info', '⏳ Le CV est en cours d’importation et de conversion…', 0);
                 const fd = new FormData();
                 fd.append(field, input.files[0]);
                 fd.append('user_id', '{{ user.id }}');
@@ -269,30 +271,24 @@
                     let data;
                     try { data = JSON.parse(bodyText); } catch (err) { data = { ok: false, text: bodyText }; }
                     if (resp.ok && data.ok) {
-                        showMessage('success', data.message || 'Upload effectué.');
-                        window.location.reload();
+                        const warnings = Array.isArray(data.validation_warnings) ? data.validation_warnings : [];
+                        const message = (data.message || 'Upload effectué.') +
+                            (warnings.length ? '\n\nVérifications à compléter :\n- ' + warnings.join('\n- ') : '');
+                        showMessage(warnings.length ? 'warning' : 'success', message, 12000);
                     } else {
                         showMessage('danger', 'Erreur lors de l\'upload : ' + (data.message || data.text || resp.status));
                     }
                 } catch (e) {
                     showMessage('danger', 'Erreur réseau lors de l\'upload: ' + e);
+                } finally {
+                    if (uploadButton) {
+                        uploadButton.disabled = false;
+                        uploadButton.textContent = 'Importer et utiliser';
+                    }
                 }
             }
-            const btnPdf = document.getElementById('btnUploadPdf');
-            if (btnPdf) btnPdf.addEventListener('click', () => uploadCv('cv_pdf', 'cv_pdf', 'PDF'));
-            const btnJson = document.getElementById('btnUploadJson');
-            if (btnJson) btnJson.addEventListener('click', () => uploadCv('cv_json', 'cv_json', 'JSON'));
-
-            const btnSetDefault = document.getElementById('btnSetDefault');
-            if (btnSetDefault){
-                btnSetDefault.addEventListener('click', function(){
-                    const sel = document.getElementById('default_cv');
-                    if (!sel) return showMessage('warning','Aucun CV sélectionné');
-                    document.getElementById('manage_action').value = 'set_default';
-                    document.getElementById('manage_file').value = sel.value;
-                    document.getElementById('manageCvsForm').submit();
-                });
-            }
+            const btnCvFile = document.getElementById('btnUploadCvFile');
+            if (btnCvFile) btnCvFile.addEventListener('click', () => uploadCv('cv_file', 'cv_file', 'CV'));
 
             // Photo de profil
             const btnUploadPhoto = document.getElementById('btnUploadPhoto');

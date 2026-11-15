@@ -2,36 +2,47 @@
 {% block main %}
 <div class="container mt-4">
   <h2>Mon CV</h2>
-  <div class="mb-3">
-  </div>
-
-  <div class="alert alert-info">
-    <strong>CV utilisé par l'application :</strong>
-    <code>cv.json</code>. Ce fichier possède une structure fixe et est mis à jour lors
-    des imports ou de l'édition. Les fichiers PDF et anciens JSON restent conservés comme sources.
-  </div>
-
+  {% set canonical = files|selectattr('name', 'equalto', 'cv.json')|list %}
   <div class="card mb-4">
     <div class="card-body">
-      <h4>CV canonique</h4>
-      {% set canonical = files|selectattr('name', 'equalto', 'cv.json')|list %}
-      {% if canonical %}
-        <p class="text-success mb-3">Votre CV canonique est disponible.</p>
-        <a class="btn btn-success" href="{{ url_for('view_cv', user_id=user_id, file='cv.json') }}">Visualiser</a>
-        <a class="btn btn-outline-secondary" href="{{ url_for('edit_cv', user_id=user_id, file='cv.json') }}">Éditer</a>
-        <a class="btn btn-outline-primary" href="{{ url_for('static', filename='uploads/users/' ~ user_id ~ '/cvs/cv.json') }}" target="_blank">Voir le JSON</a>
-      {% else %}
-        <p class="text-warning mb-0">Aucun CV canonique n'est encore disponible. Importez un CV depuis votre profil.</p>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h4 class="h5 mb-1">CV utilisé par l’application</h4>
+          {% if canonical %}
+            <span class="text-success small">Disponible : <code>cv.json</code></span>
+          {% else %}
+            <span class="text-warning small">Aucun CV importé</span>
+          {% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          {% if canonical %}
+            <a class="btn btn-sm btn-primary" href="{{ url_for('view_cv', user_id=user_id, file='cv.json') }}">Afficher</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('edit_cv', user_id=user_id, file='cv.json') }}">Modifier</a>
+          {% endif %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('update_account', id=user_id) }}#tab-cv">Importer ou remplacer</a>
+        </div>
+      </div>
+      {% if original %}
+        <hr>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <span class="small">Original conservé : <strong>{{ original.original_name }}</strong></span>
+          <span class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('cv_original', user_id=user_id, filename=original.name) }}" target="_blank">Afficher l’original</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cv_original', user_id=user_id, filename=original.name, download=1) }}">Télécharger</a>
+          </span>
+        </div>
       {% endif %}
     </div>
   </div>
 
-  <div class="card">
+  {% set legacy_files = files|rejectattr('name', 'equalto', 'cv.json')|list %}
+  {% if legacy_files %}
+  <details class="card">
+    <summary class="card-header">Anciennes sources ({{ legacy_files|length }})</summary>
     <div class="card-body">
-      <h4>Sources conservées</h4>
-      <p class="text-muted">Ces fichiers servent de référence et ne sont pas utilisés directement pour les générations.</p>
+      <p class="text-muted small">Ces fichiers proviennent d’anciens imports. Les nouveaux imports se font depuis votre compte.</p>
       <ul class="list-group">
-        {% for f in files if f.name != 'cv.json' %}
+        {% for f in legacy_files %}
           <li class="list-group-item d-flex justify-content-between align-items-center">
             <span><strong>{{ f.label }}</strong> <small class="text-muted">({{ f.name }})</small></span>
             <span>
@@ -39,10 +50,6 @@
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('view_cv', user_id=user_id, file=f.name) }}">Visualiser</a>
               {% else %}
                 <a class="btn btn-sm btn-outline-primary" href="{{ url_for('static', filename=f.path) }}" target="_blank">Aperçu PDF</a>
-                <form method="post" action="{{ url_for('load_pdf_to_canonical_route', user_id=user_id) }}" style="display:inline-block;">
-                  <input type="hidden" name="file" value="{{ f.name }}">
-                  <button class="btn btn-sm btn-success" type="submit">Charger dans cv.json</button>
-                </form>
               {% endif %}
               <form method="post" action="{{ url_for('manage_cvs', user_id=user_id) }}" style="display:inline-block;">
                 <input type="hidden" name="file" value="{{ f.name }}">
@@ -51,11 +58,10 @@
               </form>
             </span>
           </li>
-        {% else %}
-          <li class="list-group-item text-muted">Aucune source historique.</li>
         {% endfor %}
       </ul>
     </div>
-  </div>
+  </details>
+  {% endif %}
 </div>
 {% endblock main %}

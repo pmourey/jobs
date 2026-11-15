@@ -6,6 +6,8 @@ from __future__ import annotations
 import json as _json
 import os
 import re
+import zipfile
+from xml.etree import ElementTree
 from io import BytesIO
 from pathlib import Path
 
@@ -573,10 +575,85 @@ def user_cvs_dir(static_folder: str | Path, user_id: int) -> Path:
 
 
 CANONICAL_CV_FILENAME = 'cv.json'
+CV_IMPORT_PROVIDERS = (
+    {
+        'name': 'GitConnected',
+        'format': 'JSON Resume',
+        'description': 'Import direct d’un CV JSON déjà structuré.',
+    },
+    {
+        'name': 'LinkedIn Export',
+        'format': 'PDF',
+        'description': 'Import d’un PDF exporté depuis LinkedIn.',
+    },
+    {
+        'name': 'Autres formats',
+        'format': 'PDF, DOCX ou ODT',
+        'description': 'Extraction du texte puis conversion par l’IA du site.',
+    },
+)
 CV_SECTIONS = (
     'basics', 'work', 'education', 'skills', 'projects',
     'certificates', 'references', 'languages', 'volunteer',
 )
+
+
+_CV_DATE_KEYS = {'date', 'startDate', 'endDate', 'start_date', 'end_date'}
+_FRENCH_MONTHS = {
+    'janvier': 1, 'fevrier': 2, 'février': 2, 'mars': 3, 'avril': 4,
+    'mai': 5, 'juin': 6, 'juillet': 7, 'aout': 8, 'août': 8,
+    'septembre': 9, 'octobre': 10, 'novembre': 11, 'decembre': 12,
+    'décembre': 12,
+}
+
+
+def normalize_cv_date(value: object, field_name: str = '') -> object:
+    """Convertit les dates CV en ``YYYY-MM-DD`` pour les champs HTML/date."""
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return ''
+    lowered = text.casefold()
+    if field_name in {'endDate', 'end_date'} and lowered in {
+        'présent', 'present', 'aujourd’hui', "aujourd'hui", 'en cours', 'current',
+    }:
+        return ''
+
+    import datetime as _datetime
+    month_year = re.fullmatch(r'([A-Za-zÀ-ÿ]+)[ .-]+(\d{4})', text)
+    if month_year:
+        month = _FRENCH_MONTHS.get(month_year.group(1).casefold())
+        if month:
+            return f'{month_year.group(2)}-{month:02d}-01'
+    if re.fullmatch(r'\d{4}', text):
+        return f'{text}-01-01'
+    if re.fullmatch(r'\d{4}[-/]\d{1,2}', text):
+        year, month = re.split(r'[-/]', text)
+        if 1 <= int(month) <= 12:
+            return f'{year}-{int(month):02d}-01'
+    for pattern in ('%Y-%m-%d', '%Y/%m/%d', '%d/%m/%Y', '%d-%m-%Y'):
+        try:
+            return _datetime.datetime.strptime(text, pattern).date().isoformat()
+        except ValueError:
+            continue
+    try:
+        from dateutil import parser as date_parser
+        return date_parser.parse(text, dayfirst=True, fuzzy=False).date().isoformat()
+    except (TypeError, ValueError, OverflowError):
+        return value
+
+
+def _normalize_cv_dates(value: object, field_name: str = '') -> object:
+    if isinstance(value, dict):
+        return {
+            key: normalize_cv_date(item, key) if key in _CV_DATE_KEYS
+            else _normalize_cv_dates(item, key)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_normalize_cv_dates(item, field_name) for item in value]
+    return value
 
 
 def normalize_cv_data(data: dict | None) -> dict:
@@ -588,7 +665,55 @@ def normalize_cv_data(data: dict | None) -> dict:
     for section in CV_SECTIONS[1:]:
         value = source.get(section)
         normalized[section] = list(value) if isinstance(value, list) else []
-    return normalized
+    return _normalize_cv_dates(normalized)
+
+
+def validate_cv_data(data: dict | None) -> list[str]:
+    """Retourne les champs indispensables manquants dans un CV canonique."""
+    cv = normalize_cv_data(data)
+    warnings: list[str] = []
+    iso_date = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+    basics = cv['basics']
+    if not basics.get('name'):
+        warnings.append('Coordonnées : le nom du candidat est manquant.')
+
+    for index, work in enumerate(cv['work'], start=1):
+        if not isinstance(work, dict):
+            warnings.append(f'Expérience {index} : entrée invalide.')
+            continue
+        if not work.get('name'):
+            warnings.append(f'Expérience {index} : nom de l’entreprise manquant.')
+        if not work.get('position'):
+            warnings.append(f'Expérience {index} : intitulé du poste manquant.')
+        start_date = work.get('startDate')
+        if not start_date:
+            warnings.append(f'Expérience {index} : date de début manquante.')
+        elif not iso_date.fullmatch(str(start_date)):
+            warnings.append(f'Expérience {index} : date de début invalide (YYYY-MM-DD attendu).')
+        end_date = work.get('endDate')
+        if end_date and not iso_date.fullmatch(str(end_date)):
+            warnings.append(f'Expérience {index} : date de fin invalide (YYYY-MM-DD attendu).')
+
+    for index, education in enumerate(cv['education'], start=1):
+        if not isinstance(education, dict):
+            warnings.append(f'Formation {index} : entrée invalide.')
+            continue
+        if not education.get('institution'):
+            warnings.append(f'Formation {index} : organisme de formation manquant.')
+        diploma_date = education.get('endDate')
+        if not diploma_date:
+            warnings.append(f'Formation {index} : date de diplôme manquante.')
+        elif not iso_date.fullmatch(str(diploma_date)):
+            warnings.append(f'Formation {index} : date de diplôme invalide (YYYY-MM-DD attendu).')
+
+    for index, skill in enumerate(cv['skills'], start=1):
+        if not isinstance(skill, dict) or not skill.get('name'):
+            warnings.append(f'Compétence {index} : nom manquant.')
+
+    for index, certificate in enumerate(cv['certificates'], start=1):
+        if not isinstance(certificate, dict) or not certificate.get('name'):
+            warnings.append(f'Certification {index} : intitulé manquant.')
+    return warnings
 
 
 def _read_cv_json(path: Path) -> dict:
@@ -783,6 +908,81 @@ def parse_linkedin_pdf_to_json(pdf_path: Path, out_json_path: Path) -> bool:
     except Exception:
         pass
     return False
+
+
+def extract_cv_text(source_path: Path) -> str:
+    """Extrait le texte d'un CV PDF, DOCX ou ODT sans appeler de service externe."""
+    suffix = source_path.suffix.lower()
+    if suffix == '.pdf':
+        import PyPDF2
+        reader = PyPDF2.PdfReader(str(source_path))
+        return '\n'.join(page.extract_text() or '' for page in reader.pages).strip()
+    if suffix == '.docx':
+        from docx import Document
+        document = Document(str(source_path))
+        chunks = [paragraph.text for paragraph in document.paragraphs]
+        for table in document.tables:
+            for row in table.rows:
+                chunks.append(' | '.join(cell.text for cell in row.cells))
+        return '\n'.join(chunk for chunk in chunks if chunk.strip()).strip()
+    if suffix == '.odt':
+        with zipfile.ZipFile(source_path) as archive:
+            xml = archive.read('content.xml')
+        root = ElementTree.fromstring(xml)
+        text_nodes = []
+        for element in root.iter():
+            if element.tag.rsplit('}', 1)[-1] in {'p', 'h', 'list-item'}:
+                value = ''.join(element.itertext()).strip()
+                if value:
+                    text_nodes.append(value)
+        return '\n'.join(text_nodes).strip()
+    raise ValueError('Format de CV non pris en charge. Utilisez PDF, DOCX ou ODT.')
+
+
+def convert_cv_text_with_ai(text: str, ai_config: dict | None) -> dict:
+    """Transforme le texte d'un CV en JSON Resume canonique via la configuration IA."""
+    if not ai_config or not ai_config.get('api_key') or not ai_config.get('base_url'):
+        raise RuntimeError('La configuration IA du site est indisponible.')
+    source_text = text.strip()
+    if not source_text:
+        raise ValueError('Aucun texte exploitable n’a été extrait du CV.')
+    if len(source_text) > 30000:
+        source_text = source_text[:30000]
+
+    prompt = (
+        'Convertis le CV ci-dessous en JSON Resume strict. Réponds uniquement par un objet JSON, '
+        'sans Markdown ni commentaire. Utilise exactement les clés basics, work, education, skills, '
+        'projects, certificates, references, languages et volunteer. basics est un objet ; toutes '
+        'les autres clés sont des tableaux. Ne fabrique aucune information absente du CV. '
+        'Pour date, startDate et endDate, utilise exclusivement le format YYYY-MM-DD ; '
+        'si seul le mois ou l’année est connu, utilise le premier jour correspondant ; '
+        'pour une expérience en cours, laisse endDate vide. Conserve les intitulés et '
+        'noms propres tels qu’extraits.\\n\\nCV :\\n' + source_text
+    )
+    raw = _model_infer(
+        [{'role': 'system', 'content': 'Tu es un convertisseur de CV fiable et conservateur.'},
+         {'role': 'user', 'content': prompt}],
+        model=ai_config.get('model', ''),
+        base_url=ai_config['base_url'],
+        api_key=ai_config['api_key'],
+        temperature=0.1,
+        max_tokens=5000,
+    )
+    candidate = raw.strip()
+    fenced = re.search(r'```(?:json)?\s*(\{.*\})\s*```', candidate, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        candidate = fenced.group(1)
+    else:
+        start, end = candidate.find('{'), candidate.rfind('}')
+        if start >= 0 and end > start:
+            candidate = candidate[start:end + 1]
+    try:
+        parsed = _json.loads(candidate)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f'La réponse IA n’est pas un JSON valide : {exc}') from exc
+    if not isinstance(parsed, dict) or not isinstance(parsed.get('basics', {}), dict):
+        raise RuntimeError('La réponse IA ne respecte pas le format canonique du CV.')
+    return normalize_cv_data(parsed)
 
 
 def _parse_linkedin_text(text: str) -> dict:

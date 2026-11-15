@@ -25,7 +25,7 @@ if os.environ.get('FT_BYPASS_PROXY', '').lower() in {'1', 'true', 'yes'}:
             hosts.append(host)
     os.environ['NO_PROXY'] = ','.join(hosts)
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 import json as _json
 from functools import wraps
 from io import BytesIO
@@ -67,8 +67,10 @@ from tools.cv_tools import (build_cv_pdf_filename,
                             get_user_contact_info, save_user_contact_info,
                             validate_user_contact_info, load_cv_data,
                             ensure_canonical_cv, normalize_cv_data,
+                            validate_cv_data,
                             CANONICAL_CV_FILENAME,
-                            load_pdf_into_canonical)
+                            load_pdf_into_canonical, extract_cv_text,
+                            convert_cv_text_with_ai, CV_IMPORT_PROVIDERS)
 from tools.merge_cvs import merge_cv_jsons
 from tools.import_cv import parse_json_cv, fetch_linkedin_profile
 from tools.document_tools import (build_cover_letter_pdf_filename,
@@ -122,6 +124,17 @@ def _ensure_user_status_columns() -> None:
         db.session.commit()
 
 
+def _ensure_job_timestamp_column() -> None:
+    """Ajoute la date de dernière modification aux bases existantes."""
+    existing_columns = {
+        column['name']
+        for column in sqlalchemy_inspect(db.engine).get_columns('job')
+    }
+    if 'updated_at' not in existing_columns:
+        db.session.execute(text('ALTER TABLE "job" ADD COLUMN updated_at DATETIME'))
+        db.session.commit()
+
+
 @app.route('/google075dc122689af97b.html')
 def google_site_verification():
     """Sert le fichier de validation Google depuis la racine du projet."""
@@ -168,6 +181,7 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
     _ensure_user_status_columns()
+    _ensure_job_timestamp_column()
 
 
 toolbar = DebugToolbarExtension(app)
@@ -184,6 +198,7 @@ def ensure_database_schema():
     """Crée les nouvelles tables sans migration externe pour les installations SQLite."""
     db.create_all()
     _ensure_user_status_columns()
+    _ensure_job_timestamp_column()
 
 
 @app.context_processor
@@ -504,7 +519,6 @@ def _resolve_user_cv_data(user_id: int) -> dict:
         meta_path = cvs_dir / 'cvs_meta.json'
         meta = {}
         if meta_path.exists():
-            import json as _json
             try:
                 meta = _json.loads(meta_path.read_text(encoding='utf-8'))
             except Exception:
@@ -528,14 +542,12 @@ def _resolve_user_cv_data(user_id: int) -> dict:
                 c_path = cvs_dir / c_name
                 if c_path.exists():
                     try:
-                        import json as _json
                         return _json.loads(c_path.read_text(encoding='utf-8'))
                     except Exception:
                         pass
             for jf in cvs_dir.glob('*.json'):
                 if jf.name != 'cvs_meta.json':
                     try:
-                        import json as _json
                         return _json.loads(jf.read_text(encoding='utf-8'))
                     except Exception:
                         pass
@@ -675,7 +687,17 @@ def _keywords_to_query(value) -> str | None:
     else:
         raw_parts = [str(part).strip() for part in value]
     keywords = _normalize_keyword_list(raw_parts)
-    return ' '.join(keywords) if keywords else None
+    selected: list[str] = []
+    length = 0
+    for keyword in keywords:
+        separator_length = 1 if selected else 0
+        if length + separator_length + len(keyword) > 100:
+            break
+        selected.append(keyword)
+        length += separator_length + len(keyword)
+    if not selected and keywords:
+        selected.append(keywords[0][:100].strip())
+    return ' '.join(selected) or None
 
 
 def _format_keywords_label(value) -> str | None:
@@ -1500,7 +1522,20 @@ def update_account(id):
         contact_info=contact_info,
         is_profile_complete=is_profile_complete,
         missing_contact_fields=missing_contact_fields,
+        cv_import_providers=CV_IMPORT_PROVIDERS,
     )
+
+
+def _replace_current_cv_original(cvs_dir: Path, source_path: Path, original_filename: str) -> str:
+    """Conserve une seule copie de l'original courant pour l'utilisateur."""
+    originals_dir = cvs_dir / 'originals'
+    originals_dir.mkdir(parents=True, exist_ok=True)
+    for existing in originals_dir.iterdir():
+        if existing.is_file():
+            existing.unlink()
+    stored_name = f'original_cv{Path(original_filename).suffix.lower()}'
+    source_path.replace(originals_dir / stored_name)
+    return stored_name
 
 
 @app.route('/import_cv', methods=['POST'])
@@ -1528,12 +1563,23 @@ def import_cv():
         meta = {}
 
     json_file = request.files.get('cv_json')
+    if not json_file:
+        candidate = request.files.get('cv_file')
+        if candidate and Path(secure_filename(candidate.filename or '')).suffix.lower() == '.json':
+            json_file = candidate
     if json_file and json_file.filename:
         source_filename = secure_filename(json_file.filename) or 'import.json'
         if not source_filename.lower().endswith('.json'):
             source_filename += '.json'
         try:
-            parsed = normalize_cv_data(parse_json_cv(json_file.read()))
+            raw_json = json_file.read()
+            parsed = normalize_cv_data(parse_json_cv(raw_json))
+            validation_warnings = validate_cv_data(parsed)
+            original_temp = cvs_dir / '.original_cv.tmp'
+            original_temp.write_bytes(raw_json)
+            stored_original_name = _replace_current_cv_original(
+                cvs_dir, original_temp, source_filename
+            )
             if source_filename != CANONICAL_CV_FILENAME:
                 (cvs_dir / source_filename).write_text(
                     _json.dumps(parsed, ensure_ascii=False, indent=2),
@@ -1546,6 +1592,14 @@ def import_cv():
             meta['_default'] = CANONICAL_CV_FILENAME
             meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
             meta[source_filename] = source_filename
+            meta.pop('originals', None)
+            meta['original'] = {
+                'name': stored_original_name,
+                'original_name': source_filename,
+                'format': 'json',
+                'created_at': datetime.now(dt_timezone.utc).isoformat(),
+                'converted_to': CANONICAL_CV_FILENAME,
+            }
             meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
         except (OSError, ValueError) as exc:
             message = f'JSON invalide ou impossible à enregistrer : {exc}'
@@ -1553,13 +1607,18 @@ def import_cv():
                 return jsonify({'ok': False, 'message': message}), 400
             flash(message, 'error')
             return redirect(url_for('update_account', id=target_id))
-        return jsonify({'ok': True, 'message': 'CV JSON importé avec succès.'}) if is_ajax else redirect(
+        response = {
+            'ok': True,
+            'message': 'CV JSON importé avec succès.',
+            'validation_warnings': validation_warnings,
+        }
+        return jsonify(response) if is_ajax else redirect(
             url_for('update_account', id=target_id)
         )
 
-    pdf_file = request.files.get('cv_pdf')
-    if pdf_file and pdf_file.filename:
-        filename = secure_filename(pdf_file.filename) or 'cv.pdf'
+    legacy_pdf_file = request.files.get('cv_pdf') if not request.files.get('cv_file') else None
+    if legacy_pdf_file and legacy_pdf_file.filename:
+        filename = secure_filename(legacy_pdf_file.filename) or 'cv.pdf'
         if not filename.lower().endswith('.pdf'):
             message = 'Le fichier sélectionné doit être un PDF.'
             if is_ajax:
@@ -1568,9 +1627,8 @@ def import_cv():
             return redirect(url_for('update_account', id=target_id))
         pdf_path = cvs_dir / filename
         try:
-            pdf_file.save(pdf_path)
-            raw_header = pdf_path.read_bytes()[:5]
-            if raw_header != b'%PDF-':
+            legacy_pdf_file.save(pdf_path)
+            if pdf_path.read_bytes()[:5] != b'%PDF-':
                 pdf_path.unlink(missing_ok=True)
                 raise ValueError('Le fichier ne semble pas être un PDF valide.')
             parsed_path = cvs_dir / f'{pdf_path.stem}.json'
@@ -1581,7 +1639,7 @@ def import_cv():
             meta[filename] = filename
             meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
         except (OSError, ValueError, RuntimeError) as exc:
-            app.logger.exception('CV PDF import failed for user %s', target_id)
+            app.logger.exception('Legacy CV PDF import failed for user %s', target_id)
             message = f'Impossible d’importer ou d’analyser le PDF : {exc}'
             if is_ajax:
                 return jsonify({'ok': False, 'message': message}), 400
@@ -1594,11 +1652,107 @@ def import_cv():
             url_for('update_account', id=target_id)
         )
 
-    message = 'Sélectionnez un fichier CV JSON ou PDF.'
+    source_file = (
+        request.files.get('cv_file')
+        or request.files.get('cv_pdf')
+        or request.files.get('cv_docx')
+        or request.files.get('cv_odt')
+    )
+    if source_file and source_file.filename:
+        filename = secure_filename(source_file.filename) or 'cv'
+        supported_extensions = {'.pdf', '.docx', '.odt'}
+        if Path(filename).suffix.lower() not in supported_extensions:
+            message = 'Le fichier sélectionné doit être un PDF, DOCX ou ODT.'
+            if is_ajax:
+                return jsonify({'ok': False, 'message': message}), 400
+            flash(message, 'error')
+            return redirect(url_for('update_account', id=target_id))
+        extraction_path = cvs_dir / f'.original_cv{Path(filename).suffix.lower()}'
+        try:
+            source_file.save(extraction_path)
+            if Path(filename).suffix.lower() == '.pdf' and extraction_path.read_bytes()[:5] != b'%PDF-':
+                raise ValueError('Le fichier ne semble pas être un PDF valide.')
+            ai_config = resolve_user_ai_config(target_id)
+            quota_ok, quota_message = _consume_site_ai_quota(target_id, ai_config)
+            if not quota_ok:
+                raise RuntimeError(quota_message)
+            extracted_text = extract_cv_text(extraction_path)
+            converted = normalize_cv_data(convert_cv_text_with_ai(extracted_text, ai_config))
+            validation_warnings = validate_cv_data(converted)
+            stored_original_name = _replace_current_cv_original(
+                cvs_dir, extraction_path, filename
+            )
+            canonical_path = cvs_dir / CANONICAL_CV_FILENAME
+            temporary_path = cvs_dir / f'.{CANONICAL_CV_FILENAME}.tmp'
+            temporary_path.write_text(
+                _json.dumps(converted, ensure_ascii=False, indent=2),
+                encoding='utf-8',
+            )
+            temporary_path.replace(canonical_path)
+            meta.pop('originals', None)
+            meta['original'] = {
+                'name': stored_original_name,
+                'original_name': filename,
+                'format': Path(filename).suffix.lower().lstrip('.'),
+                'created_at': datetime.now(dt_timezone.utc).isoformat(),
+                'converted_to': CANONICAL_CV_FILENAME,
+            }
+            meta['_default'] = CANONICAL_CV_FILENAME
+            meta[CANONICAL_CV_FILENAME] = CANONICAL_CV_FILENAME
+            meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+        except (OSError, ValueError, RuntimeError) as exc:
+            extraction_path.unlink(missing_ok=True)
+            app.logger.exception('CV import failed for user %s', target_id)
+            message = f'Impossible d’importer ou de convertir le CV : {exc}'
+            if is_ajax:
+                return jsonify({'ok': False, 'message': message}), 400
+            flash(message, 'error')
+            return redirect(url_for('update_account', id=target_id))
+        message = 'CV importé, archivé et converti dans le format canonique.'
+        response = {
+            'ok': True,
+            'message': message,
+            'validation_warnings': validation_warnings,
+        }
+        return jsonify(response) if is_ajax else redirect(
+            url_for('update_account', id=target_id)
+        )
+
+    message = 'Sélectionnez un fichier CV JSON, PDF, DOCX ou ODT.'
     if is_ajax:
         return jsonify({'ok': False, 'message': message}), 400
     flash(message, 'warning')
     return redirect(url_for('update_account', id=target_id))
+
+
+@app.route('/cv_original/<int:user_id>/<path:filename>')
+@is_connected
+def cv_original(user_id, filename):
+    """Affiche ou télécharge un CV original archivé, après contrôle d'accès."""
+    current_user = get_user_by_id(session['login_id'])
+    if not (current_user.is_admin or current_user.id == user_id):
+        abort(403)
+    safe_name = Path(filename).name
+    originals_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs' / 'originals'
+    target = originals_dir / safe_name
+    try:
+        target.resolve().relative_to(originals_dir.resolve())
+    except ValueError:
+        abort(404)
+    if not target.is_file() or target.suffix.lower() not in {'.json', '.pdf', '.docx', '.odt'}:
+        abort(404)
+    mimetypes = {
+        '.json': 'application/json',
+        '.pdf': 'application/pdf',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.odt': 'application/vnd.oasis.opendocument.text',
+    }
+    return send_file(
+        target,
+        mimetype=mimetypes[target.suffix.lower()],
+        as_attachment=request.args.get('download') == '1',
+        download_name=safe_name,
+    )
 
 
 @app.route('/load_pdf_to_canonical/<int:user_id>', methods=['POST'])
@@ -1626,6 +1780,18 @@ def manage_cvs_view(user_id):
     user = User.query.get_or_404(user_id)
     files, json_details = _load_user_cv_details(user_id)
     json_files = [f for f in files if f['is_json']]
+    originals_dir = Path(app.static_folder) / 'uploads' / 'users' / str(user_id) / 'cvs' / 'originals'
+    original = None
+    meta_path = originals_dir.parent / 'cvs_meta.json'
+    try:
+        meta = _json.loads(meta_path.read_text(encoding='utf-8')) if meta_path.exists() else {}
+    except (OSError, ValueError):
+        meta = {}
+    item = meta.get('original')
+    if isinstance(item, dict):
+        original_name = item.get('name')
+        if isinstance(original_name, str) and (originals_dir / Path(original_name).name).is_file():
+            original = item
     sections = ['basics', 'work', 'education', 'skills', 'projects', 'certificates', 'references', 'languages', 'volunteer']
     return render_template(
         'manage_cvs.html',
@@ -1634,6 +1800,7 @@ def manage_cvs_view(user_id):
         files=files,
         json_files=json_files,
         json_details=json_details,
+        original=original,
         sections=sections,
     )
 
@@ -2071,7 +2238,7 @@ def show_all():
         # default: show only the connected user's jobs
         jobs = Job.query.filter(Job.user_id == user_id).all()
     def most_recent_date(job):
-        dates = [d for d in (job.relaunchDate, job.applicationDate) if d]
+        dates = [d for d in (job.updated_at, job.relaunchDate, job.applicationDate) if d]
         if not dates:
             return datetime.min
         return max(dates)
@@ -2212,6 +2379,7 @@ def update(id):
         job.refusalDate = _parse_form_date(form.get('refusalDate'))
         if 'cover_letter_text' in form:
             job.cover_letter_text = form.get('cover_letter_text') or None
+        job.updated_at = datetime.utcnow()
         db.session.commit()
 
         success, error = handle_file_upload(job.id)
@@ -2295,6 +2463,43 @@ def _search_job_offer_provider(provider_key: str, *, client_id: str, client_secr
         types_contrat=types_contrat,
         mode_travail=mode_travail,
     )
+
+
+def _search_job_offer_provider_or(
+    provider_key: str,
+    *,
+    client_id: str,
+    client_secret: str,
+    keywords: list[str],
+    types_contrat: list[str] | None = None,
+    departement: str | None = None,
+    mode_travail: str | None = None,
+    entreprises_adaptees: bool = False,
+) -> list[dict]:
+    """Recherche chaque mot-clé séparément puis fusionne les résultats (OR)."""
+    queries = _normalize_keyword_list(keywords)
+    if not queries:
+        queries = [None]
+    merged: list[dict] = []
+    seen_ids: set[str] = set()
+    for keyword in queries:
+        offers = _search_job_offer_provider(
+            provider_key,
+            client_id=client_id,
+            client_secret=client_secret,
+            mots_cles=_keywords_to_query([keyword]) if keyword else None,
+            types_contrat=types_contrat,
+            departement=departement,
+            mode_travail=mode_travail,
+            entreprises_adaptees=entreprises_adaptees,
+        )
+        for offer in offers:
+            offer_id = str(offer.get('id') or '')
+            dedupe_key = offer_id or f'{offer.get("intitule", "")}|{offer.get("entreprise", "")}|{offer.get("lieu", "")}'
+            if dedupe_key not in seen_ids:
+                seen_ids.add(dedupe_key)
+                merged.append(offer)
+    return merged[:150]
 
 
 @app.route('/preview_cv_data/<int:id>', methods=['POST'])
@@ -2913,13 +3118,17 @@ def france_travail_search():
             types_contrat      = request.form.getlist('types_contrat') or None
             mode_travail       = request.form.get('mode_travail', '') or None
             entreprises_adapt  = request.form.get('entreprises_adaptees') == 'on'
-            mots_cles          = _keywords_to_query(user_keywords) or _keywords_to_query(mots_cles_raw) or mots_cles_raw
+            search_keywords    = user_keywords or (
+                [part.strip() for part in mots_cles_raw.split(',') if part.strip()]
+                if mots_cles_raw else []
+            )
+            mots_cles          = _keywords_to_query(search_keywords) or mots_cles_raw
             # Allow selecting an alternative provider (greenhouse, lever, ashby, teamtailor)
-            offers = _search_job_offer_provider(
+            offers = _search_job_offer_provider_or(
                 provider_name,
                 client_id=client_id,
                 client_secret=client_secret,
-                mots_cles=mots_cles,
+                keywords=search_keywords,
                 types_contrat=types_contrat,
                 departement=departement,
                 mode_travail=mode_travail,
@@ -3038,11 +3247,9 @@ def france_travail_edit_page(search_id):
 
     params = ft_search.params or {}
     saved_ats_keywords = _normalize_keyword_list(params.get('ats_keywords') or [])
-    prefill_mots_cles = params.get('mots_cles') or ''
-    if not prefill_mots_cles and saved_ats_keywords:
-        prefill_mots_cles = _format_keywords_label(saved_ats_keywords) or ''
+    prefill_mots_cles = _keywords_to_query(saved_ats_keywords) or params.get('mots_cles') or ''
     if not saved_ats_keywords and prefill_mots_cles:
-        saved_ats_keywords = _normalize_keyword_list(re.split(r'[,\s]+', prefill_mots_cles))
+        saved_ats_keywords = _normalize_keyword_list(prefill_mots_cles.split(','))
 
     try:
         cv_data = _resolve_user_cv_data(session.get('login_id')) or load_cv_data(app.static_folder)
@@ -3370,13 +3577,16 @@ def ft_search_refresh(search_id):
             if kw_label:
                 search_info += f" – Mots-clés : «{kw_label}»"
         else:
-            mots_cles = p.get('mots_cles')
-            if not mots_cles:
-                mots_cles = _keywords_to_query(p.get('ats_keywords') or [])
-            offers = _search_job_offer_provider(
+            saved_keywords = _normalize_keyword_list(p.get('ats_keywords') or [])
+            if not saved_keywords and p.get('mots_cles'):
+                saved_keywords = [
+                    part.strip() for part in str(p['mots_cles']).split(',') if part.strip()
+                ]
+            mots_cles = _keywords_to_query(saved_keywords)
+            offers = _search_job_offer_provider_or(
                 provider_name,
                 client_id=client_id, client_secret=client_secret,
-                mots_cles=mots_cles, types_contrat=p.get('types_contrat'),
+                keywords=saved_keywords, types_contrat=p.get('types_contrat'),
                 departement=p.get('departement'), mode_travail=p.get('mode_travail'),
                 entreprises_adaptees=bool(p.get('entreprises_adaptees', False)),
             )

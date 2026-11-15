@@ -25,8 +25,22 @@ secret, token ou contenu de `config.py` ne doit être ajouté à ce document.
   JSON Resume.
 - `ensure_canonical_cv()` migre les anciens JSON et conserve les fichiers
   sources.
-- L'import PDF est volontairement en deux étapes : import/extraction, puis
-  action explicite **Charger dans cv.json**.
+- Les imports PDF, DOCX et ODT extraient le texte localement puis le convertissent
+  via l'IA configurée par le site vers `cv.json`. Une absence de configuration,
+  de quota ou une réponse IA invalide bloque la conversion avec une erreur explicite.
+- Les sources compatibles sont GitConnected (JSON Resume), LinkedIn Export (PDF)
+  et les autres CV PDF, DOCX ou ODT.
+- Les champs de date canoniques (`date`, `startDate`, `endDate`) sont normalisés
+  en `YYYY-MM-DD` pour les contrôles HTML de type date. Les dates limitées au
+  mois ou à l'année utilisent le premier jour connu.
+- Chaque original est archivé dans
+  `static/uploads/users/<user_id>/cvs/originals/` sous le nom fixe
+  `original_cv.<format>`. Il n'existe qu'un CV canonique et un original courant
+  par utilisateur ; un nouvel import remplace les deux représentations. Le
+  manifeste `cvs_meta.json` et une route authentifiée permettent de basculer
+  entre l'affichage du CV converti et de l'original.
+- Les routes historiques d'import PDF et de chargement manuel restent conservées
+  pour compatibilité avec les anciens clients.
 - `load_pdf_into_canonical()` fusionne les données extraites sans remplacer
   les informations déjà renseignées.
 - Le parseur LinkedIn utilise, dans l'ordre, le module local disponible, la

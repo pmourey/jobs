@@ -37,8 +37,14 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css')}}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css')}}">
     <title>{% block title %}{% if _ep in _pages and _ep != 'welcome' %}{{ _pages[_ep][0] }} · {% endif %}Suivi de candidatures{% endblock %}</title>
-    <meta name="description"
-      content="Centralisez vos candidatures, contacts, documents et recherches d'offres d'emploi.">
+    <meta name="description" content="Centralisez vos candidatures, recherchez des offres France Travail et générez des CV et lettres de motivation personnalisés par IA locale ou distante. Outil communautaire gratuit et open source.">
+    <meta name="robots" content="index, follow">
+
+    <!-- Aperçu pour les partages sur LinkedIn, Facebook et X -->
+    <meta property="og:title" content="Suivi de candidatures France Travail & Assistant IA">
+    <meta property="og:description" content="Pilotez vos recherches d'emploi avec clarté : suivi des relances, offres France Travail et rédaction de CV/LM par IA. Projet gratuit et auto-hébergeable.">
+    <meta property="og:url" content="https://pythonanywhere.com">
+    <meta property="og:type" content="website">
     <link rel="canonical" href="https://ftaccount.eu.pythonanywhere.com/">
 </head>
 
