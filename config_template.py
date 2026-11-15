@@ -34,7 +34,9 @@ class Config:
     ADZUNA_APP_KEY = ''
     ADZUNA_COUNTRY = 'fr'
     JOOBLE_API_KEY = ''
-    JOOBLE_BASE_URL = 'https://jooble.org/api'
+    JOOBLE_BASE_URL = 'https://fr.jooble.org/api'
+    JOOBLE_DAILY_QUOTA = 100
+    JOOBLE_QUOTA_THRESHOLD_PERCENT = 90
     # Enable or disable outbound AI model calls (GitHub Models / OpenAI-compatible).
     # On hosts that block outgoing connections (ex: PythonAnywhere), set this to False
     # to force local fallbacks for CV / LM generation.

@@ -17,6 +17,14 @@ secret, token ou contenu de `config.py` ne doit être ajouté à ce document.
 - Les fournisseurs d'offres configurables sont France Travail, Adzuna et
   Jooble. Un utilisateur ne peut pas lancer une recherche si aucun fournisseur
   activé ne possède une configuration complète.
+- Jooble est disponible comme source de recherche manuelle. Sa clé est fournie
+  par `JOOBLE_API_KEY` dans l'environnement ou `config.py`, avec
+  `JOOBLE_BASE_URL=https://fr.jooble.org/api`, puis Jooble doit être activé par
+  un administrateur. Les mots-clés sont regroupés en une seule requête pour
+  limiter les appels du forfait gratuit. Le quota journalier et le seuil de
+  blocage des utilisateurs non administrateurs sont configurables avec
+  `JOOBLE_DAILY_QUOTA`, `JOOBLE_QUOTA_THRESHOLD_PERCENT` et le menu
+  d'administration des fournisseurs.
 
 ## CV et imports
 

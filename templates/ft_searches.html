@@ -4,13 +4,25 @@
 
 <div class="container-fluid mt-4">
 	<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-		<h1 class="h3">📋 Mes recherches France Travail</h1>
+		<h1 class="h3">📋 Mes recherches d'offres</h1>
 		<a href="{{ url_for('france_travail') }}" class="btn btn-primary btn-sm">+ Nouvelle recherche</a>
 	</div>
 
+	<form method="get" class="row g-2 align-items-end mb-3">
+		<div class="col-sm-6 col-md-4 col-lg-3">
+			<label for="provider-filter" class="form-label mb-1">Source d'offres</label>
+		<select id="provider-filter" name="provider" class="form-select" onchange="this.form.submit()">
+			<option value="">Toutes les sources</option>
+			{% for key, label in providers.items() %}
+			<option value="{{ key }}" {% if selected_provider == key %}selected{% endif %}>{{ label }}</option>
+			{% endfor %}
+		</select>
+		</div>
+	</form>
+
 	{% if not searches %}
 	<div class="alert alert-info">
-		Aucune recherche sauvegardée. <a href="{{ url_for('france_travail') }}">Lancez votre première recherche</a>.
+		Aucune recherche sauvegardée pour ce filtre. <a href="{{ url_for('france_travail') }}">Lancez votre première recherche</a>.
 	</div>
 	{% else %}
 	<div class="table-responsive">
@@ -19,6 +31,7 @@
 				<tr>
 					<th style="width:1%"><input id="ft-select-all" type="checkbox" /></th>
 					<th>Date</th>
+					<th>Source</th>
 					<th>Description</th>
 					<th class="text-center">Nb offres</th>
 					<th class="text-center">Actions</th>
@@ -29,6 +42,11 @@
 				<tr>
 					<td><input class="ft-select-row" type="checkbox" value="{{ s.id }}" /></td>
 					<td class="text-nowrap small">{{ s.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+					<td>
+						<span class="badge text-bg-light border">
+							{{ providers.get((s.params or {}).get('provider', 'france_travail'), 'France Travail') }}
+						</span>
+					</td>
 					<td>{{ s.search_info }}</td>
 					<td class="text-center">
 						<span class="badge bg-secondary">{{ s.offers | length }}</span>

@@ -92,7 +92,8 @@ from tools.ai_quota import consume_site_quota, get_site_monthly_quota, monthly_u
 from tools.jobboard_providers import (JOB_OFFER_PROVIDERS,
                                       available_job_offer_provider_keys,
                                       enabled_job_offer_provider_keys,
-                                      get_provider, job_offer_provider_status)
+                                      get_provider, job_offer_provider_status,
+                                      normalize_job_offer_timestamp)
 
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -1387,6 +1388,17 @@ def ai_quota_request():
 @is_admin
 def admin_job_offer_providers():
     if request.method == 'POST':
+        if request.form.get('action') == 'jooble_quota':
+            try:
+                threshold = int(request.form.get('jooble_quota_threshold', ''))
+                if not 0 <= threshold <= 100:
+                    raise ValueError
+            except ValueError:
+                flash('Le seuil Jooble doit être un entier entre 0 et 100.', 'error')
+                return redirect(url_for('admin_job_offer_providers'))
+            AppSetting.set('jooble_quota_threshold_percent', str(threshold))
+            flash('Le seuil quotidien Jooble a été mis à jour.', 'success')
+            return redirect(url_for('admin_job_offer_providers'))
         selected = {
             key for key in request.form.getlist('providers')
             if key in JOB_OFFER_PROVIDERS
@@ -1399,7 +1411,51 @@ def admin_job_offer_providers():
         user=get_user_by_id(session['login_id']),
         providers=job_offer_provider_status(),
         enabled=enabled_job_offer_provider_keys(),
+        jooble_quota_threshold=_jooble_quota_threshold_percent(),
+        jooble_daily_quota=_jooble_daily_quota(),
+        jooble_daily_usage=_jooble_daily_usage(),
     )
+
+
+def _jooble_daily_quota() -> int:
+    try:
+        return max(0, int(app.config.get('JOOBLE_DAILY_QUOTA', 100)))
+    except (TypeError, ValueError):
+        return 100
+
+
+def _jooble_quota_threshold_percent() -> int:
+    raw = AppSetting.get(
+        'jooble_quota_threshold_percent',
+        str(app.config.get('JOOBLE_QUOTA_THRESHOLD_PERCENT', 90)),
+    )
+    try:
+        return min(100, max(0, int(raw)))
+    except (TypeError, ValueError):
+        return 90
+
+
+def _jooble_daily_usage() -> int:
+    today = datetime.utcnow().date().isoformat()
+    if AppSetting.get('jooble_daily_usage_date') != today:
+        AppSetting.set('jooble_daily_usage_date', today)
+        AppSetting.set('jooble_daily_usage_count', '0')
+        return 0
+    try:
+        return max(0, int(AppSetting.get('jooble_daily_usage_count', '0')))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _reserve_jooble_request(user: User) -> bool:
+    """Reserve one shared Jooble request; admins bypass the user block."""
+    usage = _jooble_daily_usage()
+    quota = _jooble_daily_quota()
+    threshold = (quota * _jooble_quota_threshold_percent()) // 100
+    if not user.is_admin and usage >= threshold:
+        return False
+    AppSetting.set('jooble_daily_usage_count', str(usage + 1))
+    return True
 
 
 @app.route('/account/<int:user_id>/ai', methods=['GET', 'POST'])
@@ -2497,11 +2553,16 @@ def _search_job_offer_provider(provider_key: str, *, client_id: str, client_secr
             mode_travail=mode_travail,
             entreprises_adaptees=entreprises_adaptees,
         )
+    provider_params = {
+        'departement': departement,
+        'types_contrat': types_contrat,
+        'mode_travail': mode_travail,
+    }
+    if provider_key == 'jooble':
+        provider_params['location'] = DEPARTMENTS.get(departement or '', departement or '')
     return get_provider(provider_key).search_offers(
         q=mots_cles,
-        departement=departement,
-        types_contrat=types_contrat,
-        mode_travail=mode_travail,
+        **provider_params,
     )
 
 
@@ -2520,6 +2581,10 @@ def _search_job_offer_provider_or(
     queries = _normalize_keyword_list(keywords)
     if not queries:
         queries = [None]
+    # Jooble limits the default API plan to 100 requests/day. Its keyword
+    # search accepts a single query, so avoid one request per ATS keyword.
+    if provider_key == 'jooble' and len(queries) > 1:
+        queries = [' '.join(queries)]
     merged: list[dict] = []
     seen_ids: set[str] = set()
     for keyword in queries:
@@ -3107,9 +3172,15 @@ def france_travail_search():
     if provider_name not in available_providers:
         flash('Le fournisseur d’offres sélectionné est désactivé ou non configuré.', 'error')
         return redirect(url_for('france_travail'))
-
     mode       = request.form.get('mode', 'manual')
     departement = request.form.get('departement', '') or None
+    if provider_name == 'jooble' and mode != 'auto' and not _reserve_jooble_request(user):
+        flash(
+            'La limite quotidienne Jooble est presque atteinte. '
+            'Un administrateur doit relancer ou ajuster le seuil.',
+            'warning',
+        )
+        return redirect(url_for('france_travail'))
 
     try:
         if mode == 'auto':
@@ -3380,15 +3451,35 @@ def france_travail_edit_page(search_id):
 @app.route('/france_travail/searches')
 @is_connected
 def ft_searches():
-    """Liste de toutes les recherches sauvegardées de l'utilisateur."""
+    """Liste et filtre les recherches sauvegardées de l'utilisateur."""
     user = get_user_by_id(session['login_id'])
+    selected_provider = (request.args.get('provider') or '').strip().lower()
+    filter_providers = available_job_offer_provider_keys()
+    valid_providers = set(filter_providers)
+    if selected_provider not in valid_providers:
+        selected_provider = ''
     searches = (
         FtSearch.query
         .filter_by(user_id=session['login_id'])
         .order_by(FtSearch.created_at.desc())
         .all()
     )
-    return render_template('ft_searches.html', user=user, searches=searches)
+    if selected_provider:
+        searches = [
+            search for search in searches
+            if (search.params or {}).get('provider', 'france_travail') == selected_provider
+        ]
+    provider_labels = {
+        key: JOB_OFFER_PROVIDERS[key]['name']
+        for key in sorted(filter_providers)
+    }
+    return render_template(
+        'ft_searches.html',
+        user=user,
+        searches=searches,
+        providers=provider_labels,
+        selected_provider=selected_provider,
+    )
 
 
 def _ft_added_ids(owner_id: int | None = None) -> set[str]:
@@ -3410,6 +3501,12 @@ def ft_search_view(search_id):
     user = get_user_by_id(session['login_id'])
     ft_search = FtSearch.query.get_or_404(search_id)
     raw_offers = ft_search.offers or []
+    provider_key = (ft_search.params or {}).get('provider') or 'france_travail'
+    if provider_key == 'jooble':
+        for offer in raw_offers:
+            offer['dateCreation'] = normalize_job_offer_timestamp(
+                offer.get('dateCreation')
+            )
     # Si les offres n'ont pas encore de score de matching, les enrichir et mémoriser
     if raw_offers and ('match_score' not in raw_offers[0]):
         try:
@@ -3420,6 +3517,9 @@ def ft_search_view(search_id):
         except Exception as exc:
             app.logger.warning(f"Could not compute matching on the fly: {exc}")
     raw_offers = sort_offers_by_date(raw_offers)
+    provider_label = JOB_OFFER_PROVIDERS.get(
+        provider_key, JOB_OFFER_PROVIDERS['france_travail']
+    )['name']
 
     return render_template(
         'offers_candidates.html',
@@ -3427,6 +3527,7 @@ def ft_search_view(search_id):
         search=ft_search,
         offers=raw_offers,
         search_info=ft_search.search_info,
+        provider_label=provider_label,
         search_id=search_id,
         added_ids=_ft_added_ids(session.get('login_id')),
         unavailable_ids=ft_search.unavailable,
@@ -3552,7 +3653,11 @@ def ft_search_export(search_id):
     styles = getSampleStyleSheet()
     story = []
     # Include search criteria in PDF title for clarity
-    pdf_title = f"France Travail — Recherche #{search_id}"
+    provider_key = (ft_search.params or {}).get('provider') or 'france_travail'
+    provider_label = JOB_OFFER_PROVIDERS.get(
+        provider_key, JOB_OFFER_PROVIDERS['france_travail']
+    )['name']
+    pdf_title = f"{provider_label} — Recherche #{search_id}"
     if ft_search.search_info:
         pdf_title += f" — {ft_search.search_info}"
     story.append(Paragraph(pdf_title, styles['Title']))
@@ -3599,8 +3704,17 @@ def ft_search_refresh(search_id):
     if provider_name not in available_job_offer_provider_keys():
         flash('Le fournisseur de cette recherche est désactivé ou non configuré.', 'error')
         return redirect(url_for('ft_search_view', search_id=search_id))
-
     p = ft_search.params
+    if provider_name == 'jooble' and p.get('mode') != 'auto':
+        user = get_user_by_id(session['login_id'])
+        if not _reserve_jooble_request(user):
+            flash(
+                'La limite quotidienne Jooble est presque atteinte. '
+                'Un administrateur doit relancer ou ajuster le seuil.',
+                'warning',
+            )
+            return redirect(url_for('ft_search_view', search_id=search_id))
+
     try:
         if p.get('mode') == 'auto':
             if provider_name != 'france_travail':

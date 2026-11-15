@@ -39,3 +39,22 @@ def test_provider_searches_each_keyword_separately_for_or(monkeypatch):
     )
     assert calls == ['Directeur de projet', 'Manager Innovation']
     assert [offer['id'] for offer in offers] == calls
+
+
+def test_provider_groups_jooble_keywords_to_conserve_daily_quota(monkeypatch):
+    calls = []
+
+    def fake_search(provider, **kwargs):
+        calls.append(kwargs['mots_cles'])
+        return [{'id': 'job-1', 'intitule': 'DevOps'}]
+
+    monkeypatch.setattr(flask_app, '_search_job_offer_provider', fake_search)
+    offers = flask_app._search_job_offer_provider_or(
+        'jooble',
+        client_id='',
+        client_secret='',
+        keywords=['DevOps', 'Python', 'Kubernetes'],
+    )
+
+    assert calls == ['DevOps Python Kubernetes']
+    assert len(offers) == 1

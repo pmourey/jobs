@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -22,6 +23,18 @@ from flask import current_app
 
 class ProviderError(RuntimeError):
     pass
+
+
+def normalize_job_offer_timestamp(value: Any) -> str:
+    """Normalize provider timestamps while preserving sortable ISO ordering."""
+    if not value:
+        return ''
+    text = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(text.rstrip('Z'))
+        return parsed.strftime('%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return text
 
 
 JOB_OFFER_PROVIDERS = {
@@ -491,32 +504,67 @@ class AdzunaProvider(BaseProvider):
 
 class JoobleProvider(BaseProvider):
     name = 'jooble'
+    default_base_url = 'https://fr.jooble.org/api'
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         self.api_key = api_key or _setting_value('JOOBLE_API_KEY')
-        self.base_url = base_url or _setting_value('JOOBLE_BASE_URL') or 'https://jooble.org/api'
+        configured_url = base_url or _setting_value('JOOBLE_BASE_URL')
+        # The API documentation uses the country-specific endpoint. Keep
+        # existing generic config values working for the French instance.
+        if configured_url.rstrip('/') == 'https://jooble.org/api':
+            configured_url = self.default_base_url
+        self.base_url = configured_url or self.default_base_url
 
     def search_offers(self, q: Optional[str] = None, **params) -> List[Dict[str, Any]]:
+        if not self.api_key:
+            raise ProviderError('Jooble fetch failed: JOOBLE_API_KEY is not configured')
         url = f'{self.base_url.rstrip("/")}/{self.api_key}'
         payload = {
             'keywords': q or '',
-            'location': params.get('departement') or '',
+            'location': params.get('location') or params.get('departement') or '',
             'page': int(params.get('page') or 1),
         }
+        if params.get('radius'):
+            payload['radius'] = int(params['radius'])
         try:
-            response = requests.post(url, json=payload, timeout=15)
+            response = requests.post(
+                url,
+                json=payload,
+                headers={'Content-Type': 'application/json', 'Accept': 'application/json'},
+                timeout=15,
+            )
             response.raise_for_status()
-            items = response.json().get('jobs', [])
+            data = response.json()
+            if not isinstance(data, dict):
+                raise ProviderError('Jooble returned an invalid response shape')
+            items = data.get('jobs', [])
+            if not isinstance(items, list):
+                raise ProviderError('Jooble returned an invalid jobs list')
             return [{
-                'id': str(item.get('id') or item.get('title')),
+                'id': str(item.get('id') or item.get('link') or item.get('title')),
                 'intitule': item.get('title') or '',
                 'entreprise': item.get('company') or '',
                 'lieu': item.get('location') or '',
                 'url': item.get('link') or '',
-                'dateCreation': item.get('updated') or '',
+                'dateCreation': normalize_job_offer_timestamp(item.get('updated')),
+                'description': item.get('snippet') or '',
+                'typeContrat': item.get('type') or '',
+                'salaire': item.get('salary') or '',
                 'raw': item,
             } for item in items]
+        except requests.RequestException as exc:
+            status = getattr(exc.response, 'status_code', None)
+            suffix = f' (HTTP {status})' if status else ''
+            if status == 403:
+                raise ProviderError(
+                    'Jooble a refusé la requête (HTTP 403). Vérifiez que '
+                    'JOOBLE_API_KEY est active et utilisez '
+                    'JOOBLE_BASE_URL=https://fr.jooble.org/api.'
+                ) from exc
+            raise ProviderError(f'Jooble fetch failed{suffix}: {exc}') from exc
         except Exception as exc:
+            if isinstance(exc, ProviderError):
+                raise
             raise ProviderError(f'Jooble fetch failed: {exc}') from exc
 
 
@@ -538,9 +586,3 @@ def get_provider(name: str, **kwargs) -> BaseProvider:
     if name_l == 'jooble':
         return JoobleProvider(**kwargs)
     raise ValueError(f'Unknown provider: {name}')
-
-
-
-
-
-

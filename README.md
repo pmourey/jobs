@@ -52,6 +52,10 @@ Configurer au minimum dans `config.py` ou l'environnement :
 - `SECRET_KEY` et `SQLALCHEMY_DATABASE_URI` ;
 - SMTP (`GMAIL_*`, `SMTP_SERVER`, `SMTP_PORT`) si les e-mails sont utilisés ;
 - `FT_CLIENT_ID` et `FT_CLIENT_SECRET` pour France Travail en mode réel ;
+- `JOOBLE_API_KEY` et `JOOBLE_BASE_URL=https://fr.jooble.org/api` pour activer Jooble ;
+- `JOOBLE_DAILY_QUOTA` (100 par défaut) et
+  `JOOBLE_QUOTA_THRESHOLD_PERCENT` (90 par défaut) pour contrôler les
+  recherches Jooble des utilisateurs non administrateurs ;
 - la configuration IA du site (`GITHUB_TOKEN`,
   `GITHUB_MODELS_BASE_URL`, `GITHUB_MODELS_MODEL`) si nécessaire ;
 - `AI_CREDENTIALS_MASTER_KEY` pour chiffrer les clés IA personnelles.

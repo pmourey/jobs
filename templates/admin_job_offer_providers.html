@@ -33,5 +33,24 @@
     {% endfor %}
     <button class="btn btn-primary mt-3" type="submit">Enregistrer les autorisations</button>
   </form>
+  <hr class="my-4">
+  <form method="post" class="row g-2 align-items-end">
+    <input type="hidden" name="action" value="jooble_quota">
+    <div class="col-sm-6 col-md-4">
+      <label for="jooble-quota-threshold" class="form-label">
+        Seuil Jooble pour les utilisateurs non administrateurs (%)
+      </label>
+      <input id="jooble-quota-threshold" name="jooble_quota_threshold"
+             type="number" class="form-control" min="0" max="100" step="1"
+             value="{{ jooble_quota_threshold }}" required>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-outline-primary" type="submit">Enregistrer le seuil</button>
+    </div>
+    <div class="col-12 small text-muted">
+      Compteur du jour : {{ jooble_daily_usage }} / {{ jooble_daily_quota }} requêtes.
+      Les administrateurs ne sont pas bloqués par ce seuil.
+    </div>
+  </form>
 </main>
 {% endblock main %}
