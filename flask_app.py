@@ -2220,6 +2220,7 @@ def show_closed_sessions():
 def show_all():
     user_id = session['login_id']
     app.logger.debug('This is a debug message.')
+    jobs_owner_id = user_id
     # Allow selecting to view another user's offers via query param 'view_user'
     view_user = request.args.get('view_user')
     from sqlalchemy import or_
@@ -2231,6 +2232,7 @@ def show_all():
         # authorize viewing: either target is current user or target allowed sharing
         if target_id and (target_id == user_id or (User.query.get(target_id) and User.query.get(target_id).allow_view_offers)):
             jobs = Job.query.filter(Job.user_id == target_id).all()
+            jobs_owner_id = target_id
         else:
             flash('Action non autorisée : cet utilisateur ne partage pas ses offres.', 'error')
             return redirect(url_for('show_all'))
@@ -2344,6 +2346,43 @@ def show_all():
         job.id: _has_user_default_cv(job.user_id)
         for job in jobs
     }
+    ft_job_details = {}
+    try:
+        ft_searches = FtSearch.query.filter_by(user_id=jobs_owner_id).all()
+        offers_by_id = {}
+        for saved_search in ft_searches:
+            for offer in saved_search.offers or []:
+                offer_id = str(offer.get('id') or '').strip()
+                if offer_id:
+                    raw_score = offer.get('match_score', (offer.get('matching') or {}).get('score', 0))
+                    try:
+                        score = int(float(raw_score or 0))
+                    except (TypeError, ValueError):
+                        score = 0
+                    offers_by_id[offer_id] = {
+                        'offer_data': offer,
+                        'search_id': saved_search.id,
+                        'title': offer.get('intitule') or '',
+                        'company': offer.get('entreprise') or '',
+                        'location': offer.get('lieu') or '',
+                        'contract': offer.get('typeContrat') or '',
+                        'contract_label': offer.get('typeContratLibelle') or '',
+                        'work_mode': offer.get('modeTravail') or '',
+                        'salary': offer.get('salaire') or '',
+                        'date': offer.get('dateCreation') or '',
+                        'experience': offer.get('experienceLibelle') or '',
+                        'qualities': offer.get('qualites') or [],
+                        'description': offer.get('description') or '',
+                        'adapted_company': bool(offer.get('entrepriseAdaptee')),
+                        'url': offer.get('url') or '',
+                        'score': score,
+                        'matching': offer.get('matching') or {},
+                    }
+        for job in jobs:
+            if job.ft_offer_id and str(job.ft_offer_id) in offers_by_id:
+                ft_job_details[job.id] = offers_by_id[str(job.ft_offer_id)]
+    except Exception as exc:
+        app.logger.warning('Could not load France Travail details for candidatures: %s', exc)
     return render_template('candidatures.html', jobs=jobs, user=user, users=users_list, cv_pdf_urls=cv_pdf_urls,
                            cv_pdf_filenames=cv_pdf_filenames,
                            cv_education=cv_education, cv_certificates=cv_certificates,
@@ -2351,6 +2390,7 @@ def show_all():
                            is_profile_complete=is_profile_complete,
                            missing_contact_fields=missing_contact_fields,
                            default_cv_available=default_cv_available,
+                           ft_job_details=ft_job_details,
                            site_ai_usage=site_ai_usage,
                            site_ai_remaining=site_ai_remaining,
                            site_ai_managed=site_ai_managed)
@@ -3635,7 +3675,9 @@ def ft_evaluate_offer_match():
         user_id = session.get('login_id')
         cv_data = _resolve_user_cv_data(user_id) or load_cv_data(app.static_folder)
         analysis = evaluate_offer_with_gemini(offer, cv_data)
-        return jsonify({'status': 'ok', 'analysis': analysis})
+        response = jsonify({'status': 'ok', 'analysis': analysis})
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        return response
     except Exception as exc:
         app.logger.error(f'Error evaluating offer with Gemini: {exc}')
         return jsonify({'status': 'error', 'message': str(exc)}), 500

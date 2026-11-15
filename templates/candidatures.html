@@ -74,6 +74,8 @@
 					<th>Capture</th>
 					<th>LM</th>
 					<th>CV IA</th>
+					<th>Matching</th>
+					<th>Détail</th>
 					<th>Location</th>
 					<th>Company</th>
 					<th>Contact</th>
@@ -148,6 +150,20 @@
 							{% endif %}
 						</div>
 					</td>
+					<td class="text-center">
+						{% set match = ft_job_details.get(job.id) %}
+						{% if match %}
+						<span class="badge {% if match.score >= 70 %}bg-success{% elif match.score >= 45 %}bg-primary{% else %}bg-secondary{% endif %}">
+							🎯 {{ match.score }}%
+						</span>
+						{% else %}<span class="text-muted">—</span>{% endif %}
+					</td>
+					<td class="text-center">
+						{% if match %}
+						<button type="button" class="btn btn-sm btn-outline-primary"
+							onclick="openJobOfferModal({{ job.id }})">🔍 Détail</button>
+						{% else %}<span class="text-muted">—</span>{% endif %}
+					</td>
 					<td>{{ job.zipCode }}</td>
 					<td>{{ job.company }}</td>
 					<td>{{ job.contact }}</td>
@@ -196,6 +212,17 @@
 					{% endif %}
 				</div>
 				<div class="small text-muted mb-1"><strong>{{ job.company }}</strong> - {{ job.zipCode }}</div>
+				{% set match = ft_job_details.get(job.id) %}
+				{% if match %}
+				<div class="small mb-1">
+					<strong>Matching :</strong>
+					<span class="badge {% if match.score >= 70 %}bg-success{% elif match.score >= 45 %}bg-primary{% else %}bg-secondary{% endif %}">
+						🎯 {{ match.score }}%
+					</span>
+					<button type="button" class="btn btn-sm btn-outline-primary py-0 ms-1"
+						onclick="openJobOfferModal({{ job.id }})">🔍 Détail</button>
+				</div>
+				{% endif %}
 				<div class="small mb-1">{{ job.contact }} {% if job.email %}- {{ job.email }}{% endif %}</div>
 				<div class="d-flex justify-content-between align-items-center small">
 					<span
@@ -270,6 +297,125 @@
 	</div>
 	{% endif %}
 </main>
+
+<div class="modal fade" id="jobOfferModal" tabindex="-1" aria-labelledby="jobOfferModalLabel" aria-hidden="true">
+	<div class="modal-dialog modal-xl modal-dialog-scrollable">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="jobOfferModalLabel">Détail de l'offre</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+			</div>
+			<div class="modal-body" id="jobOfferModalBody"></div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+				<a id="jobOfferExtLink" href="#" target="_blank" rel="noopener noreferrer"
+					class="btn btn-outline-primary">🔗 Voir sur France Travail</a>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+	const FT_JOB_DETAILS = {{ ft_job_details|tojson }};
+
+	function escJobOfferHtml(value) {
+		return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+	}
+
+	function openJobOfferModal(jobId) {
+		const offer = FT_JOB_DETAILS[String(jobId)];
+		if (!offer) return;
+		const matching = offer.matching || {};
+		const score = offer.score || matching.score || 0;
+		const level = matching.level || (score >= 70 ? 'high' : (score >= 45 ? 'medium' : 'low'));
+		const badgeColor = level === 'high' ? 'success' : (level === 'medium' ? 'primary' : 'secondary');
+		let body = '';
+
+		body += '<div class="card border-' + badgeColor + ' bg-light mb-3"><div class="card-body py-2 px-3">';
+		body += '<div class="d-flex align-items-center justify-content-between flex-wrap gap-2"><div>';
+		body += '<span class="badge bg-' + badgeColor + ' fs-6 me-2">🎯 ' + score + '% de correspondance</span>';
+		body += '<span class="text-dark fw-semibold">' + escJobOfferHtml(matching.summary || 'Analyse d’adéquation avec votre profil') + '</span>';
+		body += '</div><button type="button" class="btn btn-sm btn-outline-dark" id="jobGeminiDetailBtn" onclick="analyzeJobOfferWithGemini(' + jobId + ')">✨ Avis détaillé Gemini</button></div>';
+		if (matching.matched_skills && matching.matched_skills.length) {
+			body += '<div class="mt-2 small"><strong class="text-success">✓ Vos atouts clés :</strong> ';
+			body += matching.matched_skills.map(skill => '<span class="badge bg-success-subtle text-success border border-success me-1">' + escJobOfferHtml(skill) + '</span>').join('');
+			body += '</div>';
+		}
+		if (matching.missing_skills && matching.missing_skills.length) {
+			body += '<div class="mt-1 small"><strong class="text-muted">Compétences secondaires de l’offre :</strong> ';
+			body += matching.missing_skills.map(skill => '<span class="badge bg-light text-muted border me-1">' + escJobOfferHtml(skill) + '</span>').join('');
+			body += '</div>';
+		}
+		body += '<div id="jobGeminiAnalysis" class="mt-2 p-2 bg-white rounded border small" style="display:none"></div></div></div>';
+		body += '<div class="row mb-3"><div class="col-md-6"><strong>Entreprise :</strong> ' + (escJobOfferHtml(offer.company) || '–');
+		if (offer.adapted_company) body += ' <span class="badge bg-info text-dark ms-1">♿</span>';
+		body += '</div><div class="col-md-3"><strong>Lieu :</strong> ' + (escJobOfferHtml(offer.location) || '–') + '</div>';
+		body += '<div class="col-md-3"><strong>Date :</strong> ' + (escJobOfferHtml(offer.date) || '–') + '</div></div>';
+		body += '<div class="row mb-3"><div class="col-md-4"><strong>Contrat :</strong> <span class="badge bg-secondary">' + (escJobOfferHtml(offer.contract_label || offer.contract) || '–') + '</span></div>';
+		body += '<div class="col-md-4"><strong>Mode :</strong> ' + (escJobOfferHtml(offer.work_mode) || '–') + '</div>';
+		body += '<div class="col-md-4"><strong>Salaire :</strong> ' + (escJobOfferHtml(offer.salary) || '–') + '</div></div>';
+		if (offer.experience) body += '<p><strong>Expérience :</strong> ' + escJobOfferHtml(offer.experience) + '</p>';
+		if (offer.qualities && offer.qualities.length) body += '<p><strong>Qualités :</strong> ' + offer.qualities.map(q => '<span class="badge bg-light text-dark border me-1">' + escJobOfferHtml(q) + '</span>').join('') + '</p>';
+		if (offer.description) body += '<hr><h6>Description</h6><div class="small" style="white-space:pre-wrap">' + escJobOfferHtml(offer.description).replace(/\n/g, '<br>') + '</div>';
+		document.getElementById('jobOfferModalLabel').textContent = offer.title || "Détail de l'offre";
+		document.getElementById('jobOfferModalBody').innerHTML = body;
+		const externalLink = document.getElementById('jobOfferExtLink');
+		externalLink.href = offer.url || '#';
+		externalLink.style.display = offer.url ? '' : 'none';
+		bootstrap.Modal.getOrCreateInstance(document.getElementById('jobOfferModal')).show();
+	}
+
+	async function analyzeJobOfferWithGemini(jobId) {
+		const offer = FT_JOB_DETAILS[String(jobId)];
+		const box = document.getElementById('jobGeminiAnalysis');
+		const button = document.getElementById('jobGeminiDetailBtn');
+		if (!offer || !box || !button) return;
+		button.disabled = true;
+		button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Analyse...';
+		box.style.display = 'block';
+		box.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span> Gemini analyse l’offre par rapport à votre profil...</span>';
+		try {
+			const response = await fetch('{{ url_for("ft_evaluate_offer_match") }}?regenerate=' + Date.now(), {
+				method: 'POST',
+				cache: 'no-store',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					offer: offer.offer_data || offer,
+					regenerate: true,
+					request_id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now())
+				})
+			});
+			const data = await response.json();
+			if (!response.ok || data.status === 'error') throw new Error(data.message || 'Erreur pendant l’analyse');
+			const analysis = data.analysis || {};
+			let output = '<div><strong class="text-primary">Avis du recruteur IA :</strong> '
+				+ escJobOfferHtml(analysis.verdict || 'Aucune analyse détaillée disponible.') + '</div>';
+			if (Array.isArray(analysis.strengths) && analysis.strengths.length) {
+				output += '<div class="mt-1"><strong class="text-success">Forces à valoriser :</strong> '
+					+ analysis.strengths.map(item => '<span class="badge bg-success-subtle text-success border border-success me-1">'
+						+ escJobOfferHtml(item) + '</span>').join('') + '</div>';
+			}
+			if (Array.isArray(analysis.missing_or_to_develop) && analysis.missing_or_to_develop.length) {
+				output += '<div class="mt-1"><strong class="text-warning text-dark">Points à compenser :</strong> '
+					+ analysis.missing_or_to_develop.map(item => '<span class="badge bg-warning-subtle text-dark border border-warning me-1">'
+						+ escJobOfferHtml(item) + '</span>').join('') + '</div>';
+			}
+			box.innerHTML = output;
+			const regenerate = document.createElement('button');
+			regenerate.type = 'button';
+			regenerate.className = 'btn btn-link btn-sm text-muted p-0 mt-2';
+			regenerate.textContent = '↻ Régénérer l’avis';
+			regenerate.addEventListener('click', () => analyzeJobOfferWithGemini(jobId));
+			box.appendChild(regenerate);
+		} catch (error) {
+			box.textContent = 'Analyse indisponible : ' + error.message;
+		} finally {
+			button.disabled = false;
+			button.textContent = '✨ Avis détaillé Gemini';
+		}
+	}
+</script>
 
 <!-- Modal for cover letter preview -->
 <div class="modal fade" id="lmModal" tabindex="-1" aria-labelledby="lmModalLabel" aria-hidden="true">
