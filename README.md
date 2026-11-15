@@ -1,14 +1,18 @@
 # 💼 Suivi de candidatures France Travail & Assistant IA
 
-Application web communautaire, gratuite et auto-hébergeable permettant de centraliser sa recherche d'emploi, de consulter les offres France Travail et de générer des CV et lettres de motivation adaptés grâce à l'intelligence artificielle. Les fonctions
+Application web communautaire, gratuite et auto-hébergeable permettant de centraliser sa recherche d'emploi, de consulter les offres France Travail et Jooble et de générer des CV et lettres de motivation adaptés grâce à l'intelligence artificielle. Les fonctions
 principales sont protégées par authentification ; les données de candidature
 sont privées par défaut.
 
-🌐 **Instance communautaire en ligne :** [https://pythonanywhere.com](https://pythonanywhere.com)
+🌐 **Instance communautaire en ligne :** [https://ftaccount.eu.pythonanywhere.com/](https://ftaccount.eu.pythonanywhere.com/)
 
 ## ✨ Fonctionnalités principales
 - **Tableau de bord de suivi :** centralisation des entreprises, contacts, dates clés, statuts et relances.
-- **Intégration France Travail :** recherche d'offres d'emploi directement depuis l'interface.
+- **Recherche multi-fournisseurs :** France Travail et Jooble sont disponibles
+  comme sources de recherche manuelle ; l'administrateur active les sources
+  configurées.
+- **Recherches enregistrées :** filtrage par source, rafraîchissement, exports
+  CSV/XLSX/PDF et affichage de la source utilisée.
 - **Génération assistée par IA :** création et personnalisation de CV et lettres de motivation (compatible IA locale ou API distante).
 - **Respect des données (RGPD) :** cloisonnement strict des comptes utilisateurs et partage optionnel.
 
@@ -74,6 +78,11 @@ aucune migration externe n'est actuellement requise.
   administrateurs.
 - **IA et quotas** permet de configurer les fournisseurs, le quota mensuel et
   de traiter les demandes d'augmentation.
+- **Fournisseurs d'offres** permet d'activer ou désactiver France Travail et
+  Jooble, de suivre le quota Jooble du jour et de définir le seuil de blocage
+  des utilisateurs non administrateurs. Le quota Jooble par défaut est de
+  100 requêtes par jour ; le seuil par défaut est de 90 % et les
+  administrateurs peuvent continuer à rechercher au-delà de ce seuil.
 - Chaque utilisateur voit son quota IA de l'instance, ses appels utilisés et
   ses appels restants dans `/suivi`. Une clé personnelle utilise les quotas de
   son fournisseur et n'est pas comptabilisée dans le quota du site.
@@ -101,6 +110,8 @@ peut être envoyée depuis `/suivi` et est visible dans **Admin → IA et quotas
 - `/suivi` : candidatures, documents et compteur IA ;
 - `/update_account/<id>` : profil, coordonnées et CV ;
 - `/france_travail` : recherche d'offres ;
+- `/france_travail/searches` : recherches enregistrées, filtrables par source ;
+- `/admin/job-offer-providers` : activation des sources et seuil quotidien Jooble ;
 - `/admin/ai-providers` : fournisseurs IA, quotas et demandes ;
 - `/accounts` : gestion administrateur des comptes ;
 - `/legal` : informations publiques sur les données et la conservation.
