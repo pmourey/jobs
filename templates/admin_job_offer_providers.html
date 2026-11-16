@@ -34,6 +34,65 @@
     <button class="btn btn-primary mt-3" type="submit">Enregistrer les autorisations</button>
   </form>
   <hr class="my-4">
+  <form method="post">
+    <input type="hidden" name="action" value="user_quotas">
+    <h3 class="h6">Quotas par utilisateur</h3>
+    <p class="small text-muted">
+      La somme des allocations ne peut pas dépasser le quota du fournisseur.
+      Les valeurs par défaut sont réparties entre les utilisateurs non administrateurs.
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Utilisateur</th>
+            <th>Jooble / jour</th>
+            <th>Adzuna / mois</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for quota_user in quota_users %}
+          <tr>
+            <td>{{ quota_user.username }}</td>
+            <td>
+              <input class="form-control form-control-sm" type="number" min="0"
+                     name="jooble_quota_user_{{ quota_user.id }}"
+                     value="{{ user_provider_quotas.get(('jooble', quota_user.id), 0) }}" required>
+            </td>
+            <td>
+              <input class="form-control form-control-sm" type="number" min="0"
+                     name="adzuna_quota_user_{{ quota_user.id }}"
+                     value="{{ user_provider_quotas.get(('adzuna', quota_user.id), 0) }}" required>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-muted">Aucun utilisateur non administrateur.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button class="btn btn-outline-primary" type="submit">Enregistrer les quotas utilisateurs</button>
+  </form>
+  <hr class="my-4">
+  <form method="post" class="row g-2 align-items-end">
+    <input type="hidden" name="action" value="adzuna_quota">
+    <div class="col-sm-6 col-md-4">
+      <label for="adzuna-quota-threshold" class="form-label">
+        Seuil Adzuna pour les utilisateurs non administrateurs (%)
+      </label>
+      <input id="adzuna-quota-threshold" name="adzuna_quota_threshold"
+             type="number" class="form-control" min="0" max="100" step="1"
+             value="{{ adzuna_quota_threshold }}" required>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-outline-primary" type="submit">Enregistrer le seuil</button>
+    </div>
+    <div class="col-12 small text-muted">
+      Compteur du mois : {{ adzuna_monthly_usage }} / {{ adzuna_monthly_quota }} requêtes.
+      Les administrateurs ne sont pas bloqués par ce seuil.
+    </div>
+  </form>
+  <hr class="my-4">
   <form method="post" class="row g-2 align-items-end">
     <input type="hidden" name="action" value="jooble_quota">
     <div class="col-sm-6 col-md-4">

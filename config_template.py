@@ -27,12 +27,14 @@ class Config:
     OLLAMA_LOCAL_TUNING = IMAC_64GB_OLLAMA_TUNING
     # Fournisseurs d'offres autorisés par défaut ; l'Admin peut les activer
     # ou désactiver depuis le menu dédié.
-    JOB_OFFER_ENABLED_PROVIDERS = 'france_travail'
+    JOB_OFFER_ENABLED_PROVIDERS = 'france_travail,adzuna'
     FT_CLIENT_ID = ''
     FT_CLIENT_SECRET = ''
     ADZUNA_APP_ID = ''
     ADZUNA_APP_KEY = ''
-    ADZUNA_COUNTRY = 'fr'
+    ADZUNA_BASE_URL = ''
+    ADZUNA_MONTHLY_QUOTA = 25
+    ADZUNA_QUOTA_THRESHOLD_PERCENT = 90
     JOOBLE_API_KEY = ''
     JOOBLE_BASE_URL = 'https://fr.jooble.org/api'
     JOOBLE_DAILY_QUOTA = 100

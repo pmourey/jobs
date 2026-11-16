@@ -16,6 +16,9 @@
 		<div>
 			<form method="get" action="{{ url_for('show_all') }}" class="d-flex flex-wrap align-items-center gap-2">
 				<label for="view_user" class="small mb-0">Voir les candidatures de :</label>
+				{% if request.args.get('view_user') %}
+				<input type="hidden" name="view_user" value="{{ request.args.get('view_user') }}">
+				{% endif %}
 				<select id="view_user" name="view_user" class="form-select form-select-sm w-auto flex-grow-1 flex-md-grow-0">
 					{# Liste limitée : afficher l'utilisateur courant et les users qui ont opt-in. Par défaut, sélectionner l'utilisateur connecté #}
 					{% for u in users %}
@@ -23,6 +26,21 @@
 					{% endfor %}
 				</select>
 				<button class="btn btn-sm btn-outline-primary" type="submit">Filtrer</button>
+			</form>
+		</div>
+		<div>
+			<form method="get" action="{{ url_for('show_all') }}" class="d-flex flex-wrap align-items-center gap-2">
+				{% if request.args.get('view_user') %}
+				<input type="hidden" name="view_user" value="{{ request.args.get('view_user') }}">
+				{% endif %}
+				<label for="source-filter" class="small mb-0">Source :</label>
+				<select id="source-filter" name="source" class="form-select form-select-sm w-auto"
+						onchange="this.form.submit()">
+					<option value="">Toutes les sources</option>
+					{% for key, label in source_labels.items() %}
+					<option value="{{ key }}" {% if selected_source == key %}selected{% endif %}>{{ label }}</option>
+					{% endfor %}
+				</select>
 			</form>
 		</div>
 		<div>
@@ -71,6 +89,7 @@
 							{% if user.is_admin or user.is_user %}<th>Update</th>
 					<th>Delete</th>{% endif %}
 					<th>Offre</th>
+					<th>Source</th>
 					<th>Capture</th>
 					<th>LM</th>
 					<th>CV IA</th>
@@ -95,6 +114,7 @@
 					<td><button onclick="deleteJob({{ job.id }})" class="btn btn-sm btn-danger"
 							title="Supprimer #{{job.id}}">🗑️</button></td>{% endif %}
 					<td><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></td>
+					<td>{{ job_sources.get(job.id, 'Saisie manuelle') }}</td>
 					<td>{% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a
 							href="{{ url_for('static', filename=capture) }}" target="_blank"
 							class="btn btn-sm btn-outline-success">PDF</a>{% else %}<span class="text-muted">⌐</span>{%
@@ -212,6 +232,7 @@
 					{% endif %}
 				</div>
 				<div class="small text-muted mb-1"><strong>{{ job.company }}</strong> - {{ job.zipCode }}</div>
+				<div class="small mb-1"><strong>Source :</strong> {{ job_sources.get(job.id, 'Saisie manuelle') }}</div>
 				{% set match = ft_job_details.get(job.id) %}
 				{% if match %}
 				<div class="small mb-1">

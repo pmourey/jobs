@@ -15,8 +15,10 @@ secret, token ou contenu de `config.py` ne doit être ajouté à ce document.
 - Les routes de vérification Google, `/sitemap.xml` et `/robots.txt` sont
   disponibles publiquement.
 - Les fournisseurs d'offres configurables sont France Travail, Adzuna et
-  Jooble. Un utilisateur ne peut pas lancer une recherche si aucun fournisseur
-  activé ne possède une configuration complète.
+  Jooble. Adzuna est activé dans le modèle de configuration mais devient
+  utilisable uniquement après renseignement de `ADZUNA_APP_ID` et
+  `ADZUNA_APP_KEY`. Un utilisateur ne peut pas lancer une recherche si aucun
+  fournisseur activé ne possède une configuration complète.
 - Jooble est disponible comme source de recherche manuelle. Sa clé est fournie
   par `JOOBLE_API_KEY` dans l'environnement ou `config.py`, avec
   `JOOBLE_BASE_URL=https://fr.jooble.org/api`, puis Jooble doit être activé par
@@ -25,6 +27,15 @@ secret, token ou contenu de `config.py` ne doit être ajouté à ce document.
   blocage des utilisateurs non administrateurs sont configurables avec
   `JOOBLE_DAILY_QUOTA`, `JOOBLE_QUOTA_THRESHOLD_PERCENT` et le menu
   d'administration des fournisseurs.
+- Adzuna est limité à 25 requêtes par mois par défaut
+  (`ADZUNA_MONTHLY_QUOTA`). Le seuil de blocage des utilisateurs non
+  administrateurs est configurable via `ADZUNA_QUOTA_THRESHOLD_PERCENT` ou
+  depuis l'administration ; les compteurs mensuels sont stockés dans
+  `AppSetting`.
+- Les quotas Jooble et Adzuna sont partagés entre les utilisateurs non
+  administrateurs. L'administrateur peut répartir les allocations par compte
+  depuis **Fournisseurs d'offres** ; les allocations par défaut sont calculées
+  à parts égales et les compteurs individuels sont stockés dans `AppSetting`.
 
 ## CV et imports
 

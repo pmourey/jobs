@@ -18,6 +18,19 @@
 		</span>
 		{% endif %}
 	</div>
+	<div class="alert alert-info py-2 small" role="status">
+		<strong>Compteurs des fournisseurs :</strong>
+		Jooble {{ job_offer_quotas.jooble.usage }}/{{ job_offer_quotas.jooble.quota }}
+		requêtes aujourd’hui
+		{% if job_offer_quotas.jooble.user_quota is defined %}
+		(votre allocation : {{ job_offer_quotas.jooble.user_usage }}/{{ job_offer_quotas.jooble.user_quota }})
+		{% endif %} ·
+		Adzuna {{ job_offer_quotas.adzuna.usage }}/{{ job_offer_quotas.adzuna.quota }}
+		requêtes ce mois-ci
+		{% if job_offer_quotas.adzuna.user_quota is defined %}
+		(votre allocation : {{ job_offer_quotas.adzuna.user_usage }}/{{ job_offer_quotas.adzuna.user_quota }})
+		{% endif %}.
+	</div>
 
 	{# ── Onglets Mode auto / Mode manuel ─────────────────────────────────── #}
 	<ul class="nav nav-tabs mb-4" id="ftTabs" role="tablist">

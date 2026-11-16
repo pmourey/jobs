@@ -467,14 +467,17 @@ class AdzunaProvider(BaseProvider):
         super().__init__(api_key=api_key, base_url=base_url)
         self.app_id = _setting_value('ADZUNA_APP_ID')
         self.api_key = api_key or _setting_value('ADZUNA_APP_KEY')
+        self.base_url = base_url or _setting_value('ADZUNA_BASE_URL')
 
     def search_offers(self, q: Optional[str] = None, **params) -> List[Dict[str, Any]]:
-        country = params.get('country') or _setting_value('ADZUNA_COUNTRY') or 'fr'
+        if not self.app_id or not self.api_key:
+            raise ProviderError(
+                'Adzuna fetch failed: ADZUNA_APP_ID and ADZUNA_APP_KEY '
+                'must be configured'
+            )
         page = int(params.get('page') or 1)
-        url = (
-            self.base_url
-            or f'https://api.adzuna.com/v1/api/jobs/{country}/search/{page}'
-        )
+        base_url = self.base_url or 'https://api.adzuna.com/v1/api'
+        url = f'{base_url.rstrip("/")}/jobs/fr/search/{page}'
         query = {
             'app_id': self.app_id,
             'app_key': self.api_key,
@@ -495,7 +498,7 @@ class AdzunaProvider(BaseProvider):
                 'entreprise': _safe_get(item.get('company') or {}, 'display_name', 'name'),
                 'lieu': _safe_get(item.get('location') or {}, 'display_name', 'name'),
                 'url': item.get('redirect_url') or '',
-                'dateCreation': item.get('created') or '',
+                'dateCreation': normalize_job_offer_timestamp(item.get('created')),
                 'raw': item,
             } for item in items]
         except Exception as exc:

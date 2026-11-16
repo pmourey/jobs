@@ -161,6 +161,7 @@ class Job(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     cover_letter_text = db.Column(db.Text)
     ft_offer_id = db.Column(db.String(30), nullable=True, index=True)
+    offer_source = db.Column(db.String(40), nullable=True)
     updated_at = db.Column(db.DateTime, nullable=True, default=datetime.utcnow)
 
     # Relation avec la table Utilisateur

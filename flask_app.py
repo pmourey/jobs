@@ -136,6 +136,40 @@ def _ensure_job_timestamp_column() -> None:
         db.session.commit()
 
 
+def _ensure_job_offer_source_column() -> None:
+    """Ajoute la source de l'offre aux bases existantes."""
+    existing_columns = {
+        column['name']
+        for column in sqlalchemy_inspect(db.engine).get_columns('job')
+    }
+    if 'offer_source' not in existing_columns:
+        db.session.execute(text('ALTER TABLE "job" ADD COLUMN offer_source VARCHAR(40)'))
+        db.session.commit()
+
+
+def _backfill_job_offer_sources() -> None:
+    """Rattache les anciennes candidatures à leur fournisseur enregistré."""
+    if AppSetting.get('job_offer_sources_backfilled_v1') == '1':
+        return
+    sources_by_owner_offer = {}
+    for saved_search in FtSearch.query.all():
+        provider = (saved_search.params or {}).get('provider') or 'france_travail'
+        for offer in saved_search.offers or []:
+            offer_id = str(offer.get('id') or '').strip()
+            if offer_id:
+                sources_by_owner_offer[(saved_search.user_id, offer_id)] = provider
+    jobs = Job.query.filter(
+        Job.offer_source.is_(None),
+        Job.ft_offer_id.is_not(None),
+    ).all()
+    for job in jobs:
+        source = sources_by_owner_offer.get((job.user_id, str(job.ft_offer_id)))
+        if source:
+            job.offer_source = source
+    db.session.commit()
+    AppSetting.set('job_offer_sources_backfilled_v1', '1')
+
+
 @app.route('/google075dc122689af97b.html')
 def google_site_verification():
     """Sert le fichier de validation Google depuis la racine du projet."""
@@ -183,6 +217,8 @@ with app.app_context():
     db.create_all()
     _ensure_user_status_columns()
     _ensure_job_timestamp_column()
+    _ensure_job_offer_source_column()
+    _backfill_job_offer_sources()
 
 
 toolbar = DebugToolbarExtension(app)
@@ -200,6 +236,8 @@ def ensure_database_schema():
     db.create_all()
     _ensure_user_status_columns()
     _ensure_job_timestamp_column()
+    _ensure_job_offer_source_column()
+    _backfill_job_offer_sources()
 
 
 @app.context_processor
@@ -1399,6 +1437,41 @@ def admin_job_offer_providers():
             AppSetting.set('jooble_quota_threshold_percent', str(threshold))
             flash('Le seuil quotidien Jooble a été mis à jour.', 'success')
             return redirect(url_for('admin_job_offer_providers'))
+        if request.form.get('action') == 'adzuna_quota':
+            try:
+                threshold = int(request.form.get('adzuna_quota_threshold', ''))
+                if not 0 <= threshold <= 100:
+                    raise ValueError
+            except ValueError:
+                flash('Le seuil Adzuna doit être un entier entre 0 et 100.', 'error')
+                return redirect(url_for('admin_job_offer_providers'))
+            AppSetting.set('adzuna_quota_threshold_percent', str(threshold))
+            flash('Le seuil mensuel Adzuna a été mis à jour.', 'success')
+            return redirect(url_for('admin_job_offer_providers'))
+        if request.form.get('action') == 'user_quotas':
+            quota_users = User.query.filter(
+                User.role != Role.ADMIN.value
+            ).order_by(User.username).all()
+            values = {}
+            try:
+                for provider_key in ('jooble', 'adzuna'):
+                    total = 0
+                    for quota_user in quota_users:
+                        field = f'{provider_key}_quota_user_{quota_user.id}'
+                        value = int(request.form.get(field, '0'))
+                        if value < 0:
+                            raise ValueError
+                        values[(provider_key, quota_user.id)] = value
+                        total += value
+                    if total > _job_offer_quota(provider_key):
+                        raise ValueError
+            except ValueError:
+                flash('La somme des quotas utilisateurs ne peut pas dépasser le quota du fournisseur.', 'error')
+                return redirect(url_for('admin_job_offer_providers'))
+            for (provider_key, user_id), value in values.items():
+                AppSetting.set(f'job_offer_{provider_key}_quota_user_{user_id}', str(value))
+            flash('Les quotas par utilisateur ont été mis à jour.', 'success')
+            return redirect(url_for('admin_job_offer_providers'))
         selected = {
             key for key in request.form.getlist('providers')
             if key in JOB_OFFER_PROVIDERS
@@ -1414,6 +1487,17 @@ def admin_job_offer_providers():
         jooble_quota_threshold=_jooble_quota_threshold_percent(),
         jooble_daily_quota=_jooble_daily_quota(),
         jooble_daily_usage=_jooble_daily_usage(),
+        adzuna_quota_threshold=_adzuna_quota_threshold_percent(),
+        adzuna_monthly_quota=_adzuna_monthly_quota(),
+        adzuna_monthly_usage=_adzuna_monthly_usage(),
+        quota_users=User.query.filter(
+            User.role != Role.ADMIN.value
+        ).order_by(User.username).all(),
+        user_provider_quotas={
+            (provider_key, quota_user.id): _job_offer_user_quota(provider_key, quota_user.id)
+            for quota_user in User.query.filter(User.role != Role.ADMIN.value).all()
+            for provider_key in ('jooble', 'adzuna')
+        },
     )
 
 
@@ -1448,14 +1532,124 @@ def _jooble_daily_usage() -> int:
 
 
 def _reserve_jooble_request(user: User) -> bool:
-    """Reserve one shared Jooble request; admins bypass the user block."""
+    """Reserve one shared Jooble request and the user's assigned allocation."""
     usage = _jooble_daily_usage()
     quota = _jooble_daily_quota()
     threshold = (quota * _jooble_quota_threshold_percent()) // 100
-    if not user.is_admin and usage >= threshold:
+    user_usage = _job_offer_user_usage('jooble', user.id)
+    if not user.is_admin and (usage >= threshold or user_usage >= _job_offer_user_quota('jooble', user.id)):
         return False
     AppSetting.set('jooble_daily_usage_count', str(usage + 1))
+    _increment_job_offer_user_usage('jooble', user.id)
     return True
+
+
+def _adzuna_monthly_quota() -> int:
+    try:
+        return max(0, int(app.config.get('ADZUNA_MONTHLY_QUOTA', 25)))
+    except (TypeError, ValueError):
+        return 25
+
+
+def _adzuna_quota_threshold_percent() -> int:
+    raw = AppSetting.get(
+        'adzuna_quota_threshold_percent',
+        str(app.config.get('ADZUNA_QUOTA_THRESHOLD_PERCENT', 90)),
+    )
+    try:
+        return min(100, max(0, int(raw)))
+    except (TypeError, ValueError):
+        return 90
+
+
+def _adzuna_monthly_usage() -> int:
+    month = datetime.utcnow().strftime('%Y-%m')
+    if AppSetting.get('adzuna_monthly_usage_month') != month:
+        AppSetting.set('adzuna_monthly_usage_month', month)
+        AppSetting.set('adzuna_monthly_usage_count', '0')
+        return 0
+    try:
+        return max(0, int(AppSetting.get('adzuna_monthly_usage_count', '0')))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _reserve_adzuna_request(user: User) -> bool:
+    """Reserve one shared Adzuna request and the user's assigned allocation."""
+    usage = _adzuna_monthly_usage()
+    quota = _adzuna_monthly_quota()
+    threshold = (quota * _adzuna_quota_threshold_percent()) // 100
+    user_usage = _job_offer_user_usage('adzuna', user.id)
+    if not user.is_admin and (usage >= threshold or user_usage >= _job_offer_user_quota('adzuna', user.id)):
+        return False
+    AppSetting.set('adzuna_monthly_usage_count', str(usage + 1))
+    _increment_job_offer_user_usage('adzuna', user.id)
+    return True
+
+
+def _job_offer_quota(provider_key: str) -> int:
+    return _jooble_daily_quota() if provider_key == 'jooble' else _adzuna_monthly_quota()
+
+
+def _job_offer_period(provider_key: str) -> str:
+    return datetime.utcnow().date().isoformat() if provider_key == 'jooble' else datetime.utcnow().strftime('%Y-%m')
+
+
+def _job_offer_user_quota(provider_key: str, user_id: int) -> int:
+    setting_key = f'job_offer_{provider_key}_quota_user_{user_id}'
+    raw = AppSetting.get(setting_key)
+    if raw is not None:
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            pass
+    user_count = User.query.filter(User.role != Role.ADMIN.value).count()
+    return _job_offer_quota(provider_key) // max(1, user_count)
+
+
+def _job_offer_user_usage(provider_key: str, user_id: int) -> int:
+    period_key = f'job_offer_{provider_key}_usage_period'
+    count_key = f'job_offer_{provider_key}_usage_user_{user_id}'
+    period = _job_offer_period(provider_key)
+    if AppSetting.get(period_key) != period:
+        AppSetting.set(period_key, period)
+        AppSetting.set(f'job_offer_{provider_key}_usage_count', '0')
+        for user in User.query.with_entities(User.id).all():
+            AppSetting.set(f'job_offer_{provider_key}_usage_user_{user.id}', '0')
+        return 0
+    try:
+        return max(0, int(AppSetting.get(count_key, '0')))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _increment_job_offer_user_usage(provider_key: str, user_id: int) -> None:
+    usage = _job_offer_user_usage(provider_key, user_id)
+    AppSetting.set(f'job_offer_{provider_key}_usage_user_{user_id}', str(usage + 1))
+
+
+def _job_offer_quota_status(user: User | None = None) -> dict:
+    """Expose provider counters independently from the connected user's role."""
+    status = {
+        'jooble': {
+            'usage': _jooble_daily_usage(),
+            'quota': _jooble_daily_quota(),
+            'period': 'aujourd’hui',
+        },
+        'adzuna': {
+            'usage': _adzuna_monthly_usage(),
+            'quota': _adzuna_monthly_quota(),
+            'period': 'ce mois-ci',
+        },
+    }
+    if user:
+        for provider_key, values in status.items():
+            values['user_usage'] = _job_offer_user_usage(provider_key, user.id)
+            values['user_quota'] = _job_offer_user_quota(provider_key, user.id)
+            values['user_remaining'] = max(values['user_quota'] - values['user_usage'], 0)
+    for values in status.values():
+        values['remaining'] = max(values['quota'] - values['usage'], 0)
+    return status
 
 
 @app.route('/account/<int:user_id>/ai', methods=['GET', 'POST'])
@@ -2295,6 +2489,21 @@ def show_all():
     else:
         # default: show only the connected user's jobs
         jobs = Job.query.filter(Job.user_id == user_id).all()
+    source_labels = {
+        key: data['name']
+        for key, data in JOB_OFFER_PROVIDERS.items()
+    }
+    source_labels['manual'] = 'Saisie manuelle'
+    source_keys = sorted({
+        job.offer_source or 'manual'
+        for job in jobs
+    })
+    selected_source = (request.args.get('source') or '').strip().lower()
+    if selected_source in source_keys:
+        jobs = [
+            job for job in jobs
+            if (job.offer_source or 'manual') == selected_source
+        ]
     def most_recent_date(job):
         dates = [d for d in (job.updated_at, job.relaunchDate, job.applicationDate) if d]
         if not dates:
@@ -2439,6 +2648,15 @@ def show_all():
                 ft_job_details[job.id] = offers_by_id[str(job.ft_offer_id)]
     except Exception as exc:
         app.logger.warning('Could not load France Travail details for candidatures: %s', exc)
+    job_sources = {}
+    for job in jobs:
+        source_key = job.offer_source
+        if not source_key and job.ft_offer_id:
+            source_key = 'france_travail'
+        job_sources[job.id] = (
+            JOB_OFFER_PROVIDERS.get(source_key, {}).get('name')
+            if source_key else 'Saisie manuelle'
+        ) or 'Saisie manuelle'
     return render_template('candidatures.html', jobs=jobs, user=user, users=users_list, cv_pdf_urls=cv_pdf_urls,
                            cv_pdf_filenames=cv_pdf_filenames,
                            cv_education=cv_education, cv_certificates=cv_certificates,
@@ -2447,6 +2665,12 @@ def show_all():
                            missing_contact_fields=missing_contact_fields,
                            default_cv_available=default_cv_available,
                            ft_job_details=ft_job_details,
+                           job_sources=job_sources,
+                           source_labels={
+                               key: source_labels.get(key, key.title())
+                               for key in source_keys
+                           },
+                           selected_source=selected_source,
                            site_ai_usage=site_ai_usage,
                            site_ai_remaining=site_ai_remaining,
                            site_ai_managed=site_ai_managed)
@@ -2583,7 +2807,7 @@ def _search_job_offer_provider_or(
         queries = [None]
     # Jooble limits the default API plan to 100 requests/day. Its keyword
     # search accepts a single query, so avoid one request per ATS keyword.
-    if provider_key == 'jooble' and len(queries) > 1:
+    if provider_key in ('jooble', 'adzuna') and len(queries) > 1:
         queries = [' '.join(queries)]
     merged: list[dict] = []
     seen_ids: set[str] = set()
@@ -3181,6 +3405,13 @@ def france_travail_search():
             'warning',
         )
         return redirect(url_for('france_travail'))
+    if provider_name == 'adzuna' and mode != 'auto' and not _reserve_adzuna_request(user):
+        flash(
+            'Le seuil mensuel Adzuna est presque atteint. '
+            'Un administrateur doit relancer ou ajuster le seuil.',
+            'warning',
+        )
+        return redirect(url_for('france_travail'))
 
     try:
         if mode == 'auto':
@@ -3341,6 +3572,7 @@ def france_travail():
         prefill_ats_keywords=[],
         job_offer_providers=job_offer_provider_status(),
         available_job_offer_providers=available_job_offer_provider_keys(),
+        job_offer_quotas=_job_offer_quota_status(user),
         edit_search_id=None,
         search_info=None,
     )
@@ -3442,6 +3674,7 @@ def france_travail_edit_page(search_id):
         prefill_ats_keywords=saved_ats_keywords,
         job_offer_providers=job_offer_provider_status(),
         available_job_offer_providers=available_job_offer_provider_keys(),
+        job_offer_quotas=_job_offer_quota_status(user),
         suggested_ats_keywords=suggested_ats_keywords,
         edit_search_id=ft_search.id,
         search_info=ft_search.search_info,
@@ -3520,6 +3753,7 @@ def ft_search_view(search_id):
     provider_label = JOB_OFFER_PROVIDERS.get(
         provider_key, JOB_OFFER_PROVIDERS['france_travail']
     )['name']
+    provider_quota = _job_offer_quota_status(user).get(provider_key)
 
     return render_template(
         'offers_candidates.html',
@@ -3528,6 +3762,8 @@ def ft_search_view(search_id):
         offers=raw_offers,
         search_info=ft_search.search_info,
         provider_label=provider_label,
+        provider_key=provider_key,
+        provider_quota=provider_quota,
         search_id=search_id,
         added_ids=_ft_added_ids(session.get('login_id')),
         unavailable_ids=ft_search.unavailable,
@@ -3714,6 +3950,15 @@ def ft_search_refresh(search_id):
                 'warning',
             )
             return redirect(url_for('ft_search_view', search_id=search_id))
+    if provider_name == 'adzuna' and p.get('mode') != 'auto':
+        user = get_user_by_id(session['login_id'])
+        if not _reserve_adzuna_request(user):
+            flash(
+                'Le seuil mensuel Adzuna est presque atteint. '
+                'Un administrateur doit relancer ou ajuster le seuil.',
+                'warning',
+            )
+            return redirect(url_for('ft_search_view', search_id=search_id))
 
     try:
         if p.get('mode') == 'auto':
@@ -3853,6 +4098,7 @@ def ft_add_candidature(search_id):
         return redirect(url_for('ft_search_view', search_id=search_id))
     job.user_id = owner_id
     job.ft_offer_id = offer_id or None
+    job.offer_source = (ft_search.params or {}).get('provider') or 'france_travail'
     db.session.add(job)
     db.session.commit()
     flash(f'Candidature « {title} » ({company}) ajoutée avec succès !', 'success')

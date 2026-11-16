@@ -1,6 +1,6 @@
 # 💼 Suivi de candidatures France Travail & Assistant IA
 
-Application web communautaire, gratuite et auto-hébergeable permettant de centraliser sa recherche d'emploi, de consulter les offres France Travail et Jooble et de générer des CV et lettres de motivation adaptés grâce à l'intelligence artificielle. Les fonctions
+Application web communautaire, gratuite et auto-hébergeable permettant de centraliser sa recherche d'emploi, de consulter les offres France Travail, Adzuna et Jooble et de générer des CV et lettres de motivation adaptés grâce à l'intelligence artificielle. Les fonctions
 principales sont protégées par authentification ; les données de candidature
 sont privées par défaut.
 
@@ -8,9 +8,9 @@ sont privées par défaut.
 
 ## ✨ Fonctionnalités principales
 - **Tableau de bord de suivi :** centralisation des entreprises, contacts, dates clés, statuts et relances.
-- **Recherche multi-fournisseurs :** France Travail et Jooble sont disponibles
-  comme sources de recherche manuelle ; l'administrateur active les sources
-  configurées.
+- **Recherche multi-fournisseurs :** France Travail, Adzuna et Jooble sont
+  disponibles comme sources de recherche manuelle ; l'administrateur active
+  les sources configurées.
 - **Recherches enregistrées :** filtrage par source, rafraîchissement, exports
   CSV/XLSX/PDF et affichage de la source utilisée.
 - **Génération assistée par IA :** création et personnalisation de CV et lettres de motivation (compatible IA locale ou API distante).
@@ -56,6 +56,11 @@ Configurer au minimum dans `config.py` ou l'environnement :
 - `SECRET_KEY` et `SQLALCHEMY_DATABASE_URI` ;
 - SMTP (`GMAIL_*`, `SMTP_SERVER`, `SMTP_PORT`) si les e-mails sont utilisés ;
 - `FT_CLIENT_ID` et `FT_CLIENT_SECRET` pour France Travail en mode réel ;
+- `ADZUNA_APP_ID` et `ADZUNA_APP_KEY` pour activer Adzuna (les recherches
+  utilisent uniquement l’endpoint France) ;
+- `ADZUNA_MONTHLY_QUOTA` (25 par défaut) et
+  `ADZUNA_QUOTA_THRESHOLD_PERCENT` (90 par défaut) pour bloquer les recherches
+  Adzuna des utilisateurs non administrateurs avant d’atteindre le quota ;
 - `JOOBLE_API_KEY` et `JOOBLE_BASE_URL=https://fr.jooble.org/api` pour activer Jooble ;
 - `JOOBLE_DAILY_QUOTA` (100 par défaut) et
   `JOOBLE_QUOTA_THRESHOLD_PERCENT` (90 par défaut) pour contrôler les
@@ -78,11 +83,12 @@ aucune migration externe n'est actuellement requise.
   administrateurs.
 - **IA et quotas** permet de configurer les fournisseurs, le quota mensuel et
   de traiter les demandes d'augmentation.
-- **Fournisseurs d'offres** permet d'activer ou désactiver France Travail et
-  Jooble, de suivre le quota Jooble du jour et de définir le seuil de blocage
-  des utilisateurs non administrateurs. Le quota Jooble par défaut est de
-  100 requêtes par jour ; le seuil par défaut est de 90 % et les
-  administrateurs peuvent continuer à rechercher au-delà de ce seuil.
+- **Fournisseurs d'offres** permet d'activer ou désactiver France Travail,
+  Adzuna et Jooble, de suivre leurs quotas et de définir les seuils de blocage
+  des utilisateurs non administrateurs, ainsi que de répartir les quotas
+  disponibles entre les utilisateurs. Les quotas par défaut sont de
+  100 requêtes Jooble par jour et 25 requêtes Adzuna par mois ; les
+  administrateurs peuvent continuer à rechercher au-delà de ces seuils.
 - Chaque utilisateur voit son quota IA de l'instance, ses appels utilisés et
   ses appels restants dans `/suivi`. Une clé personnelle utilise les quotas de
   son fournisseur et n'est pas comptabilisée dans le quota du site.
@@ -92,6 +98,20 @@ aucune migration externe n'est actuellement requise.
   `instance/backups/deleted_users/` ou effectuer une purge définitive. Les
   reliquats de fichiers sont nettoyés même si le compte n'existe déjà plus en
   base.
+
+## Quotas des fournisseurs d'offres
+
+Les appels Adzuna et Jooble utilisent les quotas du compte fournisseur et sont
+comptabilisés par période : 25 requêtes Adzuna par mois et 100 requêtes Jooble
+par jour par défaut. Les seuils de blocage des utilisateurs non
+administrateurs sont configurables dans **Admin → Fournisseurs d'offres**.
+
+Le quota fournisseur est partagé entre les utilisateurs non administrateurs.
+L'administrateur peut répartir les allocations individuelles dans ce même
+menu ; les allocations par défaut sont calculées à parts égales. La page d'une
+recherche enregistrée affiche le quota global restant et l'allocation
+individuelle disponible avant une relance. Les administrateurs peuvent
+continuer à rechercher au-delà des seuils.
 
 ## Quotas IA
 
@@ -111,7 +131,7 @@ peut être envoyée depuis `/suivi` et est visible dans **Admin → IA et quotas
 - `/update_account/<id>` : profil, coordonnées et CV ;
 - `/france_travail` : recherche d'offres ;
 - `/france_travail/searches` : recherches enregistrées, filtrables par source ;
-- `/admin/job-offer-providers` : activation des sources et seuil quotidien Jooble ;
+- `/admin/job-offer-providers` : activation des sources et seuils de quotas ;
 - `/admin/ai-providers` : fournisseurs IA, quotas et demandes ;
 - `/accounts` : gestion administrateur des comptes ;
 - `/legal` : informations publiques sur les données et la conservation.
