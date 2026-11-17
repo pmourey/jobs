@@ -312,6 +312,38 @@
 		</div>
 		{% endfor %}
 	</div>
+	{% if pagination.pages > 1 %}
+	<nav class="mt-4" aria-label="Pagination des candidatures">
+		<ul class="pagination justify-content-center flex-wrap">
+			<li class="page-item{% if not pagination.has_prev %} disabled{% endif %}">
+				<a class="page-link"
+					href="{{ url_for('show_all', page=pagination.prev_num, view_user=request.args.get('view_user'), source=selected_source) if pagination.has_prev else '#' }}"
+					aria-label="Page précédente">‹</a>
+			</li>
+			{% for page_number in pagination.iter_pages(left_edge=1, left_current=1, right_current=1, right_edge=1) %}
+				{% if page_number %}
+				<li class="page-item{% if page_number == pagination.page %} active{% endif %}">
+					<a class="page-link"
+						href="{{ url_for('show_all', page=page_number, view_user=request.args.get('view_user'), source=selected_source) }}">
+						{{ page_number }}
+					</a>
+				</li>
+				{% else %}
+				<li class="page-item disabled"><span class="page-link">…</span></li>
+				{% endif %}
+			{% endfor %}
+			<li class="page-item{% if not pagination.has_next %} disabled{% endif %}">
+				<a class="page-link"
+					href="{{ url_for('show_all', page=pagination.next_num, view_user=request.args.get('view_user'), source=selected_source) if pagination.has_next else '#' }}"
+					aria-label="Page suivante">›</a>
+			</li>
+		</ul>
+		<p class="text-center text-muted small mb-0">
+			{{ ((pagination.page - 1) * page_size) + 1 }}–{{ ((pagination.page - 1) * page_size) + jobs|length }}
+			sur {{ pagination.total }} candidatures
+		</p>
+	</nav>
+	{% endif %}
 	{% else %}
 	<div class="text-center mt-5">
 		<p class="fs-5">Pas de candidature en cours ✌️</p>

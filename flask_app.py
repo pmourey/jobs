@@ -2468,6 +2468,7 @@ def show_closed_sessions():
 @app.route('/suivi')
 @is_connected
 def show_all():
+    page_size = 25
     user_id = session['login_id']
     app.logger.debug('This is a debug message.')
     jobs_owner_id = user_id
@@ -2481,36 +2482,55 @@ def show_all():
             target_id = None
         # authorize viewing: either target is current user or target allowed sharing
         if target_id and (target_id == user_id or (User.query.get(target_id) and User.query.get(target_id).allow_view_offers)):
-            jobs = Job.query.filter(Job.user_id == target_id).all()
             jobs_owner_id = target_id
         else:
             flash('Action non autorisée : cet utilisateur ne partage pas ses offres.', 'error')
             return redirect(url_for('show_all'))
-    else:
-        # default: show only the connected user's jobs
-        jobs = Job.query.filter(Job.user_id == user_id).all()
+
+    # Build the filtered query before loading any candidature-specific data.
+    # This keeps CV checks, saved-offer matching and template rendering bounded
+    # to the current page.
+    jobs_query = Job.query.filter(Job.user_id == jobs_owner_id)
     source_labels = {
         key: data['name']
         for key, data in JOB_OFFER_PROVIDERS.items()
     }
     source_labels['manual'] = 'Saisie manuelle'
     source_keys = sorted({
-        job.offer_source or 'manual'
-        for job in jobs
+        source or 'manual'
+        for (source,) in jobs_query.with_entities(Job.offer_source).distinct().all()
     })
     selected_source = (request.args.get('source') or '').strip().lower()
     if selected_source in source_keys:
-        jobs = [
-            job for job in jobs
-            if (job.offer_source or 'manual') == selected_source
-        ]
+        if selected_source == 'manual':
+            jobs_query = jobs_query.filter(
+                or_(
+                    Job.offer_source.is_(None),
+                    Job.offer_source == '',
+                    Job.offer_source == 'manual',
+                )
+            )
+        else:
+            jobs_query = jobs_query.filter(Job.offer_source == selected_source)
+
+    sort_date = func.max(
+        func.coalesce(Job.updated_at, datetime(1970, 1, 1)),
+        func.coalesce(Job.relaunchDate, datetime(1970, 1, 1)),
+        func.coalesce(Job.applicationDate, datetime(1970, 1, 1)),
+    )
+    page = request.args.get('page', 1, type=int) or 1
+    page = max(page, 1)
+    pagination = jobs_query.order_by(sort_date.desc(), Job.id.desc()).paginate(
+        page=page,
+        per_page=page_size,
+        error_out=False,
+    )
+    jobs = pagination.items
+
     def most_recent_date(job):
         dates = [d for d in (job.updated_at, job.relaunchDate, job.applicationDate) if d]
-        if not dates:
-            return datetime.min
-        return max(dates)
+        return max(dates) if dates else datetime.min
 
-    jobs.sort(key=most_recent_date, reverse=True)
     for j in jobs:
         rd = most_recent_date(j)
         try:
@@ -2671,9 +2691,25 @@ def show_all():
                                for key in source_keys
                            },
                            selected_source=selected_source,
+                           pagination=pagination,
+                           page_size=page_size,
                            site_ai_usage=site_ai_usage,
                            site_ai_remaining=site_ai_remaining,
                            site_ai_managed=site_ai_managed)
+
+
+@app.route('/toggle_expired/<int:id>', methods=['POST'])
+@is_connected
+def toggle_expired(id):
+    """Bascule le statut clôturée d'une candidature."""
+    job = Job.query.get_or_404(id)
+    current = get_user_by_id(session['login_id'])
+    if not (current.is_admin or current.id == job.user_id):
+        return jsonify({'error': 'Action non autorisée.'}), 403
+
+    job.active = not bool(job.active)
+    db.session.commit()
+    return jsonify({'active': bool(job.active)}), 200
 
 
 @app.route('/update/<int:id>', methods=['GET', 'POST'])
@@ -2694,7 +2730,15 @@ def update(id):
         job.company = form.get('company', job.company)
         job.contact = form.get('contact', job.contact)
         job.email = form.get('email', job.email)
-        job.applicationDate = _parse_form_date(form.get('applicationDate')) or job.applicationDate
+        application_date = _parse_form_date(form.get('applicationDate'))
+        if application_date:
+            now = datetime.now()
+            job.applicationDate = application_date.replace(
+                hour=now.hour,
+                minute=now.minute,
+                second=now.second,
+                microsecond=now.microsecond,
+            )
         job.relaunchDate = _parse_form_date(form.get('relaunchDate'))
         job.refusalDate = _parse_form_date(form.get('refusalDate'))
         if 'cover_letter_text' in form:
@@ -4060,6 +4104,11 @@ def ft_toggle_unavailable(search_id):
 def ft_add_candidature(search_id):
     """Ajoute une offre France Travail comme candidature et reste sur la page de résultats."""
     import re as _re
+    ft_search = FtSearch.query.get_or_404(search_id)
+    if ft_search.user_id != session['login_id']:
+        flash('Action non autorisée.', 'error')
+        return redirect(url_for('ft_searches'))
+
     offer_id  = request.form.get('offer_id', '').strip()
     title     = request.form.get('title', '').strip()
     url_offer = request.form.get('url', '').strip()
