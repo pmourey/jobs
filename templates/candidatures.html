@@ -33,6 +33,9 @@
 				{% if request.args.get('view_user') %}
 				<input type="hidden" name="view_user" value="{{ request.args.get('view_user') }}">
 				{% endif %}
+				{% if request.args.get('company') %}
+				<input type="hidden" name="company" value="{{ request.args.get('company') }}">
+				{% endif %}
 				<label for="source-filter" class="small mb-0">Source :</label>
 				<select id="source-filter" name="source" class="form-select form-select-sm w-auto"
 						onchange="this.form.submit()">
@@ -41,6 +44,21 @@
 					<option value="{{ key }}" {% if selected_source == key %}selected{% endif %}>{{ label }}</option>
 					{% endfor %}
 				</select>
+			</form>
+		</div>
+		<div>
+			<form method="get" action="{{ url_for('show_all') }}" class="d-flex flex-wrap align-items-center gap-2">
+				{% if request.args.get('view_user') %}
+				<input type="hidden" name="view_user" value="{{ request.args.get('view_user') }}">
+				{% endif %}
+				{% if selected_source %}
+				<input type="hidden" name="source" value="{{ selected_source }}">
+				{% endif %}
+				<label for="company-filter" class="small mb-0">Company :</label>
+				<input id="company-filter" name="company" type="search"
+					class="form-control form-control-sm" value="{{ selected_company }}"
+					placeholder="Nom de l’entreprise" aria-label="Filtrer par entreprise">
+				<button class="btn btn-sm btn-outline-primary" type="submit">Filtrer</button>
 			</form>
 		</div>
 		<div>
@@ -317,14 +335,14 @@
 		<ul class="pagination justify-content-center flex-wrap">
 			<li class="page-item{% if not pagination.has_prev %} disabled{% endif %}">
 				<a class="page-link"
-					href="{{ url_for('show_all', page=pagination.prev_num, view_user=request.args.get('view_user'), source=selected_source) if pagination.has_prev else '#' }}"
+					href="{{ url_for('show_all', page=pagination.prev_num, view_user=request.args.get('view_user'), source=selected_source, company=selected_company) if pagination.has_prev else '#' }}"
 					aria-label="Page précédente">‹</a>
 			</li>
 			{% for page_number in pagination.iter_pages(left_edge=1, left_current=1, right_current=1, right_edge=1) %}
 				{% if page_number %}
 				<li class="page-item{% if page_number == pagination.page %} active{% endif %}">
 					<a class="page-link"
-						href="{{ url_for('show_all', page=page_number, view_user=request.args.get('view_user'), source=selected_source) }}">
+						href="{{ url_for('show_all', page=page_number, view_user=request.args.get('view_user'), source=selected_source, company=selected_company) }}">
 						{{ page_number }}
 					</a>
 				</li>
@@ -334,7 +352,7 @@
 			{% endfor %}
 			<li class="page-item{% if not pagination.has_next %} disabled{% endif %}">
 				<a class="page-link"
-					href="{{ url_for('show_all', page=pagination.next_num, view_user=request.args.get('view_user'), source=selected_source) if pagination.has_next else '#' }}"
+					href="{{ url_for('show_all', page=pagination.next_num, view_user=request.args.get('view_user'), source=selected_source, company=selected_company) if pagination.has_next else '#' }}"
 					aria-label="Page suivante">›</a>
 			</li>
 		</ul>
