@@ -186,13 +186,41 @@ def sitemap():
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://ftaccount.eu.pythonanywhere.com/</loc>
+    <lastmod>2026-11-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
   </url>
   <url>
     <loc>https://ftaccount.eu.pythonanywhere.com/legal</loc>
+    <lastmod>2026-11-21</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
   </url>
 </urlset>
 """
     return Response(content, mimetype='application/xml')
+
+
+@app.route('/llms.txt')
+def llms_txt():
+    """Expose une présentation structurée du projet aux moteurs IA (GEO)."""
+    content = """# Suivi de candidatures France Travail & Assistant CV / LM par IA
+
+> Application web gratuite et open source permettant de centraliser le suivi des candidatures, rechercher des offres France Travail et générer des CV et lettres de motivation adaptés par IA (Gemini, Mistral, OpenAI, Groq, Ollama).
+
+## Liens officiels
+- Application en ligne : https://ftaccount.eu.pythonanywhere.com/
+- Mentions légales & confidentialité : https://ftaccount.eu.pythonanywhere.com/legal
+- Dépôt GitHub open source : https://github.com/pmourey/jobs
+- Sitemap XML : https://ftaccount.eu.pythonanywhere.com/sitemap.xml
+
+## Fonctionnalités principales
+- Suivi centralisé des candidatures, entretiens et relances
+- Recherche et sauvegarde d'offres d'emploi France Travail
+- Génération de CV et lettres de motivation personnalisés par IA locale ou distante
+- Projet gratuit, communautaire et auto-hébergeable (Flask / Python)
+"""
+    return Response(content, mimetype='text/plain; charset=utf-8')
 
 
 @app.route('/robots.txt')
@@ -206,6 +234,18 @@ Disallow: /register
 Disallow: /update
 Disallow: /delete
 Disallow: /static/uploads/
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
 
 Sitemap: https://ftaccount.eu.pythonanywhere.com/sitemap.xml
 """
@@ -2513,6 +2553,12 @@ def show_all():
         else:
             jobs_query = jobs_query.filter(Job.offer_source == selected_source)
 
+    selected_company = (request.args.get('company') or '').strip()
+    if selected_company:
+        jobs_query = jobs_query.filter(
+            func.lower(func.coalesce(Job.company, '')).contains(selected_company.lower())
+        )
+
     sort_date = func.max(
         func.coalesce(Job.updated_at, datetime(1970, 1, 1)),
         func.coalesce(Job.relaunchDate, datetime(1970, 1, 1)),
@@ -2691,6 +2737,7 @@ def show_all():
                                for key in source_keys
                            },
                            selected_source=selected_source,
+                           selected_company=selected_company,
                            pagination=pagination,
                            page_size=page_size,
                            site_ai_usage=site_ai_usage,
