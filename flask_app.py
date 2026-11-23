@@ -70,7 +70,8 @@ from tools.cv_tools import (build_cv_pdf_filename,
                             validate_cv_data,
                             CANONICAL_CV_FILENAME,
                             load_pdf_into_canonical, extract_cv_text,
-                            convert_cv_text_with_ai, CV_IMPORT_PROVIDERS)
+                            convert_cv_text_with_ai, CV_IMPORT_PROVIDERS,
+                            sanitize_ai_error)
 from tools.merge_cvs import merge_cv_jsons
 from tools.import_cv import parse_json_cv, fetch_linkedin_profile
 from tools.document_tools import (build_cover_letter_pdf_filename,
@@ -3079,10 +3080,11 @@ def preview_cv_data(id):
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:
-        app.logger.error(f'preview_cv_data error: {exc}')
+        safe_error = sanitize_ai_error(exc)
+        app.logger.error(f'preview_cv_data error: {safe_error}')
         try:
             cv_data = _resolve_user_cv_data(job.user_id)
-            fallback_resp = _fallback(cv_data, warning=f"Aperçu généré sans IA : {exc}")
+            fallback_resp = _fallback(cv_data, warning=f"Aperçu généré sans IA : {safe_error}")
             fallback_resp['cv_data'] = cv_data
             return jsonify(fallback_resp), 200
         except Exception:

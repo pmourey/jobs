@@ -6,12 +6,21 @@ from __future__ import annotations
 import json as _json
 import os
 import re
+import time
 import zipfile
 from xml.etree import ElementTree
 from io import BytesIO
 from pathlib import Path
 
 from Model import Job
+
+
+def sanitize_ai_error(exc: Exception | str) -> str:
+    """Return a user-safe AI error without credentials embedded in URLs."""
+    message = str(exc)
+    message = re.sub(r'([?&](?:key|api_key|token|access_token)=)[^&\s]+', r'\1[redacted]', message, flags=re.IGNORECASE)
+    message = re.sub(r'([?&]key=)[^&\s]+', r'\1[redacted]', message, flags=re.IGNORECASE)
+    return message
 
 
 # Small helper to route requests to either the centralized GitHub Models client
@@ -230,22 +239,30 @@ def _model_infer(messages: list, model: str, base_url: str, api_key: str, *,
 
             last_gemini_exc = None
             for g_model in models_to_try:
-                try:
-                    gemini_endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent"
-                    resp = requests.post(gemini_endpoint, json=payload, headers=headers, params=params, timeout=request_timeout)
-                    resp.raise_for_status()
-                    data = resp.json()
-                    candidates = data.get('candidates', [])
-                    if candidates:
-                        parts = candidates[0].get('content', {}).get('parts', [])
-                        if parts:
-                            return parts[0].get('text', '').strip()
-                except Exception as g_err:
-                    last_gemini_exc = g_err
-                    continue
+                gemini_endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent"
+                for attempt in range(3):
+                    try:
+                        resp = requests.post(gemini_endpoint, json=payload, headers=headers, params=params, timeout=request_timeout)
+                        if resp.status_code in {429, 500, 502, 503, 504} and attempt < 2:
+                            time.sleep(2 ** attempt)
+                            continue
+                        resp.raise_for_status()
+                        data = resp.json()
+                        candidates = data.get('candidates', [])
+                        if candidates:
+                            parts = candidates[0].get('content', {}).get('parts', [])
+                            if parts:
+                                return parts[0].get('text', '').strip()
+                        break
+                    except Exception as g_err:
+                        last_gemini_exc = g_err
+                        if attempt < 2 and getattr(g_err, 'response', None) is None:
+                            time.sleep(2 ** attempt)
+                            continue
+                        break
 
             if last_gemini_exc:
-                raise last_gemini_exc
+                raise RuntimeError(sanitize_ai_error(last_gemini_exc)) from last_gemini_exc
             return ''
         except Exception as e:
             # If Gemini was specifically targeted, do not fall through to invalid endpoints
@@ -1466,7 +1483,7 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
         fallback = _default_cv_suggestions(cv_data, job=job)
         fallback['warning'] = (
             'Trop de requêtes vers le endpoint de modèles. Réessayez dans une minute.' if _is_rate_limit_error(exc)
-            else f"Aperçu généré sans IA : {exc}"
+            else f"Aperçu généré sans IA : {sanitize_ai_error(exc)}"
         )
         return fallback
 

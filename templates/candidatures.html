@@ -100,13 +100,13 @@
 <main class="container-fluid">
 	{% if jobs %}
 	<!-- Desktop table (≥ 1200 px) -->
-	<div class="d-none d-xl-block table-responsive">
-		<table class="table table-striped table-hover">
+	<div class="d-none d-xl-block table-responsive cand-table-wrap">
+		<table class="table table-striped table-hover cand-table">
 			<thead class="table-dark">
 				<tr>
 							{% if user.is_admin or user.is_user %}<th>Update</th>
 					<th>Delete</th>{% endif %}
-					<th>Offre</th>
+					<th class="cand-col-offer">Offre</th>
 					<th>Source</th>
 					<th>Capture</th>
 					<th>LM</th>
@@ -114,7 +114,7 @@
 					<th>Matching</th>
 					<th>Détail</th>
 					<th>Location</th>
-					<th>Company</th>
+					<th class="cand-col-company">Company</th>
 					<th>Contact</th>
 					<th>E-Mail</th>
 					<th>Date candidature</th>
@@ -131,7 +131,7 @@
 							class="btn btn-sm btn-primary" title="Modifier #{{job.id}}">✏️</a></td>
 					<td><button onclick="deleteJob({{ job.id }})" class="btn btn-sm btn-danger"
 							title="Supprimer #{{job.id}}">🗑️</button></td>{% endif %}
-					<td><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></td>
+					<td class="cand-col-offer"><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></td>
 					<td>{{ job_sources.get(job.id, 'Saisie manuelle') }}</td>
 					<td>{% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a
 							href="{{ url_for('static', filename=capture) }}" target="_blank"
@@ -203,7 +203,7 @@
 						{% else %}<span class="text-muted">—</span>{% endif %}
 					</td>
 					<td>{{ job.zipCode }}</td>
-					<td>{{ job.company }}</td>
+					<td class="cand-col-company">{{ job.company }}</td>
 					<td>{{ job.contact }}</td>
 					<td class="{% if not job.email %}bg-warning{% endif %}">{{ job.email }}</td>
 					<td class="{% if job.expired %}bg-danger text-white{% endif %}">
@@ -240,7 +240,7 @@
 		<div class="col" data-closed="{{ '1' if not job.active else '0' }}" data-order="{{ job.recent_ts }}">
 		<div class="card h-100 {% if not job.active %}bg-light{% endif %}">
 			<div class="card-body p-2">
-				<div class="d-flex justify-content-between align-items-start mb-1">
+				<div class="d-flex justify-content-between align-items-start gap-2 mb-2 cand-card-header">
 					<h6 class="card-title mb-0 small"><a href="{{ job.url }}" target="_blank">{{ job.name }}</a></h6>
 							{% if user.is_admin or user.is_user %}
 					<a href="{{ url_for('update', id=job.id) }}" class="btn btn-sm btn-primary me-1"
@@ -249,11 +249,11 @@
 						title="Supprimer #{{job.id}}">🗑️</button>
 					{% endif %}
 				</div>
-				<div class="small text-muted mb-1"><strong>{{ job.company }}</strong> - {{ job.zipCode }}</div>
-				<div class="small mb-1"><strong>Source :</strong> {{ job_sources.get(job.id, 'Saisie manuelle') }}</div>
+				<div class="small text-muted mb-1 cand-card-meta"><strong>{{ job.company }}</strong> - {{ job.zipCode }}</div>
+				<div class="small mb-2 cand-card-meta"><strong>Source :</strong> {{ job_sources.get(job.id, 'Saisie manuelle') }}</div>
 				{% set match = ft_job_details.get(job.id) %}
 				{% if match %}
-				<div class="small mb-1">
+				<div class="small mb-2 cand-card-meta">
 					<strong>Matching :</strong>
 					<span class="badge {% if match.score >= 70 %}bg-success{% elif match.score >= 45 %}bg-primary{% else %}bg-secondary{% endif %}">
 						🎯 {{ match.score }}%
@@ -262,11 +262,10 @@
 						onclick="openJobOfferModal({{ job.id }})">🔍 Détail</button>
 				</div>
 				{% endif %}
-				<div class="small mb-1">{{ job.contact }} {% if job.email %}- {{ job.email }}{% endif %}</div>
-				<div class="d-flex justify-content-between align-items-center small">
-					<span
-						class="{% if job.expired %}bg-danger text-white px-1 rounded{% endif %}">{{job.applicationDate.strftime('%d/%m')}}</span>
-					<div>
+				<div class="small mb-2 cand-card-meta">{{ job.contact }} {% if job.email %}- {{ job.email }}{% endif %}</div>
+				<div class="d-flex justify-content-between align-items-center gap-2 small cand-card-footer">
+					<span class="cand-card-date {% if job.expired %}bg-danger text-white px-1 rounded{% endif %}">{{job.applicationDate.strftime('%d/%m')}}</span>
+					<div class="d-flex flex-wrap justify-content-end gap-1 cand-card-actions">
 						{% if job.is_capture %}{% set capture = 'images/' + ('capture_%s.pdf' % job.id) %}<a
 							href="{{ url_for('static', filename=capture) }}" target="_blank"
 							class="btn btn-sm btn-outline-success py-0">PDF</a>{% endif %}
@@ -300,9 +299,9 @@
 							title="Télécharger CV PDF" data-filename="{{ cv_pdf_filenames.get(job.id) or ('cv_%s.pdf' % job.id) }}">⬇️ PDF</a>
 						{% endif %}
 						{% if job.cover_letter_text %}
-						<span class="ms-1 small text-truncate" style="max-width:120px">{{ job.cover_letter_text
+						<span class="ms-1 small text-truncate cand-card-letter" title="Lettre de motivation">{{ job.cover_letter_text
 							}}</span>
-						<button type="button" class="btn btn-sm btn-link p-0 ms-2"
+						<button type="button" class="btn btn-sm btn-link p-0"
 							onclick="showLM({{ job.id }})">Aperçu</button>
 						<div id="lm-content-mobile-{{ job.id }}" class="d-none">{{ job.cover_letter_text | e }}</div>
 						{% endif %}
