@@ -1,49 +1,27 @@
 # 💼 Suivi de candidatures France Travail & Assistant IA
 
-Application web communautaire, gratuite et auto-hébergeable permettant de centraliser sa recherche d'emploi, de consulter les offres France Travail, Adzuna et Jooble et de générer des CV et lettres de motivation adaptés grâce à l'intelligence artificielle. Les fonctions
-principales sont protégées par authentification ; les données de candidature
-sont privées par défaut.
+Application web Flask communautaire, gratuite et auto-hébergeable pour centraliser sa recherche d'emploi, consulter les offres multi-sources et générer des CV et lettres de motivation adaptés grâce à l'intelligence artificielle. Les fonctionnalités principales sont protégées par authentification et les données de chaque utilisateur restent privées par défaut.
 
 🌐 **Instance communautaire en ligne :** [https://ftaccount.eu.pythonanywhere.com/](https://ftaccount.eu.pythonanywhere.com/)
 
+---
+
 ## ✨ Fonctionnalités principales
-- **Tableau de bord de suivi :** centralisation des entreprises, contacts, dates clés, statuts et relances.
-- **Recherche multi-fournisseurs :** France Travail, Adzuna et Jooble sont
-  disponibles comme sources de recherche manuelle ; l'administrateur active
-  les sources configurées.
-- **Recherches enregistrées :** filtrage par source, rafraîchissement, exports
-  CSV/XLSX/PDF et affichage de la source utilisée.
-- **Génération assistée par IA :** création et personnalisation de CV et lettres de motivation (compatible IA locale ou API distante).
-- **Respect des données (RGPD) :** cloisonnement strict des comptes utilisateurs et partage optionnel.
 
-## Architecture essentielle
+- **Suivi complet des candidatures :** gestion CRUD des offres postulées (entreprise, intitulé, contact, e-mail, URL, dates clés, statuts actif/refusé, relances), pièces jointes/captures PDF (`static/images`), filtres multicritères et pagination.
+- **Recherche d'offres multi-fournisseurs :** recherche manuelle ou guidée sur **France Travail**, **Adzuna** et **Jooble**, sauvegarde et rafraîchissement des recherches, déduplication lors de l'ajout en candidature et exports **CSV / XLSX / PDF**.
+- **CV canonique unique :** stockage normalisé au format JSON Resume dans `static/uploads/users/<user_id>/cvs/cv.json` (dates `YYYY-MM-DD`). Compatible **GitConnected (JSON)**, **export PDF LinkedIn** et **CV PDF / DOCX / ODT** (extraction locale + conversion structurée par IA), avec conservation de l'original courant dans `cvs/originals/`.
+- **Génération de CV et lettres de motivation par IA :** adaptation ciblée par offre, prévisualisation et édition, génération PDF du CV via ReportLab (`tools/cv_tools.py`) et de la lettre via LibreOffice/Word ou ReportLab (`tools/document_tools.py`). Compatible avec une IA locale (**Ollama**) ou des API distantes, avec gestion de clés personnelles chiffrées (**Fernet**) et repli sur la configuration IA du site.
+- **Serveur MCP intégré (`jobs-tracker`) :** exposition des outils métier en **Stdio local** (`mcp_server.py`) et en **Streamable HTTP** (`POST /mcp`, protégé par jeton Bearer) pour permettre à un assistant IA (ex. Antigravity) d'ajouter des offres, stocker les lettres en base et générer les CV PDF depuis `cv.json` — voir [docs/MCP_SERVER.md](docs/MCP_SERVER.md).
+- **Administration, quotas et conformité RGPD :**
+  - cloisonnement strict des données par compte (partage des offres optionnel en opt-in) et rôle administrateur unique ;
+  - activation des fournisseurs d'offres, suivi des quotas par période (25 req./mois Adzuna, 100 req./jour Jooble par défaut) et répartition par utilisateur dans **Admin → Fournisseurs d'offres** ;
+  - suivi de l'usage IA mensuel (`AiUsage`, 20 appels/mois par défaut sur la clé du site) et traitement des demandes d'augmentation dans **Admin → IA et quotas** ;
+  - gestion des sessions actives, suspension/réactivation de comptes avec motif, et suppression avec archivage privé (`instance/backups/deleted_users/`) ou purge définitive.
 
-- `flask_app.py` : routes Flask et orchestration de l'application.
-- `Model.py` : modèles SQLAlchemy (`User`, `Job`, `Session`, recherches,
-  configuration IA, quotas).
-- `Controller.py` : authentification, uploads et e-mails.
-- `tools/` : CV/LM, PDF, France Travail, fournisseurs IA et quotas.
-- `templates/` : interface Jinja2.
-- `static/uploads/users/<user_id>/` : données et documents propres à un
-  utilisateur.
-- `instance/backups/deleted_users/` : archives privées des comptes supprimés.
+---
 
-Le CV de référence est
-`static/uploads/users/<user_id>/cvs/cv.json`. Les imports PDF, DOCX et ODT
-extraient le texte localement puis utilisent l'IA configurée par le site pour
-produire ce CV canonique. Un seul original courant est conservé dans
-`cvs/originals/` et reste accessible depuis la gestion des CV, sous contrôle
-d'authentification. Un nouvel import remplace simplement le CV canonique et
-l'original courant.
-
-Les sources compatibles sont GitConnected (JSON Resume), LinkedIn Export (PDF)
-et les autres CV au format PDF, DOCX ou ODT. Les formats non structurés sont
-convertis par l'IA configurée sur le site. Les dates des expériences,
-formations, certifications et missions bénévoles sont normalisées en
-`YYYY-MM-DD` ; lorsqu'un mois ou une année seulement est fourni, le premier jour
-correspondant est utilisé.
-
-## Installation locale
+## 🚀 Installation et configuration locale
 
 ```bash
 python3 -m pip install -r requirements.txt
@@ -51,92 +29,33 @@ cp config_template.py config.py
 python3 flask_app.py
 ```
 
-Configurer au minimum dans `config.py` ou l'environnement :
+Variables principales à renseigner dans `config.py` ou l'environnement (selon les modules activés) :
 
-- `SECRET_KEY` et `SQLALCHEMY_DATABASE_URI` ;
-- SMTP (`GMAIL_*`, `SMTP_SERVER`, `SMTP_PORT`) si les e-mails sont utilisés ;
-- `FT_CLIENT_ID` et `FT_CLIENT_SECRET` pour France Travail en mode réel ;
-- `ADZUNA_APP_ID` et `ADZUNA_APP_KEY` pour activer Adzuna (les recherches
-  utilisent uniquement l’endpoint France) ;
-- `ADZUNA_MONTHLY_QUOTA` (25 par défaut) et
-  `ADZUNA_QUOTA_THRESHOLD_PERCENT` (90 par défaut) pour bloquer les recherches
-  Adzuna des utilisateurs non administrateurs avant d’atteindre le quota ;
-- `JOOBLE_API_KEY` et `JOOBLE_BASE_URL=https://fr.jooble.org/api` pour activer Jooble ;
-- `JOOBLE_DAILY_QUOTA` (100 par défaut) et
-  `JOOBLE_QUOTA_THRESHOLD_PERCENT` (90 par défaut) pour contrôler les
-  recherches Jooble des utilisateurs non administrateurs ;
-- la configuration IA du site (`GEMINI_API_KEY`, `GEMINI_BASE_URL`,
-  `GEMINI_MODEL`) si nécessaire ;
-- `AI_CREDENTIALS_MASTER_KEY` pour chiffrer les clés IA personnelles.
+- **Base & sécurité :** `SECRET_KEY`, `SQLALCHEMY_DATABASE_URI`
+- **E-mails (SMTP) :** `SMTP_SERVER`, `SMTP_PORT`, `GMAIL_USER`, `GMAIL_APP_PWD`
+- **Fournisseurs d'offres :** `FT_CLIENT_ID` / `FT_CLIENT_SECRET`, `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`, `JOOBLE_API_KEY` / `JOOBLE_BASE_URL` (et seuils/quotas associés)
+- **IA & chiffrement :** `GEMINI_API_KEY`, `GEMINI_BASE_URL`, `GEMINI_MODEL`, `AI_CREDENTIALS_MASTER_KEY` (clé Fernet pour les clés personnelles)
+- **Serveur MCP HTTP :** `MCP_API_TOKEN` (ou `JOBS_MCP_TOKEN`) et `MCP_USER_ID` (ou `JOBS_MCP_USER_ID`)
 
-`config.py`, les tokens, mots de passe et données utilisateurs ne doivent
-jamais être ajoutés au dépôt ou aux journaux.
+Les tables SQLite sont créées automatiquement au démarrage et lors des requêtes, avec migrations légères à la volée (aucun outil de migration externe requis). **Ne publiez jamais `config.py`, vos clés, mots de passe ou données utilisateurs dans Git ou les journaux.**
 
-Les tables sont créées automatiquement. Les colonnes ajoutées au modèle
-utilisateur sont complétées par une migration légère au démarrage/requête ;
-aucune migration externe n'est actuellement requise.
+---
 
-## Fonctionnalités administrateur
+## 🧱 Architecture et routes principales
 
-- Une seule instance possède un seul profil Administrateur. Promouvoir un
-  utilisateur transfère automatiquement le rôle et rétrograde les autres
-  administrateurs.
-- **IA et quotas** permet de configurer les fournisseurs, le quota mensuel et
-  de traiter les demandes d'augmentation.
-- **Fournisseurs d'offres** permet d'activer ou désactiver France Travail,
-  Adzuna et Jooble, de suivre leurs quotas et de définir les seuils de blocage
-  des utilisateurs non administrateurs, ainsi que de répartir les quotas
-  disponibles entre les utilisateurs. Les quotas par défaut sont de
-  100 requêtes Jooble par jour et 25 requêtes Adzuna par mois ; les
-  administrateurs peuvent continuer à rechercher au-delà de ces seuils.
-- Chaque utilisateur voit son quota IA de l'instance, ses appels utilisés et
-  ses appels restants dans `/suivi`. Une clé personnelle utilise les quotas de
-  son fournisseur et n'est pas comptabilisée dans le quota du site.
-- Depuis **Comptes**, un administrateur peut suspendre/réactiver un compte
-  avec un motif.
-- La suppression peut archiver les données dans
-  `instance/backups/deleted_users/` ou effectuer une purge définitive. Les
-  reliquats de fichiers sont nettoyés même si le compte n'existe déjà plus en
-  base.
+- `flask_app.py` : routes Flask, authentification, orchestration IA, fournisseurs d'offres et endpoint `/mcp`.
+- `Model.py` : modèles SQLAlchemy (`User`, `Session`, `Job`, `FtSearch`, `AppSetting`, `UserAiCredential`, `AiUsage`, `AiQuotaRequest`).
+- `Controller.py` : authentification (y compris mise à niveau des anciens hashs), uploads et e-mails.
+- `tools/` : génération CV/LM et PDF (`cv_tools.py`, `document_tools.py`), intégration France Travail / Adzuna / Jooble, clés IA, quotas et logique MCP (`mcp_jobs.py`).
+- `mcp_server.py` : point d'entrée Stdio du serveur MCP `jobs-tracker`.
+- `templates/` & `static/uploads/users/<user_id>/` : interface Jinja2 et documents propres à chaque utilisateur.
+- `instance/backups/deleted_users/` : archives privées des comptes supprimés.
 
-## Quotas des fournisseurs d'offres
+**Routes utiles :** `/` (accueil) · `/suivi` (candidatures, CV/LM et compteur IA) · `/update_account/<id>` (coordonnées et CV) · `/france_travail` & `/france_travail/searches` (recherche et historique) · `/admin/job-offer-providers` · `/admin/ai-providers` · `/accounts` · `/mcp` · `/legal`.
 
-Les appels Adzuna et Jooble utilisent les quotas du compte fournisseur et sont
-comptabilisés par période : 25 requêtes Adzuna par mois et 100 requêtes Jooble
-par jour par défaut. Les seuils de blocage des utilisateurs non
-administrateurs sont configurables dans **Admin → Fournisseurs d'offres**.
+---
 
-Le quota fournisseur est partagé entre les utilisateurs non administrateurs.
-L'administrateur peut répartir les allocations individuelles dans ce même
-menu ; les allocations par défaut sont calculées à parts égales. La page d'une
-recherche enregistrée affiche le quota global restant et l'allocation
-individuelle disponible avant une relance. Les administrateurs peuvent
-continuer à rechercher au-delà des seuils.
-
-## Quotas IA
-
-Les appels effectués avec la configuration IA du site sont comptés dans
-`AiUsage`, par utilisateur et par mois UTC. Le quota global est stocké dans
-`AppSetting` sous `ai_site_monthly_quota`; un quota individuel peut être stocké
-sous `ai_site_monthly_quota_user_<user_id>`. Le quota par défaut est de
-20 appels mensuels par utilisateur.
-
-À quota atteint, les routes IA retournent une erreur HTTP 429. Une demande
-peut être envoyée depuis `/suivi` et est visible dans **Admin → IA et quotas**.
-
-## Routes utiles
-
-- `/` : accueil ;
-- `/suivi` : candidatures, documents et compteur IA ;
-- `/update_account/<id>` : profil, coordonnées et CV ;
-- `/france_travail` : recherche d'offres ;
-- `/france_travail/searches` : recherches enregistrées, filtrables par source ;
-- `/admin/job-offer-providers` : activation des sources et seuils de quotas ;
-- `/admin/ai-providers` : fournisseurs IA, quotas et demandes ;
-- `/accounts` : gestion administrateur des comptes ;
-- `/legal` : informations publiques sur les données et la conservation.
-
-## Tests
+## 🧪 Tests
 
 ```bash
 python3 -m pytest -q
@@ -147,9 +66,12 @@ Tests ciblés utiles :
 ```bash
 python3 -m pytest -q test/test_admin_roles.py
 python3 -m pytest -q test/test_user_contact_info.py
+python3 -m pytest -q test/test_mcp_jobs.py
 ```
 
-## Documentation complémentaire
+---
+
+## 📚 Documentation complémentaire
 
 - [Fournisseurs IA et crédits](docs/AI_API_PROVIDERS.md)
 - [Architecture](docs/ARCHITECTURE.md)
