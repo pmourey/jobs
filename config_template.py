@@ -21,9 +21,9 @@ class Config:
     # Do not use the normal account password and never commit the real value.
     GMAIL_APP_PWD = "your GMail Application password"
     CV_RESUME = 'https://www.linkedin.com/in/pmourey/<br>https://github.com/pmourey/jobs<br>https://pmourey.github.io/portfolio/'
-    GITHUB_TOKEN = 'ollama-local'
-    GITHUB_MODELS_BASE_URL = 'http://localhost:11434'
-    GITHUB_MODELS_MODEL = 'llama3.1:8b'
+    GEMINI_API_KEY = 'ollama-local'
+    GEMINI_BASE_URL = 'http://localhost:11434'
+    GEMINI_MODEL = 'llama3.1:8b'
     OLLAMA_LOCAL_TUNING = IMAC_64GB_OLLAMA_TUNING
     # Fournisseurs d'offres autorisés par défaut ; l'Admin peut les activer
     # ou désactiver depuis le menu dédié.
@@ -48,6 +48,10 @@ class Config:
     # Never commit the value; set AI_CREDENTIALS_MASTER_KEY in the environment.
     AI_CREDENTIALS_MASTER_KEY = ''
     AI_ENABLED_PROVIDERS = 'gemini,openai,mistral,openrouter,groq'
+    # Serveur MCP Streamable HTTP (/mcp)
+    # Renseigner MCP_API_TOKEN (ou JOBS_MCP_TOKEN) pour activer /mcp.
+    MCP_API_TOKEN = ''
+    MCP_USER_ID = 1
     SCHEDULER = False
     SCHEDULER_INTERVAL = 3600 * 24
     # SCHEDULER_INTERVAL = 10

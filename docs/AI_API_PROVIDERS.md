@@ -84,8 +84,8 @@ dans `config.py` ou Git. L'administrateur gère la liste blanche depuis
 ### Utilisation de l'API administrateur et crédits du site
 
 Si l'utilisateur n'enregistre pas de fournisseur personnel, l'application peut
-utiliser la configuration IA du site (`GITHUB_TOKEN`,
-`GITHUB_MODELS_BASE_URL` et `GITHUB_MODELS_MODEL`). Les appels réalisés avec
+utiliser la configuration IA du site (`GEMINI_API_KEY`, `GEMINI_BASE_URL`
+et `GEMINI_MODEL`). Les appels réalisés avec
 cette configuration sont comptés comme des crédits IA du site : un crédit
 correspond à un appel IA, et non à une somme d'argent ou à un crédit affiché
 par le fournisseur externe.

@@ -7,6 +7,7 @@ This script provides CRUD features inside a Flask application for job's research
 from __future__ import annotations
 
 import atexit
+import hmac
 import locale
 import logging
 import os
@@ -95,6 +96,7 @@ from tools.jobboard_providers import (JOB_OFFER_PROVIDERS,
                                       enabled_job_offer_provider_keys,
                                       get_provider, job_offer_provider_status,
                                       normalize_job_offer_timestamp)
+from tools.mcp_jobs import handle_mcp_message
 
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -362,7 +364,7 @@ def _format_github_rate_warning(token: str, default_missing_msg: str) -> str:
         return default_missing_msg
     info = _get_github_rate_info(token)
     if not info:
-        return 'GITHUB_TOKEN configuré mais impossible de vérifier le quota — aperçu généré sans IA.'
+        return 'GEMINI_API_KEY configurée mais impossible de vérifier le quota — aperçu généré sans IA.'
     # Calculer temps restant jusqu'au reset
     try:
         reset_ts = int(info.get('reset', 0))
@@ -2560,6 +2562,12 @@ def show_all():
             func.lower(func.coalesce(Job.company, '')).contains(selected_company.lower())
         )
 
+    selected_title = (request.args.get('title') or '').strip()
+    if selected_title:
+        jobs_query = jobs_query.filter(
+            func.lower(func.coalesce(Job.name, '')).contains(selected_title.lower())
+        )
+
     sort_date = func.max(
         func.coalesce(Job.updated_at, datetime(1970, 1, 1)),
         func.coalesce(Job.relaunchDate, datetime(1970, 1, 1)),
@@ -2739,6 +2747,7 @@ def show_all():
                            },
                            selected_source=selected_source,
                            selected_company=selected_company,
+                           selected_title=selected_title,
                            pagination=pagination,
                            page_size=page_size,
                            site_ai_usage=site_ai_usage,
@@ -2967,7 +2976,7 @@ def preview_cv_data(id):
             'summary': cv_data.get('basics', {}).get('summary', ''),
             'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
             'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
-            'warning': warning or _format_github_rate_warning(github_token, 'GITHUB_TOKEN non configuré : aperçu généré sans IA.'),
+            'warning': warning or _format_github_rate_warning(github_token, 'GEMINI_API_KEY non configurée : aperçu généré sans IA.'),
             'source': 'fallback',
         }
         wl = cv_data.get('work', [])
@@ -3134,7 +3143,7 @@ def save_cv_pdf(id):
             'summary': cv_data.get('basics', {}).get('summary', ''),
             'highlighted_work_indices': list(range(min(4, len(cv_data.get('work', []))))),
             'highlighted_skill_names': [s['name'] for s in cv_data.get('skills', [])[:6]],
-            'warning': warning or _format_github_rate_warning(github_token, 'GITHUB_TOKEN non configuré.'),
+            'warning': warning or _format_github_rate_warning(github_token, 'GEMINI_API_KEY non configurée.'),
             'source': 'fallback',
         }
 
@@ -4369,6 +4378,61 @@ def providers_search():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.route('/mcp', methods=['GET', 'POST', 'DELETE'])
+def mcp_endpoint():
+    """Endpoint MCP Streamable HTTP protégé par jeton Bearer."""
+    expected_token = (
+        os.environ.get('JOBS_MCP_TOKEN')
+        or app.config.get('MCP_API_TOKEN')
+        or ''
+    ).strip()
+    if not expected_token:
+        return jsonify({
+            'error': 'MCP HTTP endpoint disabled. Configure MCP_API_TOKEN or JOBS_MCP_TOKEN.'
+        }), 503
+
+    auth_header = (request.headers.get('Authorization') or '').strip()
+    if not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Unauthorized'}), 401
+    provided_token = auth_header[7:].strip()
+    if not provided_token or not hmac.compare_digest(provided_token, expected_token):
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    if request.method == 'GET':
+        return '', 405
+    if request.method == 'DELETE':
+        return '', 204
+
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({
+            'jsonrpc': '2.0',
+            'id': None,
+            'error': {'code': -32700, 'message': 'Parse error: invalid JSON'},
+        }), 400
+
+    raw_uid = os.environ.get('JOBS_MCP_USER_ID') or app.config.get('MCP_USER_ID') or 1
+    try:
+        mcp_user_id = int(raw_uid)
+    except (TypeError, ValueError):
+        mcp_user_id = 1
+
+    if isinstance(payload, list):
+        responses = []
+        for item in payload:
+            resp = handle_mcp_message(item, app=app, user_id=mcp_user_id)
+            if resp is not None:
+                responses.append(resp)
+        if not responses:
+            return '', 202
+        return jsonify(responses), 200
+
+    response = handle_mcp_message(payload, app=app, user_id=mcp_user_id)
+    if response is None:
+        return '', 202
+    return jsonify(response), 200
 
 
 @app.template_filter('format_paris_time')

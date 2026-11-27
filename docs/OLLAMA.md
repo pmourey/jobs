@@ -26,14 +26,14 @@ curl -s http://localhost:11434/v1/chat/completions \
 Dans une copie locale de `config.py` :
 
 ```python
-GITHUB_TOKEN = 'ollama-local'
-GITHUB_MODELS_BASE_URL = 'http://localhost:11434'
-GITHUB_MODELS_MODEL = 'llama3.1:8b'
+GEMINI_API_KEY = 'ollama-local'
+GEMINI_BASE_URL = 'http://localhost:11434'
+GEMINI_MODEL = 'llama3.1:8b'
 ENABLE_REMOTE_IA = True
 OLLAMA_LOCAL_TUNING = IMAC_64GB_OLLAMA_TUNING
 ```
 
-`GITHUB_TOKEN` est conservé comme nom de configuration historique ; il ne s'agit pas d'un token envoyé à Ollama local. Ne publiez pas de vraie clé dans `config.py`.
+`GEMINI_API_KEY` est utilisé ici comme identifiant de configuration malgré le mode local ; aucune clé n'est envoyée à Ollama. Ne publiez pas de vraie clé dans `config.py`.
 
 Le preset `ollama_tuning.py` peut ajuster les threads, le contexte, le nombre maximal de tokens et le délai d'attente. Adaptez-le aux ressources de la machine plutôt que de reprendre un preset sans mesure.
 

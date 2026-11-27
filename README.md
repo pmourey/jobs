@@ -65,8 +65,8 @@ Configurer au minimum dans `config.py` ou l'environnement :
 - `JOOBLE_DAILY_QUOTA` (100 par défaut) et
   `JOOBLE_QUOTA_THRESHOLD_PERCENT` (90 par défaut) pour contrôler les
   recherches Jooble des utilisateurs non administrateurs ;
-- la configuration IA du site (`GITHUB_TOKEN`,
-  `GITHUB_MODELS_BASE_URL`, `GITHUB_MODELS_MODEL`) si nécessaire ;
+- la configuration IA du site (`GEMINI_API_KEY`, `GEMINI_BASE_URL`,
+  `GEMINI_MODEL`) si nécessaire ;
 - `AI_CREDENTIALS_MASTER_KEY` pour chiffrer les clés IA personnelles.
 
 `config.py`, les tokens, mots de passe et données utilisateurs ne doivent
@@ -153,6 +153,7 @@ python3 -m pytest -q test/test_user_contact_info.py
 
 - [Fournisseurs IA et crédits](docs/AI_API_PROVIDERS.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Serveur MCP](docs/MCP_SERVER.md)
 - [Configuration Ollama](docs/OLLAMA.md)
 - [Projet communautaire](docs/COMMUNITY_PROJECT.md)
 - [Relais technique](docs/ANTIGRAVITY_HANDOFF.md)

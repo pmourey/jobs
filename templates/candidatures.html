@@ -10,22 +10,27 @@
 		<div class="d-flex flex-wrap gap-2 cand-toolbar-actions">
 				{% if user.is_admin or user.is_user %}
 			<a href="{{ url_for('new') }}" class="btn btn-primary btn-sm">➕ Ajouter une candidature</a>
-			<a href="{{ url_for('france_travail') }}" class="btn btn-outline-success btn-sm">🇫🇷 France Travail</a>
 			{% endif %}
 		</div>
 		<div>
 			<form method="get" action="{{ url_for('show_all') }}" class="d-flex flex-wrap align-items-center gap-2">
 				<label for="view_user" class="small mb-0">Voir les candidatures de :</label>
-				{% if request.args.get('view_user') %}
-				<input type="hidden" name="view_user" value="{{ request.args.get('view_user') }}">
+				{% if selected_source %}
+				<input type="hidden" name="source" value="{{ selected_source }}">
 				{% endif %}
-				<select id="view_user" name="view_user" class="form-select form-select-sm w-auto flex-grow-1 flex-md-grow-0">
+				{% if selected_company %}
+				<input type="hidden" name="company" value="{{ selected_company }}">
+				{% endif %}
+				{% if selected_title %}
+				<input type="hidden" name="title" value="{{ selected_title }}">
+				{% endif %}
+				<select id="view_user" name="view_user" class="form-select form-select-sm w-auto flex-grow-1 flex-md-grow-0"
+						onchange="this.form.submit()">
 					{# Liste limitée : afficher l'utilisateur courant et les users qui ont opt-in. Par défaut, sélectionner l'utilisateur connecté #}
 					{% for u in users %}
 						<option value="{{ u.id }}" {% if (request.args.get('view_user') and (request.args.get('view_user')|int) == u.id) or (not request.args.get('view_user') and u.id == user.id) %}selected{% endif %}>{{ u.username }}</option>
 					{% endfor %}
 				</select>
-				<button class="btn btn-sm btn-outline-primary" type="submit">Filtrer</button>
 			</form>
 		</div>
 		<div>
@@ -35,6 +40,9 @@
 				{% endif %}
 				{% if request.args.get('company') %}
 				<input type="hidden" name="company" value="{{ request.args.get('company') }}">
+				{% endif %}
+				{% if selected_title %}
+				<input type="hidden" name="title" value="{{ selected_title }}">
 				{% endif %}
 				<label for="source-filter" class="small mb-0">Source :</label>
 				<select id="source-filter" name="source" class="form-select form-select-sm w-auto"
@@ -54,10 +62,31 @@
 				{% if selected_source %}
 				<input type="hidden" name="source" value="{{ selected_source }}">
 				{% endif %}
+				{% if selected_title %}
+				<input type="hidden" name="title" value="{{ selected_title }}">
+				{% endif %}
 				<label for="company-filter" class="small mb-0">Company :</label>
 				<input id="company-filter" name="company" type="search"
 					class="form-control form-control-sm" value="{{ selected_company }}"
 					placeholder="Nom de l’entreprise" aria-label="Filtrer par entreprise">
+				<button class="btn btn-sm btn-outline-primary" type="submit">Filtrer</button>
+			</form>
+		</div>
+		<div>
+			<form method="get" action="{{ url_for('show_all') }}" class="d-flex flex-wrap align-items-center gap-2">
+				{% if request.args.get('view_user') %}
+				<input type="hidden" name="view_user" value="{{ request.args.get('view_user') }}">
+				{% endif %}
+				{% if selected_source %}
+				<input type="hidden" name="source" value="{{ selected_source }}">
+				{% endif %}
+				{% if selected_company %}
+				<input type="hidden" name="company" value="{{ selected_company }}">
+				{% endif %}
+				<label for="title-filter" class="small mb-0">Titre :</label>
+				<input id="title-filter" name="title" type="search"
+					class="form-control form-control-sm" value="{{ selected_title }}"
+					placeholder="Titre de l’offre" aria-label="Filtrer par titre de l’offre">
 				<button class="btn btn-sm btn-outline-primary" type="submit">Filtrer</button>
 			</form>
 		</div>
@@ -334,14 +363,14 @@
 		<ul class="pagination justify-content-center flex-wrap">
 			<li class="page-item{% if not pagination.has_prev %} disabled{% endif %}">
 				<a class="page-link"
-					href="{{ url_for('show_all', page=pagination.prev_num, view_user=request.args.get('view_user'), source=selected_source, company=selected_company) if pagination.has_prev else '#' }}"
+					href="{{ url_for('show_all', page=pagination.prev_num, view_user=request.args.get('view_user'), source=selected_source, company=selected_company, title=selected_title) if pagination.has_prev else '#' }}"
 					aria-label="Page précédente">‹</a>
 			</li>
 			{% for page_number in pagination.iter_pages(left_edge=1, left_current=1, right_current=1, right_edge=1) %}
 				{% if page_number %}
 				<li class="page-item{% if page_number == pagination.page %} active{% endif %}">
 					<a class="page-link"
-						href="{{ url_for('show_all', page=page_number, view_user=request.args.get('view_user'), source=selected_source, company=selected_company) }}">
+						href="{{ url_for('show_all', page=page_number, view_user=request.args.get('view_user'), source=selected_source, company=selected_company, title=selected_title) }}">
 						{{ page_number }}
 					</a>
 				</li>
@@ -351,7 +380,7 @@
 			{% endfor %}
 			<li class="page-item{% if not pagination.has_next %} disabled{% endif %}">
 				<a class="page-link"
-					href="{{ url_for('show_all', page=pagination.next_num, view_user=request.args.get('view_user'), source=selected_source, company=selected_company) if pagination.has_next else '#' }}"
+					href="{{ url_for('show_all', page=pagination.next_num, view_user=request.args.get('view_user'), source=selected_source, company=selected_company, title=selected_title) if pagination.has_next else '#' }}"
 					aria-label="Page suivante">›</a>
 			</li>
 		</ul>

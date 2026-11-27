@@ -381,9 +381,9 @@ def generate_keywords_with_gemini(cv_data: dict, api_key: str | None = None,
     """Génère avec Gemini une liste de mots-clés optimisés pour l'API France Travail."""
     try:
         from config import Config
-        api_key = api_key or getattr(Config, 'GITHUB_TOKEN', '')
-        model = model or getattr(Config, 'GITHUB_MODELS_MODEL', 'gemini-3.5-flash-lite')
-        base_url = base_url or getattr(Config, 'GITHUB_MODELS_BASE_URL', 'https://generativelanguage.googleapis.com')
+        api_key = api_key or getattr(Config, 'GITHUB_TOKEN', '') or getattr(Config, 'GEMINI_API_KEY', '')
+        model = model or getattr(Config, 'GITHUB_MODELS_MODEL', '') or getattr(Config, 'GEMINI_MODEL', 'gemini-3.5-flash-lite')
+        base_url = base_url or getattr(Config, 'GITHUB_MODELS_BASE_URL', '') or getattr(Config, 'GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com')
     except Exception:
         pass
 
@@ -659,9 +659,9 @@ def evaluate_offer_with_gemini(offer: dict, cv_data: dict, api_key: str | None =
     """Analyse approfondie de l'adéquation d'une offre via Gemini (style recruteur LinkedIn)."""
     try:
         from config import Config
-        api_key = api_key or getattr(Config, 'GITHUB_TOKEN', '')
-        model = getattr(Config, 'GITHUB_MODELS_MODEL', 'gemini-3.5-flash-lite')
-        base_url = getattr(Config, 'GITHUB_MODELS_BASE_URL', 'https://generativelanguage.googleapis.com')
+        api_key = api_key or getattr(Config, 'GITHUB_TOKEN', '') or getattr(Config, 'GEMINI_API_KEY', '')
+        model = getattr(Config, 'GITHUB_MODELS_MODEL', '') or getattr(Config, 'GEMINI_MODEL', 'gemini-3.5-flash-lite')
+        base_url = getattr(Config, 'GITHUB_MODELS_BASE_URL', '') or getattr(Config, 'GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com')
         from tools.github_models_client import chat_completion
         import json as _json
 

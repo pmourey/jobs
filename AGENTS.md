@@ -9,12 +9,12 @@ But : permettre à un agent IA d'être immédiatement productif dans ce dépôt 
 - Couche service/utilitaires : `Controller.py` (auth, uploads, envois mail) et `tools/` (CV/LM, PDF, FT API, envoi mail).
 - Flow IA : routes `/preview_cv_data`, `/save_cv_pdf`, `/preview_lm_ai`, `/save_lm_text`
   appellent `tools.cv_tools` et utilisent la configuration personnelle de l'utilisateur
-  ou, à défaut, la configuration IA administrateur (`GITHUB_TOKEN`,
-  `GITHUB_MODELS_BASE_URL`, `GITHUB_MODELS_MODEL`).
+  ou, à défaut, la configuration IA administrateur (`GEMINI_API_KEY`,
+  `GEMINI_BASE_URL`, `GEMINI_MODEL`).
 
 2) Comment lancer / workflows courants
 - Installer : `pip install -r requirements.txt` (voir `README.md`).
-- Configuration locale : copier `config_template.py` → `config.py` puis renseigner `SECRET_KEY`, `SQLALCHEMY_DATABASE_URI`, `GMAIL_*` et optionnel `GITHUB_TOKEN`.
+- Configuration locale : copier `config_template.py` → `config.py` puis renseigner `SECRET_KEY`, `SQLALCHEMY_DATABASE_URI`, `GMAIL_*` et optionnel `GEMINI_API_KEY`.
 - Lancer serveur local : `python flask_app.py` (ouvre l'application, tables créées automatiquement via `db.create_all()` dans `@app.before_request`).
 - Tests rapides disponibles dans `test/` ; ex : `python test/test_generate_cover_letter_pdf.py`.
 
@@ -28,7 +28,7 @@ But : permettre à un agent IA d'être immédiatement productif dans ce dépôt 
 - Hashs de mots de passe : prise en charge de formats legacy dans `Controller.check_password_and_upgrade` (sha256, md5) — les agents doivent conserver ce comportement lors de modifications d'auth.
 
 4) Intégrations externes & points d'extension
-- IA : `GITHUB_TOKEN`, `GITHUB_MODELS_BASE_URL`, `GITHUB_MODELS_MODEL` configurés dans `config.py`. Les appels IA se trouvent dans `tools/cv_tools.py` et `tools/document_tools.py`.
+- IA : `GEMINI_API_KEY`, `GEMINI_BASE_URL`, `GEMINI_MODEL` configurés dans `config.py`. Les appels IA se trouvent dans `tools/cv_tools.py` et `tools/document_tools.py`.
 - SMTP : envoi d'e-mails via `tools.send_emails` et wrappers dans `Controller.py` (utilise `GMAIL_USER`, `GMAIL_APP_PWD`, `SMTP_SERVER`, `SMTP_PORT`).
 - France Travail API : implémenté dans `tools/france_travail.py` et orchestré depuis `flask_app.py` (endpoints /france_travail). Besoin de `FT_CLIENT_ID` / `FT_CLIENT_SECRET` dans `config.py` pour le mode réel.
 
@@ -57,14 +57,14 @@ But : permettre à un agent IA d'être immédiatement productif dans ce dépôt 
 - `flask_app.py` : orchestration, routes, décorateurs d'autorisation, logique France Travail, génération PDF endpoints.
 - `Model.py` : schéma SQLAlchemy, validation email, méthodes utilitaires (offers getter/setter pour FtSearch).
 - `Controller.py` : upload validation, envois d'e-mails, vérification/upgrade des mots de passe legacy.
-- `config_template.py` / `config.py` : variables d'environnement et secrets attendus (GITHUB_TOKEN, GMAIL_APP_PWD, FT_CLIENT_ID, etc.).
+- `config_template.py` / `config.py` : variables d'environnement et secrets attendus (GEMINI_API_KEY, GMAIL_APP_PWD, FT_CLIENT_ID, etc.).
 - `tools/` (notamment `cv_tools.py`, `document_tools.py`, `send_emails.py`, `france_travail.py`) : implémentations IA, PDF et intégrations externes.
 
 7) Conseils pratiques pour modifications par un agent IA
 - Ne pas supprimer la logique de compatibilité des hash de mot de passe sans migrer les comptes existants (vérifier `LEGACY_HASH_METHODS`).
 - Pour changer la DB : tester localement en créant `instance/jobs.sqlite3` ou en pointant `SQLALCHEMY_DATABASE_URI` vers une instance test ; la création automatique facilite les tests mais cache les migrations.
 - Quand vous touchez aux endpoints IA : préserver le fallback local lorsque
-  `GITHUB_TOKEN` est vide ou que l'endpoint est indisponible, et préserver le contrôle
+  `GEMINI_API_KEY` est vide ou que l'endpoint est indisponible, et préserver le contrôle
   de quota pour la configuration administrateur.
 - Respecter chemins statiques existants (`static/uploads`, `static/images`) — les noms de fichiers suivant la convention (`cv_{id}.pdf`, `capture_{id}.pdf`).
 - Ne jamais ajouter de secret provenant de `config.py` dans le code, la documentation,

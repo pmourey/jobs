@@ -223,7 +223,9 @@ def _model_infer(messages: list, model: str, base_url: str, api_key: str, *,
 
             actual_key = api_key or os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY', '')
             if actual_key and not actual_key.startswith(('ollama', 'github_pat')):
-                params['key'] = actual_key
+                # Keep the API key out of the URL so HTTP client debug logs
+                # cannot expose it.
+                headers['x-goog-api-key'] = actual_key
             else:
                 # Try Bearer token if ADC is available
                 try:
@@ -1359,8 +1361,8 @@ def get_ai_cv_suggestions(job: Job, cv_data: dict, github_token: str,
     from tools.github_models_client import chat_completion
     try:
         from flask import current_app
-        base_url = ai_base_url or current_app.config.get('GITHUB_MODELS_BASE_URL', 'https://models.github.ai/inference')
-        model_name = ai_model or current_app.config.get('GITHUB_MODELS_MODEL', 'openai/gpt-4.1')
+        base_url = ai_base_url or current_app.config.get('GITHUB_MODELS_BASE_URL') or current_app.config.get('GEMINI_BASE_URL', 'https://models.github.ai/inference')
+        model_name = ai_model or current_app.config.get('GITHUB_MODELS_MODEL') or current_app.config.get('GEMINI_MODEL', 'openai/gpt-4.1')
     except Exception:
         base_url = 'https://models.github.ai/inference'
         model_name = 'openai/gpt-4.1'
@@ -1542,8 +1544,8 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
 
     try:
         from flask import current_app
-        base_url = ai_base_url or current_app.config.get('GITHUB_MODELS_BASE_URL', 'https://models.github.ai/inference')
-        model_name = ai_model or current_app.config.get('GITHUB_MODELS_MODEL', 'openai/gpt-4.1')
+        base_url = ai_base_url or current_app.config.get('GITHUB_MODELS_BASE_URL') or current_app.config.get('GEMINI_BASE_URL', 'https://models.github.ai/inference')
+        model_name = ai_model or current_app.config.get('GITHUB_MODELS_MODEL') or current_app.config.get('GEMINI_MODEL', 'openai/gpt-4.1')
         static_folder = current_app.static_folder
         is_user_1 = getattr(job, 'user_id', None) == 1
         author_name = current_app.config.get('GMAIL_FULLNAME', '') if is_user_1 else ''
@@ -1696,7 +1698,7 @@ def get_ai_cover_letter_text(job: Job, github_token: str,
             "je suis convaincu de pouvoir apporter une réelle valeur ajoutée à votre équipe.\n\n"
             "Je reste à votre disposition pour un entretien afin de vous présenter "
             "plus en détail mon parcours et mes motivations.\n\n"
-            "[GITHUB_TOKEN non configuré : texte généré sans IA]"
+            "[GEMINI_API_KEY non configurée : texte généré sans IA]"
         )
         if author_display:
             base_text = base_text + "\n" + (author_display or '')

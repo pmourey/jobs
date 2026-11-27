@@ -85,8 +85,8 @@ secret, token ou contenu de `config.py` ne doit être ajouté à ce document.
   dépôt. Si elle est changée, les anciennes clés personnelles deviennent
   indéchiffrables.
 - Lorsqu'une clé personnelle est absente, invalide ou impossible à déchiffrer,
-  l'application tente la configuration IA administrateur (`GITHUB_TOKEN`,
-  `GITHUB_MODELS_BASE_URL`, `GITHUB_MODELS_MODEL`).
+  l'application tente la configuration IA administrateur (`GEMINI_API_KEY`,
+  `GEMINI_BASE_URL`, `GEMINI_MODEL`).
 - Une clé personnelle n'est pas comptabilisée dans le quota de l'API du site.
 - Les appels utilisant la configuration administrateur sont comptabilisés dans
   `AiUsage`, par utilisateur et par mois UTC.
@@ -165,6 +165,24 @@ Un administrateur peut fermer toutes les autres sessions actives via
 - `templates/manage_cvs.html` : import et chargement explicite des PDF.
 - `README.md` et `docs/AI_API_PROVIDERS.md` : documentation utilisateur et
   technique.
+
+## Serveur MCP (`jobs-tracker`)
+
+- `tools/mcp_jobs.py` : implémente le serveur JSON-RPC 2.0 MCP sans dépendance
+  externe supplémentaire, lié à un `user_id` configuré côté serveur (par défaut
+  `1`, ou via `JOBS_MCP_USER_ID` / `MCP_USER_ID`).
+- Outils exposés : `get_profile_and_cv`, `list_candidatures`,
+  `get_candidature`, `add_candidature`, `save_cover_letter`,
+  `generate_cover_letter_pdf` et `generate_tailored_cv_pdf` (qui réutilise
+  `generate_tailored_cv_pdf_bytes` et sauvegarde dans
+  `static/uploads/users/<user_id>/generated/`).
+- `mcp_server.py` : point d'entrée Stdio local (redirige `stdout` vers `stderr`
+  avant l'import de `flask_app` pour garder le flux JSON-RPC propre).
+- `POST /mcp` dans `flask_app.py` : endpoint Streamable HTTP optionnel,
+  désactivé (HTTP 503) tant que `MCP_API_TOKEN` / `JOBS_MCP_TOKEN` est vide,
+  et protégé par jeton Bearer.
+- `test/test_mcp_jobs.py` : tests unitaires isolés (protocole, workflow complet,
+  isolation utilisateur, auth HTTP et smoke test Stdio).
 
 ## Vérifications effectuées
 

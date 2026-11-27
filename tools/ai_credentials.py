@@ -195,8 +195,17 @@ def resolve_user_ai_config(user_id: int) -> dict | None:
                 'site_managed': False,
             }
 
-    base_url = current_app.config.get('GITHUB_MODELS_BASE_URL', '')
-    api_key = current_app.config.get('GITHUB_TOKEN', '') or ''
+    # Prefer legacy keys when explicitly supplied at runtime so older
+    # deployments and integrations can override the canonical settings.
+    base_url = (
+        current_app.config.get('GITHUB_MODELS_BASE_URL')
+        or current_app.config.get('GEMINI_BASE_URL', '')
+    )
+    api_key = (
+        current_app.config.get('GITHUB_TOKEN')
+        or current_app.config.get('GEMINI_API_KEY', '')
+        or ''
+    )
     if not base_url or not api_key:
         return None
     if 'localhost:11434' in base_url or api_key in ('ollama-local', 'OLLAMA_LOCAL'):
@@ -207,7 +216,10 @@ def resolve_user_ai_config(user_id: int) -> dict | None:
     return {
         'provider_key': provider_key,
         'base_url': base_url,
-        'model': current_app.config.get('GITHUB_MODELS_MODEL', AI_PROVIDERS[provider_key]['default_model']),
+        'model': (
+            current_app.config.get('GITHUB_MODELS_MODEL')
+            or current_app.config.get('GEMINI_MODEL', AI_PROVIDERS[provider_key]['default_model'])
+        ),
         'api_key': api_key,
         'site_managed': True,
     }
